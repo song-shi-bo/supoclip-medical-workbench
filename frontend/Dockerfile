@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1.7
-
 # Use Node.js with pnpm as the package manager
 FROM node:22-bookworm-slim AS base
 
@@ -17,8 +15,9 @@ RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency manifests only so app/schema changes don't invalidate deps
 COPY package.json pnpm-lock.yaml ./
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile --ignore-scripts --store-dir /pnpm/store
+# Avoid a remote Dockerfile frontend dependency.  The default Docker parser is
+# enough for this local, restartable workstation service.
+RUN pnpm install --frozen-lockfile --ignore-scripts --store-dir /pnpm/store
 
 # Development stage
 FROM base AS development

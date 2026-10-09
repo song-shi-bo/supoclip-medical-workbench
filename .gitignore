@@ -8,6 +8,19 @@ logs/
 temp/
 .env
 *.m4a
+
+# Local workflow media, generated renders, task state, and developer logs.
+# Keep source code and configuration in Git; keep patient/source media on this machine.
+tasks/in/
+tasks/media/
+tasks/output/
+tasks/processing/
+tasks/completed/
+tasks/failed/
+tasks/status/
+tasks/__pycache__/
+docker-build*.log
+frontend/next-dev*.log
 frontend/e2e/.seed.json
 frontend/playwright-report/
 frontend/test-results/

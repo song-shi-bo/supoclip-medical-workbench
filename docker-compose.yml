@@ -18,7 +18,9 @@ services:
         - NEXT_PUBLIC_DATAFAST_ALLOW_LOCALHOST=${NEXT_PUBLIC_DATAFAST_ALLOW_LOCALHOST:-false}
     container_name: supoclip-frontend
     ports:
-      - "127.0.0.1:3001:3107"
+      # The Studio URL is stable across reboots; no manually started Next.js
+      # process is required on the host.
+      - "127.0.0.1:3107:3107"
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/public:/app/public
@@ -85,8 +87,14 @@ services:
       - ./backend/src:/app/src
       - uploads:/app/uploads
       - clips:/app/clips
+      # Keep the Faster-Whisper / Hugging Face model across container restarts.
+      - model_cache:/root/.cache/huggingface
       - ./backend/fonts:/app/fonts
+      - "C:/Windows/Fonts/msyhbd.ttc:/app/fonts/MicrosoftYaHeiBold.ttc:ro"
       - ./backend/transitions:/app/transitions
+      # Shared file queue: Studio writes tasks here, the local fixed workflow
+      # bridge reads them and returns exported files/statuses here.
+      - ./tasks:/app/tasks
     environment:
       - PYTHONPATH=/app
       - PYTHONUNBUFFERED=1
@@ -111,6 +119,10 @@ services:
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
       - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
       - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-assemblyai}
+      - FASTER_WHISPER_MODEL=${FASTER_WHISPER_MODEL:-small}
+      - FASTER_WHISPER_DEVICE=${FASTER_WHISPER_DEVICE:-cpu}
+      - FASTER_WHISPER_COMPUTE_TYPE=${FASTER_WHISPER_COMPUTE_TYPE:-int8}
+      - FASTER_WHISPER_VAD_FILTER=${FASTER_WHISPER_VAD_FILTER:-true}
       - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-medium}
       - MAX_VIDEO_DURATION=${MAX_VIDEO_DURATION:-5400}
       - PRO_YOUTUBE_MAX_VIDEO_DURATION=${PRO_YOUTUBE_MAX_VIDEO_DURATION:-5400}
@@ -149,6 +161,26 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+
+  # Executes the user's fixed local medical clipping workflow.  It consumes
+  # only Studio task packages from ./tasks and never re-runs Studio ASR.
+  studio-local-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: supoclip-studio-local-worker
+    platform: linux/amd64
+    command: [".venv/bin/python", "/app/tasks/run-medical-production.py"]
+    volumes:
+      - ./tasks:/app/tasks
+      - ./backend/fonts:/app/fonts
+      - "C:/Windows/Fonts/msyhbd.ttc:/app/fonts/MicrosoftYaHeiBold.ttc:ro"
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
 
   mcp:
     build:
@@ -191,6 +223,8 @@ services:
       - ./backend/src:/app/src
       - uploads:/app/uploads
       - clips:/app/clips
+      # Use the same persisted ASR model cache as the API service.
+      - model_cache:/root/.cache/huggingface
       - ./backend/fonts:/app/fonts
       - ./backend/transitions:/app/transitions
     environment:
@@ -217,6 +251,10 @@ services:
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
       - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
       - TRANSCRIPTION_PROVIDER=${TRANSCRIPTION_PROVIDER:-assemblyai}
+      - FASTER_WHISPER_MODEL=${FASTER_WHISPER_MODEL:-small}
+      - FASTER_WHISPER_DEVICE=${FASTER_WHISPER_DEVICE:-cpu}
+      - FASTER_WHISPER_COMPUTE_TYPE=${FASTER_WHISPER_COMPUTE_TYPE:-int8}
+      - FASTER_WHISPER_VAD_FILTER=${FASTER_WHISPER_VAD_FILTER:-true}
       - WHISPER_MODEL_SIZE=${WHISPER_MODEL_SIZE:-medium}
       - MAX_VIDEO_DURATION=${MAX_VIDEO_DURATION:-5400}
       - PRO_YOUTUBE_MAX_VIDEO_DURATION=${PRO_YOUTUBE_MAX_VIDEO_DURATION:-5400}
@@ -304,6 +342,8 @@ volumes:
   postgres_data:
     driver: local
   mcp_downloads:
+    driver: local
+  model_cache:
     driver: local
 
 networks:

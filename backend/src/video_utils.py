@@ -31,6 +31,14 @@ except ImportError:  # pragma: no cover - optional transcription backend
     _whisper = None
     _WHISPER_AVAILABLE = False
 
+try:
+    from faster_whisper import WhisperModel as _FasterWhisperModel
+
+    _FASTER_WHISPER_AVAILABLE = True
+except ImportError:  # pragma: no cover - optional transcription backend
+    _FasterWhisperModel = None
+    _FASTER_WHISPER_AVAILABLE = False
+
 from .config import get_config
 from .clip_cleanup import DEFAULT_FILTERED_WORDS, clip_cleanup_enabled
 from .clip_source_map import (
@@ -227,6 +235,7 @@ def _assemblyai_speech_models_value(speech_model: str) -> List[str]:
 
 
 _WHISPER_MODEL_CACHE: Dict[str, Any] = {}
+_FASTER_WHISPER_MODEL_CACHE: Dict[Tuple[str, str, str], Any] = {}
 
 
 def _get_whisper_model(model_name: str = "base"):
@@ -247,6 +256,57 @@ def transcribe_with_whisper(video_path: Path, model_name: str = "base") -> Dict[
     model = _get_whisper_model(model_name)
     logger.info("Starting Whisper transcription with model: %s", model_name)
     return model.transcribe(str(audio_path), word_timestamps=True, language=None)
+
+
+def transcribe_with_faster_whisper(video_path: Path, runtime_config) -> Dict[str, Any]:
+    """Run the fixed local ASR profile: small model, CPU, int8 and VAD."""
+    if not _FASTER_WHISPER_AVAILABLE:
+        raise RuntimeError(
+            "faster-whisper is not installed. Run `uv sync` in backend first."
+        )
+
+    profile = (
+        runtime_config.faster_whisper_model,
+        runtime_config.faster_whisper_device,
+        runtime_config.faster_whisper_compute_type,
+    )
+    if profile not in _FASTER_WHISPER_MODEL_CACHE:
+        logger.info(
+            "Loading faster-whisper model=%s device=%s compute_type=%s",
+            *profile,
+        )
+        _FASTER_WHISPER_MODEL_CACHE[profile] = _FasterWhisperModel(
+            profile[0], device=profile[1], compute_type=profile[2]
+        )
+
+    audio_path = _prepare_audio_for_transcription(video_path)
+    segments, info = _FASTER_WHISPER_MODEL_CACHE[profile].transcribe(
+        str(audio_path),
+        language="zh",
+        beam_size=1,
+        vad_filter=runtime_config.faster_whisper_vad_filter,
+        condition_on_previous_text=False,
+        word_timestamps=True,
+    )
+    normalized_segments = []
+    for segment in segments:
+        words = [
+            {
+                "word": word.word,
+                "start": word.start,
+                "end": word.end,
+                "probability": word.probability,
+            }
+            for word in (segment.words or [])
+        ]
+        normalized_segments.append(
+            {"start": segment.start, "end": segment.end, "text": segment.text, "words": words}
+        )
+    return {
+        "text": "".join(item["text"] for item in normalized_segments).strip(),
+        "segments": normalized_segments,
+        "language": getattr(info, "language", "zh"),
+    }
 
 
 def _whisper_result_to_transcript_data(whisper_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -366,7 +426,7 @@ def get_video_transcript(
 ) -> str:
     """Get a video transcript using the configured provider.
 
-    Dispatches to AssemblyAI, local Whisper, or YouTube captions based on
+    Dispatches to AssemblyAI, local Whisper/faster-whisper, or YouTube captions based on
     ``TRANSCRIPTION_PROVIDER``. ``source_url`` enables the youtube_captions
     provider, which needs the original URL rather than a local file path.
     """
@@ -376,6 +436,8 @@ def get_video_transcript(
 
     if provider == "whisper":
         return _get_transcript_with_whisper(video_path, runtime_config)
+    if provider == "faster_whisper":
+        return _get_transcript_with_faster_whisper(video_path, runtime_config)
     if provider == "youtube_captions":
         if not source_url:
             raise ValueError(
@@ -462,6 +524,16 @@ def _get_transcript_with_whisper(video_path: Path, runtime_config) -> str:
         len(formatted_lines),
         len(result),
     )
+    return result
+
+
+def _get_transcript_with_faster_whisper(video_path: Path, runtime_config) -> str:
+    """Get a timestamped transcript using the fixed local ASR profile."""
+    whisper_result = transcribe_with_faster_whisper(video_path, runtime_config)
+    formatted_lines = format_transcript_for_analysis(whisper_result)
+    cache_transcript_data(video_path, whisper_result)
+    result = "\n".join(formatted_lines)
+    logger.info("faster-whisper transcript formatted: %d segments", len(formatted_lines))
     return result
 
 

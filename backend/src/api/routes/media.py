@@ -3,11 +3,13 @@ Media API routes (fonts, transitions, uploads).
 """
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pathlib import Path
 from typing import Any, cast
 import logging
 import uuid
+import json
 import aiofiles
 
 from ...config import get_config
@@ -23,6 +25,20 @@ from ...font_registry import (
     get_available_fonts as list_available_fonts,
     get_user_fonts_dir,
     sanitize_font_stem,
+)
+from ...video_utils import transcribe_with_faster_whisper
+from ...transcript_correction import correct_segments
+from ...studio_insights import extract_studio_insights
+from ...studio_auto_edit_bridge import (
+    read_auto_edit_task,
+    rerender_auto_edit_task,
+    resolve_auto_edit_artifact,
+    submit_auto_edit_task,
+)
+from ...timeline_copilot import (
+    create_timeline_project,
+    load_timeline_project,
+    update_timeline_project,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Depends
@@ -318,3 +334,232 @@ async def upload_video(request: Request, db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logger.error(f"❌ Error uploading video: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error uploading video: {str(e)}")
+
+
+@router.post("/studio/transcribe")
+async def studio_transcribe_video(
+    uploaded_file: UploadFile = File(..., alias="video"),
+):
+    """Transcribe a local Studio upload without an account session.
+
+    Docker exposes this backend only on 127.0.0.1 in the local workspace, and
+    the endpoint is consumed by the Studio's same-machine proxy. It deliberately
+    returns raw ASR segments instead of creating a clipping task.
+    """
+    if not uploaded_file.filename:
+        raise HTTPException(status_code=400, detail="No video file provided")
+
+    config = get_config()
+    extension = Path(uploaded_file.filename).suffix.lower() or ".mp4"
+    if extension not in {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}:
+        raise HTTPException(status_code=400, detail="Unsupported video format")
+
+    uploads_dir = Path(config.temp_dir) / "studio-uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
+    video_path = uploads_dir / f"{uuid.uuid4()}{extension}"
+
+    try:
+        await _write_upload_to_disk(
+            uploaded_file, video_path, config.max_video_upload_bytes
+        )
+        transcript = await run_in_threadpool(
+            transcribe_with_faster_whisper, video_path, config
+        )
+        raw_segments = [
+            {
+                "start": round(float(segment["start"]), 3),
+                "end": round(float(segment["end"]), 3),
+                "text": str(segment["text"]).strip(),
+            }
+            for segment in transcript.get("segments", [])
+            if str(segment.get("text", "")).strip()
+        ]
+        correction = correct_segments(raw_segments)
+        insights = await extract_studio_insights(correction["asr_segments"])
+        video_path.with_suffix(".corrected_transcript.json").write_text(
+            json.dumps(correction["asr_segments"], ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        video_path.with_suffix(".correction_audit.json").write_text(
+            json.dumps(correction["correction_audit"], ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        timeline = await run_in_threadpool(
+            create_timeline_project,
+            video_path=video_path,
+            raw_segments=transcript.get("segments", []),
+            corrected_segments=correction["asr_segments"],
+            uploads_root=Path(config.temp_dir),
+        )
+        return {
+            **correction,
+            "raw_asr_segments": raw_segments,
+            "language": transcript.get("language", "zh"),
+            "profile": {
+                "engine": "faster-whisper",
+                "model": config.faster_whisper_model,
+                "device": config.faster_whisper_device,
+                "compute_type": config.faster_whisper_compute_type,
+                "vad_filter": config.faster_whisper_vad_filter,
+            },
+            "insights": insights,
+            "timeline": timeline,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Studio transcription failed")
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}")
+
+
+@router.post("/studio/insights")
+async def studio_extract_insights(request: Request):
+    """Extract highlights from the already-loaded Studio transcript, without ASR again."""
+    try:
+        payload = await request.json()
+        segments = payload.get("asr_segments") if isinstance(payload, dict) else None
+        if not isinstance(segments, list):
+            raise HTTPException(status_code=400, detail="asr_segments must be a list")
+        normalized = [
+            {
+                "start": round(float(item.get("start", 0)), 3),
+                "end": round(float(item.get("end", 0)), 3),
+                "text": str(item.get("text", "")).strip(),
+            }
+            for item in segments
+            if isinstance(item, dict)
+            and str(item.get("text", "")).strip()
+            and float(item.get("end", 0)) > float(item.get("start", 0))
+        ]
+        if not normalized:
+            raise HTTPException(status_code=400, detail="No usable timestamped transcript segments")
+        return {"insights": await extract_studio_insights(normalized)}
+    except HTTPException:
+        raise
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid transcript segment: {exc}") from exc
+    except Exception as exc:
+        logger.exception("Studio insight extraction failed")
+        raise HTTPException(status_code=500, detail=f"Insight extraction failed: {exc}") from exc
+
+
+@router.post("/studio/auto-edit")
+async def studio_start_auto_edit(request: Request):
+    """Enqueue the current Studio timeline for the local fixed production executor.
+
+    This route only writes a durable task package.  Rendering remains in the
+    local queue worker so a long FFmpeg/AI job never blocks the Studio API.
+    """
+    try:
+        payload = await request.json()
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=400, detail="Expected a JSON object")
+        project_id = str(payload.get("project_id") or "").strip()
+        if not project_id:
+            raise HTTPException(status_code=400, detail="project_id is required; complete transcription first")
+        config = get_config()
+        return await run_in_threadpool(
+            submit_auto_edit_task,
+            project_id=project_id,
+            uploads_root=Path(config.temp_dir),
+            asr_segments=payload.get("asr_segments"),
+            golden_sentences=payload.get("golden_sentences"),
+            keywords=payload.get("keywords"),
+        )
+    except HTTPException:
+        raise
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Unable to enqueue Studio auto-edit task")
+        raise HTTPException(status_code=500, detail=f"Auto-edit queue failed: {exc}") from exc
+
+
+@router.get("/studio/auto-edit/{task_id}")
+async def studio_auto_edit_status(task_id: str):
+    """Return queue progress and files copied back by the local executor."""
+    try:
+        return await run_in_threadpool(read_auto_edit_task, task_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Unable to read Studio auto-edit task")
+        raise HTTPException(status_code=500, detail=f"Auto-edit status failed: {exc}") from exc
+
+
+@router.post("/studio/auto-edit/{task_id}/rerender")
+async def studio_rerender_auto_edit(task_id: str):
+    """Queue a non-destructive re-render with the current local rule set."""
+    try:
+        return await run_in_threadpool(rerender_auto_edit_task, task_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Unable to queue Studio auto-edit re-render")
+        raise HTTPException(status_code=500, detail=f"Auto-edit re-render failed: {exc}") from exc
+
+
+@router.get("/studio/auto-edit/{task_id}/artifact")
+async def studio_auto_edit_artifact(task_id: str, path: str, download: bool = False):
+    """Serve a completed local artifact for inline Studio preview or download."""
+    try:
+        artifact = await run_in_threadpool(resolve_auto_edit_artifact, task_id, path)
+        media_type = "video/mp4" if artifact.suffix.lower() == ".mp4" else None
+        return FileResponse(
+            artifact,
+            media_type=media_type,
+            filename=artifact.name if download else None,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/studio/timeline/{project_id}")
+async def studio_timeline(project_id: str):
+    """Return one local Studio EDL plus its transcript and export inventory."""
+    try:
+        config = get_config()
+        return await run_in_threadpool(
+            load_timeline_project,
+            project_id=project_id,
+            uploads_root=Path(config.temp_dir),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Unable to load Studio timeline")
+        raise HTTPException(status_code=500, detail=f"Timeline load failed: {exc}") from exc
+
+
+@router.put("/studio/timeline/{project_id}")
+async def save_studio_timeline(project_id: str, request: Request):
+    """Save selected source ranges and regenerate the portable timeline exports."""
+    try:
+        payload = await request.json()
+        ranges = payload.get("ranges") if isinstance(payload, dict) else None
+        if not isinstance(ranges, list):
+            raise HTTPException(status_code=400, detail="ranges must be a list")
+        config = get_config()
+        return await run_in_threadpool(
+            update_timeline_project,
+            project_id=project_id,
+            uploads_root=Path(config.temp_dir),
+            ranges=ranges,
+        )
+    except HTTPException:
+        raise
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.exception("Unable to save Studio timeline")
+        raise HTTPException(status_code=500, detail=f"Timeline save failed: {exc}") from exc

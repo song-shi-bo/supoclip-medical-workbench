@@ -20,6 +20,15 @@ class Config:
         self.ollama_api_key = self._get_runtime_setting("OLLAMA_API_KEY")
 
         self.whisper_model = os.getenv("WHISPER_MODEL", "base")
+        # Fixed local transcription profile used by the structured clipping flow.
+        self.faster_whisper_model = os.getenv("FASTER_WHISPER_MODEL", "small")
+        self.faster_whisper_device = os.getenv("FASTER_WHISPER_DEVICE", "cpu")
+        self.faster_whisper_compute_type = os.getenv(
+            "FASTER_WHISPER_COMPUTE_TYPE", "int8"
+        )
+        self.faster_whisper_vad_filter = self._get_bool_env(
+            "FASTER_WHISPER_VAD_FILTER", True
+        )
         self.transcription_provider = self._normalize_transcription_provider(
             os.getenv("TRANSCRIPTION_PROVIDER", "assemblyai")
         )
@@ -195,7 +204,7 @@ class Config:
     @staticmethod
     def _normalize_transcription_provider(value: str | None) -> str:
         normalized = (value or "").strip().lower().replace("-", "_")
-        if normalized in ("whisper", "youtube_captions"):
+        if normalized in ("whisper", "faster_whisper", "youtube_captions"):
             return normalized
         return "assemblyai"
 
