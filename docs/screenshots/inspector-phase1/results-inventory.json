@@ -1,0 +1,12 @@
+[
+  {
+    "id": "bind.cards",
+    "ok": true,
+    "detail": "rendered cards = 2"
+  },
+  {
+    "id": "tabs.five",
+    "ok": true,
+    "detail": "tabs = [\"转写\",\"字幕\",\"封面与画面\",\"音频\",\"效果设置\"]"
+  }
+]

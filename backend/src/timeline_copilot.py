@@ -7,9 +7,7 @@ same JSON EDL that produces the portable SRT and FCPXML deliverables.
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
 import uuid
 from fractions import Fraction
 from pathlib import Path
@@ -19,6 +17,9 @@ from helpers.export_fcpxml import write_fcpxml
 from helpers.export_srt import build_srt_for_timeline
 from helpers.inventory import ffprobe
 from helpers.validate_edl import validate
+
+from .clip_transform import TransformValidationError, parse_transform
+from .source_store import materialise_source
 
 
 MIN_RANGE_SECONDS = 0.8
@@ -35,17 +36,6 @@ def _frame_rate(value: Any) -> float:
         return rate if rate > 0 else 30.0
     except (ValueError, ZeroDivisionError):
         return 30.0
-
-
-def _link_original(source: Path, destination: Path) -> None:
-    """Create a project-local original-media reference without transcoding it."""
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        os.link(source, destination)
-    except OSError:
-        # This fallback only occurs when the Docker volume cannot hard-link.
-        # The editing source remains the original user upload, never a preview.
-        shutil.copy2(source, destination)
 
 
 def _transcript_payload(
@@ -85,12 +75,38 @@ def _project_payload(project_dir: Path) -> dict[str, Any]:
     edl_path = project_dir / "edit" / "edl.json"
     edl = json.loads(edl_path.read_text(encoding="utf-8"))
     transcript = json.loads((project_dir / "edit" / "transcripts" / f"{manifest['source_stem']}.json").read_text(encoding="utf-8"))
+    segments = transcript.get("segments") or []
+    transcript_source = None
+    if not segments:
+        # 2026-10-16 Step 4 回读：工作台导入会先创建时间线项目（此时转写尚未完成），
+        # 内嵌快照为空段。转写/纠错完成后，打开历史项目应显示转写库中**当前有效
+        # 版本**（模型纠错后的文本）——按 reedit 凭据同一来源回读最新版本。
+        try:
+            from .studio_transcript_store import find_latest_by_project, load_corrected_transcript
+
+            credential = find_latest_by_project(str(manifest["id"]))
+            if credential:
+                payload = load_corrected_transcript(
+                    credential["object_key"],
+                    transcript_id=credential["transcript_id"],
+                    transcript_version=credential["transcript_version"],
+                )
+                if payload and payload.get("asr_segments"):
+                    segments = payload["asr_segments"]
+                    transcript_source = {
+                        "transcript_id": credential["transcript_id"],
+                        "transcript_version": credential["transcript_version"],
+                        "provider": str(payload.get("correction_provider") or ""),
+                    }
+        except Exception:  # noqa: BLE001 — 回读失败保持空段（不阻塞时间线载入）
+            pass
     return {
         "id": manifest["id"],
         "source": manifest["source"],
         "timeline": edl["timelines"][0],
         "edl_path": "edit/edl.json",
-        "transcript": transcript["segments"],
+        "transcript": segments,
+        "transcript_source": transcript_source,
         "artifacts": manifest["artifacts"],
     }
 
@@ -114,14 +130,20 @@ def create_timeline_project(
     raw_segments: list[dict[str, Any]],
     corrected_segments: list[dict[str, Any]],
     uploads_root: Path,
+    project_id: str | None = None,
 ) -> dict[str, Any]:
-    """Create the durable source + transcript + EDL project for one Studio upload."""
-    project_id = f"timeline_{uuid.uuid4().hex[:12]}"
+    """Create the durable source + transcript + EDL project for one Studio upload.
+
+    ``project_id`` 可选：AUTO_EDIT 等需要固定项目身份的调用方传入既值；缺省时
+    维持原行为，随机生成 ``timeline_{12 位 hex}``。
+    """
+    project_id = project_id or f"timeline_{uuid.uuid4().hex[:12]}"
     project_dir = uploads_root / "studio-projects" / project_id
     raw_dir = project_dir / "raw"
     edit_dir = project_dir / "edit"
     source_target = raw_dir / video_path.name
-    _link_original(video_path, source_target)
+    # 全链路唯一的源片物化入口：同盘硬链接（零占用），跨设备才安全复制。
+    materialise_source(video_path, source_target)
 
     media = ffprobe(source_target)
     width, height = int(media.get("width") or 1920), int(media.get("height") or 1080)
@@ -213,19 +235,29 @@ def update_timeline_project(
         end = max(start, min(float(item.get("source_end", 0)), source_duration))
         if end - start < MIN_RANGE_SECONDS:
             continue
-        normalized.append(
-            {
-                "id": f"t001-r{index + 1:04d}",
-                "source": "A001",
-                "source_start": round(start, 3),
-                "source_end": round(end, 3),
-                "record_start": round(record_start, 3),
-                "track": 1,
-                "beat": str(item.get("beat", "SELECTED")),
-                "quote": str(item.get("quote", "")),
-                "reason": str(item.get("reason", "在可视化时间线中保存。")),
-            }
-        )
+        # Optional non-destructive frame transform per timeline range (stored
+        # verbatim inside the EDL so project.json reloads it after refresh).
+        # An absent or null transform clears any previously stored value.
+        transform_payload: dict[str, Any] | None = None
+        if item.get("transform") is not None:
+            try:
+                transform_payload = parse_transform(item.get("transform")).to_payload()
+            except TransformValidationError as exc:
+                raise TransformValidationError(f"时间线片段 {index + 1} 的 transform 非法: {exc}") from exc
+        entry = {
+            "id": f"t001-r{index + 1:04d}",
+            "source": "A001",
+            "source_start": round(start, 3),
+            "source_end": round(end, 3),
+            "record_start": round(record_start, 3),
+            "track": 1,
+            "beat": str(item.get("beat", "SELECTED")),
+            "quote": str(item.get("quote", "")),
+            "reason": str(item.get("reason", "在可视化时间线中保存。")),
+        }
+        if transform_payload is not None:
+            entry["transform"] = transform_payload
+        normalized.append(entry)
         record_start += end - start
     if not normalized:
         raise ValueError("At least one timeline segment of 0.8 seconds is required")

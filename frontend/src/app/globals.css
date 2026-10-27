@@ -46,6 +46,10 @@
 }
 
 :root {
+  /* Keep the workbench available when external font hosts are unreachable. */
+  --font-geist-sans: Arial, "Microsoft YaHei", sans-serif;
+  --font-geist-mono: Consolas, "Courier New", monospace;
+  --font-syne: Arial, "Microsoft YaHei", sans-serif;
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.147 0.004 49.25);

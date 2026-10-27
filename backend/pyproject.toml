@@ -24,6 +24,8 @@ dependencies = [
     "srt-equalizer>=0.1.10",
     "assemblyai>=0.35.0",
     "srt>=3.5.3",
+    # 中文转写繁→简规整（src/zh_text_normalizer.py，离线确定性，纯 Python）。
+    "opencc-python-reimplemented>=0.1.7",
     "mediapipe>=0.10.0",
     "numpy>=1.24.0",
     "aiofiles>=23.2.0",

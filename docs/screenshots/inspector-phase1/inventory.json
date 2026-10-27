@@ -1,0 +1,418 @@
+{
+  "inventory": {
+    "transcript": {
+      "text": "转写\n字幕\n封面与画面\n音频\n效果设置\n\n原始 ASR 不会被覆盖：原始稿与纠错稿只读，所有修改以修订（revision）叠加，可随时回滚。\n\n原始稿\n纠错稿\n有效稿\n修订 v0\n修订历史（0）\n\n正在读取转写修订…",
+      "testids": [
+        "inspector-tab-transcript",
+        "inspector-tab-subtitle",
+        "inspector-tab-cover",
+        "inspector-tab-audio",
+        "inspector-tab-effects",
+        "inspector-transcript-tab",
+        "inspector-asr-notice",
+        "inspector-variant-raw",
+        "inspector-variant-corrected",
+        "inspector-variant-effective",
+        "inspector-transcript-revision",
+        "inspector-hit-count",
+        "inspector-toggle-history"
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "label": "搜索转写内容",
+          "value": ""
+        }
+      ]
+    },
+    "subtitle": {
+      "text": "转写\n字幕\n封面与画面\n音频\n效果设置\n\n字幕版本已保存（预览用）；烧录进导出成片属 Phase 2\n\n字幕版本用于预览与版本追溯；烧录进导出成片属 Phase 2\n\n字幕端点未返回配置，已用当前 clip 配置投影回退（保存仍写入合同路径）。\n\n已保存 rev-0\n保存字幕版本\n样式\n预览用\n字号\npx（1080×1920 坐标系）\n字体\n默认字体（video-brain）\nNoto Sans CJK SC\nSource Han Sans SC\nMicrosoft YaHei\nPingFang SC\nSimHei\n字色\n#FFFFFF\n描边\n4px\n背景\n关\n位置\nx% / y%\n逐词高亮\nPhase 2 导出里按 cue 时长均分逐词卡拉OK\n每行字数\n字幕条目（5）\n—\n—\n—\n—\n—\nASS / SRT 版本\n最新 rev-0\n\n还没有生成过字幕版本（点「保存字幕版本」会写出 rev-1 的 .ass/.srt）。\n\n字幕版本已保存（预览用）；烧录进导出成片属 Phase 2",
+      "testids": [
+        "inspector-tab-transcript",
+        "inspector-tab-subtitle",
+        "inspector-tab-cover",
+        "inspector-tab-audio",
+        "inspector-tab-effects",
+        "inspector-subtitle-tab",
+        "inspector-subtitle-phase2",
+        "inspector-subtitle-revision",
+        "inspector-subtitle-save",
+        "inspector-cue-seg-001",
+        "inspector-cue-seg-002",
+        "inspector-cue-seg-003",
+        "inspector-cue-seg-004",
+        "inspector-cue-seg-005",
+        "inspector-subtitle-latest"
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "字幕字号",
+          "value": "62"
+        },
+        {
+          "tag": "SELECT",
+          "type": "select-one",
+          "label": "字幕字体",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "color",
+          "label": "字幕字色",
+          "value": "#ffffff"
+        },
+        {
+          "tag": "INPUT",
+          "type": "color",
+          "label": "字幕描边颜色",
+          "value": "#101010"
+        },
+        {
+          "tag": "INPUT",
+          "type": "range",
+          "label": "字幕描边宽度",
+          "value": "4"
+        },
+        {
+          "tag": "INPUT",
+          "type": "color",
+          "label": "字幕背景颜色",
+          "value": "#000000"
+        },
+        {
+          "tag": "INPUT",
+          "type": "range",
+          "label": "字幕背景透明度",
+          "value": "0.5"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "字幕横向位置",
+          "value": "50"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "字幕纵向位置",
+          "value": "78.125"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "每行最大字数",
+          "value": "18"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "开始时间 seg-001",
+          "value": "0.8"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "结束时间 seg-001",
+          "value": "4.62"
+        },
+        {
+          "tag": "TEXTAREA",
+          "type": "textarea",
+          "label": "字幕文本 seg-001",
+          "value": "大家好今天我们聊一聊高血压的三大物区"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "开始时间 seg-002",
+          "value": "5.32"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "结束时间 seg-002",
+          "value": "9.88"
+        },
+        {
+          "tag": "TEXTAREA",
+          "type": "textarea",
+          "label": "字幕文本 seg-002",
+          "value": "第一个物区很多人认为将压要汇成引布感长气吃"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "开始时间 seg-003",
+          "value": "10.72"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "结束时间 seg-003",
+          "value": "14.36"
+        },
+        {
+          "tag": "TEXTAREA",
+          "type": "textarea",
+          "label": "字幕文本 seg-003",
+          "value": "其实高血压是需要长气管理的慢性病"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "开始时间 seg-004",
+          "value": "14.88"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "结束时间 seg-004",
+          "value": "19.06"
+        },
+        {
+          "tag": "TEXTAREA",
+          "type": "textarea",
+          "label": "字幕文本 seg-004",
+          "value": "一般间一把血压控制在140比90毫米拱柱以下"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "开始时间 seg-005",
+          "value": "19.62"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "结束时间 seg-005",
+          "value": "23.24"
+        },
+        {
+          "tag": "TEXTAREA",
+          "type": "textarea",
+          "label": "字幕文本 seg-005",
+          "value": "高位患者可能需要将到130比80以下"
+        }
+      ]
+    },
+    "cover": {
+      "text": "转写\n字幕\n封面与画面\n音频\n效果设置\n封面\n封面版本 v1\n当前封面：v1\n原始成片封面\ncover_asset_id：cover-clip-fa7c20-01-v1\n标题\n编辑标题\n重新制作封面\n查看历史版本\n设为当前封面\n沿用来源\n剪辑成片 01\n剪辑成片 02\n\n画面设置已写入片段（预览与刷新恢复同源）；按配置真渲染属 Phase 2。\n\n画面\n导出仍按流水线 9:16（Phase 2 支持其他比例）\n预览比例\n9:16\n1:1\n16:9\n原始比例\n适合画布\n\n9:16 / 1:1 / 16:9 / 原始比例：只改预览框形状；导出仍按流水线 9:16（Phase 2 支持其他比例）\n\n旋转\n本版本恒为 0°（写入其他角度不符合 ClipTransform 契约）\n重置变换\n裁切/重构图\n剪辑成片 01\n片段缩放\n100%\n原画\n铺满画布\n重置\n适合画布\n适配\n填充\n适应\n模糊\n纯色\n比例\n查看比例\n100%\n没有改动\n取消\n应用\n\n片段设置点「应用」后写入并影响导出；查看比例只影响预览。\n\n裁切 / 缩放 / 位置 / 旋转在预览画布上直接拖拽或用滚轮；「应用」才写 config（取消不写）。",
+      "testids": [
+        "inspector-tab-transcript",
+        "inspector-tab-subtitle",
+        "inspector-tab-cover",
+        "inspector-tab-audio",
+        "inspector-tab-effects",
+        "inspector-cover-picture-tab",
+        "inspector-cover-revision",
+        "inspector-cover-preview",
+        "inspector-cover-asset",
+        "inspector-cover-edit-title",
+        "inspector-cover-regenerate",
+        "inspector-cover-history",
+        "inspector-cover-adopt",
+        "inspector-aspect-tooltip",
+        "inspector-aspect-9-16",
+        "inspector-aspect-1-1",
+        "inspector-aspect-16-9",
+        "inspector-aspect-source",
+        "inspector-aspect-canvas",
+        "inspector-rotation",
+        "inspector-transform-reset"
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "label": "成片标题",
+          "value": "血压管理·医疗科普"
+        },
+        {
+          "tag": "SELECT",
+          "type": "select-one",
+          "label": "沿用封面来源",
+          "value": "clip-fa7c20-01"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "label": "旋转角度",
+          "value": "0°"
+        },
+        {
+          "tag": "INPUT",
+          "type": "range",
+          "label": "片段缩放",
+          "value": "100"
+        },
+        {
+          "tag": "INPUT",
+          "type": "range",
+          "label": "查看比例",
+          "value": "100"
+        }
+      ]
+    },
+    "audio": {
+      "text": "转写\n字幕\n封面与画面\n音频\n效果设置\n\nBGM 混音、淡入淡出只在 Phase 2 的导出成片里生效；本阶段保存的是可追溯的配置与版本。\n\n原声\n原声音量\n100%\n静音原声\nBGM\n\n还没有 BGM：当前只显示原声轨（不显示空的素材类别）。上传后才会出现 BGM 轨与波形。\n\n选择文件\nBGM 音量\n100%\n淡入\n秒\n淡出\n秒\n上传 BGM\n音频轨预览\n原声 · 100%",
+      "testids": [
+        "inspector-tab-transcript",
+        "inspector-tab-subtitle",
+        "inspector-tab-cover",
+        "inspector-tab-audio",
+        "inspector-tab-effects",
+        "inspector-audio-tab",
+        "inspector-audio-phase2",
+        "inspector-voice-volume-value",
+        "inspector-bgm-empty",
+        "inspector-bgm-upload",
+        "inspector-audio-waveform",
+        "inspector-waveform-voice-row",
+        "inspector-waveform-voice"
+      ],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "type": "range",
+          "label": "原声音量",
+          "value": "1"
+        },
+        {
+          "tag": "INPUT",
+          "type": "file",
+          "label": "BGM 文件",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "range",
+          "label": "BGM 音量",
+          "value": "1"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "BGM 淡入秒数",
+          "value": "0"
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "BGM 淡出秒数",
+          "value": "0"
+        }
+      ]
+    },
+    "effects": {
+      "text": "转写\n字幕\n封面与画面\n音频\n效果设置\n\n滤镜、转场、片尾卡只在 Phase 2 的导出成片里生效；本阶段保存的是可追溯的配置与版本。\n\n贴纸 / 片尾\n医生身份标识\n标识位置\n左\n右\n底部\n底部（右）\n片尾卡\n片尾文案\n片尾时长\n秒\n滤镜 / 转场\n滤镜\n无\n暖色\n冷色\n黑白\n强度\n0%\n转场\n无\n淡入淡出\n导出分辨率\n9:16 · 1080×1920\n1:1 · 1080×1080\n16:9 · 1920×1080\nPhase 2 生效\n\n滤镜、转场、片尾卡与导出分辨率都写进可追溯的 render_config；真正进导出成片要等 Phase 2 的渲染流程。\n\n导出前 render_config 摘要\nPhase 2\ntitle\n血压管理·医疗科普\n用户修改\nsubtitle_config.font_size_px\n62\nskill 默认\nsubtitle_config.font_family\nskill 默认\nsubtitle_config.text_color\n#FFFFFF\nskill 默认\nsubtitle_config.outline_color\n#101010\nskill 默认\nsubtitle_config.outline_width\n4\nskill 默认\nsubtitle_config.background.enabled\n关\nskill 默认\nsubtitle_config.background.color\n#000000\nskill 默认\nsubtitle_config.background.opacity\n0.5\nskill 默认\nsubtitle_config.position.x_pct\n50\nskill 默认\nsubtitle_config.position.y_pct\n78.125\nskill 默认\nsubtitle_config.word_highlight\n关\nskill 默认\nsubtitle_config.max_chars_per_line\n18\nskill 默认\nsubtitle_overrides\n无\nskill 默认\ntransform\n—\nskill 默认\naudio_tracks\n无\nskill 默认\nvoice_volume\n1\nskill 默认\nmuted\n关\nskill 默认\neffects.sticker.enabled\n关\nskill 默认\neffects.sticker.position\nleft\nskill 默认\neffects.end_card.enabled\n关\nskill 默认\neffects.end_card.text\nskill 默认\neffects.end_card.duration_s\n3\nskill 默认\neffects.filter.name\nnone\nskill 默认\neffects.filter.strength\n0\nskill 默认\neffects.transition.enabled\n关\nskill 默认\neffects.transition.type\nnone\nskill 默认\neffects.export_resolution\n1080x1920\nskill 默认\n\n导出分辨率：1080x1920 · 本阶段不渲染\n\n导出侧（外部 ASS 烧录 / B",
+      "testids": [
+        "inspector-tab-transcript",
+        "inspector-tab-subtitle",
+        "inspector-tab-cover",
+        "inspector-tab-audio",
+        "inspector-tab-effects",
+        "inspector-effects-tab",
+        "inspector-effects-phase2",
+        "inspector-resolution-phase2",
+        "inspector-render-config",
+        "inspector-phase2-resolution",
+        "inspector-source-title",
+        "inspector-source-subtitle_config.font_size_px",
+        "inspector-source-subtitle_config.font_family",
+        "inspector-source-subtitle_config.text_color",
+        "inspector-source-subtitle_config.outline_color",
+        "inspector-source-subtitle_config.outline_width",
+        "inspector-source-subtitle_config.background.enabled",
+        "inspector-source-subtitle_config.background.color",
+        "inspector-source-subtitle_config.background.opacity",
+        "inspector-source-subtitle_config.position.x_pct",
+        "inspector-source-subtitle_config.position.y_pct",
+        "inspector-source-subtitle_config.word_highlight",
+        "inspector-source-subtitle_config.max_chars_per_line",
+        "inspector-source-subtitle_overrides",
+        "inspector-source-transform",
+        "inspector-source-audio_tracks",
+        "inspector-source-voice_volume",
+        "inspector-source-muted",
+        "inspector-source-effects.sticker.enabled",
+        "inspector-source-effects.sticker.position",
+        "inspector-source-effects.end_card.enabled",
+        "inspector-source-effects.end_card.text",
+        "inspector-source-effects.end_card.duration_s",
+        "inspector-source-effects.filter.name",
+        "inspector-source-effects.filter.strength",
+        "inspector-source-effects.transition.enabled",
+        "inspector-source-effects.transition.type",
+        "inspector-source-effects.export_resolution",
+        "inspector-render-config-export"
+      ],
+      "inputs": [
+        {
+          "tag": "SELECT",
+          "type": "select-one",
+          "label": "标识位置",
+          "value": "left"
+        },
+        {
+          "tag": "INPUT",
+          "type": "text",
+          "label": "片尾文案",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "type": "number",
+          "label": "片尾时长",
+          "value": "3"
+        },
+        {
+          "tag": "SELECT",
+          "type": "select-one",
+          "label": "滤镜",
+          "value": "none"
+        },
+        {
+          "tag": "INPUT",
+          "type": "range",
+          "label": "滤镜强度",
+          "value": "0"
+        },
+        {
+          "tag": "SELECT",
+          "type": "select-one",
+          "label": "转场类型",
+          "value": "none"
+        },
+        {
+          "tag": "SELECT",
+          "type": "select-one",
+          "label": "导出分辨率",
+          "value": "1080x1920"
+        }
+      ]
+    }
+  },
+  "net": [
+    "GET /studio/projects/timeline_790a6b0c9d87/clips ",
+    "GET /studio/auto-edit/autoedit_860fe6a3b5e2/artifact?path=output%2Fautoedit_860fe6a3b5e2%2Fclip-fa7c20-01%2Fcover.jpg&v=0 ",
+    "GET /studio/auto-edit/autoedit_860fe6a3b5e2/artifact?path=output%2Fautoedit_860fe6a3b5e2%2Fclip-fa7c20-02%2Fcover.jpg&v=0 ",
+    "GET /studio/auto-edit/autoedit_860fe6a3b5e2/clips/clip-fa7c20-01/cover ",
+    "GET /studio/auto-edit/autoedit_860fe6a3b5e2/covers ",
+    "GET /studio/clips/timeline_790a6b0c9d87/clip-fa7c20-01/transcript/revisions?view=effective ",
+    "GET /studio/clips/timeline_790a6b0c9d87/clip-fa7c20-01/config ",
+    "GET /studio/clips/timeline_790a6b0c9d87/clip-fa7c20-01/subtitles ",
+    "GET /studio/clips/timeline_790a6b0c9d87/clip-fa7c20-01/render-config ",
+    "GET /studio/clips/timeline_790a6b0c9d87/clip-fa7c20-01/transcript/revisions?view=effective ",
+    "GET /studio/auto-edit/autoedit_860fe6a3b5e2/artifact?path=output%2Fautoedit_860fe6a3b5e2%2Fclip-fa7c20-01%2Fcover.jpg&v=1 ",
+    "GET /studio/auto-edit/autoedit_860fe6a3b5e2/artifact?path=output%2Fautoedit_860fe6a3b5e2%2Fclip-fa7c20-02%2Fcover.jpg&v=1 ",
+    "GET /studio/auto-edit/autoedit_860fe6a3b5e2/artifact?path=output%2Fautoedit_860fe6a3b5e2%2Fclip-fa7c20-01%2Fclip_final.mp4 ",
+    "GET /studio/clips/timeline_790a6b0c9d87/clip-fa7c20-01/transcript/revisions?view=effective ",
+    "GET /studio/clips/timeline_790a6b0c9d87/clip-fa7c20-01/transcript/revisions?view=effective ",
+    "GET /studio/clips/timeline_790a6b0c9d87/clip-fa7c20-01/transcript/revisions?view=effective ",
+    "GET /studio/clips/timeline_790a6b0c9d87/clip-fa7c20-01/transcript/revisions?view=effective ",
+    "GET /studio/clips/timeline_790a6b0c9d87/clip-fa7c20-01/transcript/revisions?view=effective "
+  ]
+}

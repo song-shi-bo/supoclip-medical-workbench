@@ -1,5 +1,9 @@
 # Repository Guidelines
 
+## DSH Runtime (3445)
+
+Read [DSH_STARTUP.md](DSH_STARTUP.md) first when working in this DSH workspace. It records the actual ports, personal tool paths, service checks, and screenshot output directories. Docker commands below apply to a separate Docker-capable development host; they are not the startup path inside the member container.
+
 ## Project Structure & Module Organization
 This repository is a monorepo with three apps:
 - `backend/`: FastAPI + async worker code (`src/api`, `src/services`, `src/repositories`, `src/workers`).
@@ -18,7 +22,7 @@ Local app commands:
 - `cd frontend && npm run dev` (or `waitlist`): run Next.js in dev mode.
 - `cd frontend && npm run build && npm run start`: production build + serve.
 - `cd frontend && npm run lint` (same in `waitlist`): run ESLint.
-- `cd backend && uv sync && uvicorn src.main:app --reload --host 0.0.0.0 --port 8000`: run API locally.
+- `cd backend && uv sync && uvicorn src.main_refactored:app --reload --host 0.0.0.0 --port 8000`: run API locally after its dependencies are available.
 - `cd backend && .venv/bin/arq src.workers.tasks.WorkerSettings`: run the worker.
 
 ## Coding Style & Naming Conventions
@@ -28,7 +32,7 @@ Local app commands:
 - Imports: use the `@/*` alias in Next.js apps when possible.
 
 ## Testing Guidelines
-There is no mature automated test suite yet. Treat linting plus manual verification as the current baseline:
+The repository has backend pytest, frontend Vitest, and Playwright suites. Check the current package scripts, backend README, and dependency requirements before running the relevant suite:
 - Run `npm run lint` in both Next.js apps.
 - Smoke test core flows with `docker-compose` (create task, process clips, view task page).
 

@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>样板图 · 切片操作与增删改查按钮布局</title>
+<style>
+  /* 色板取自 studio.css 现有变量，保证样板与真实页面观感一致 */
+  :root {
+    --bg: #101518; --bar: #151b1e; --panel: #171e22; --panel-2: #1c2429;
+    --line: #2b353a; --line-soft: #222b30; --text: #eef3f1; --muted: #96a1a4;
+    --cyan: #20cdd0; --orange: #f17c38; --red: #ff6b6b; --red-dim: #3a1d1d;
+    --green: #27cf95;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  button { font: inherit; cursor: pointer; border: 0; background: transparent; color: var(--text); }
+
+  .frame { display: flex; flex-direction: column; height: 100vh; min-width: 1200px; }
+
+  /* ===== 顶栏 ===== */
+  .topbar { display: flex; align-items: center; gap: 14px; height: 52px; padding: 0 16px;
+    background: var(--bar); border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+  .topbar .title { font-weight: 600; margin-right: auto; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px;
+    border-radius: 6px; background: var(--panel-2); border: 1px solid var(--line); font-size: 13px; }
+  .btn.primary { background: var(--cyan); border-color: var(--cyan); color: #062a2c; font-weight: 600; }
+  .btn.danger-ghost { color: #d9a0a0; }
+  .btn.danger-ghost:hover { color: var(--red); border-color: #6d2b2b; }
+  .btn.icon { width: 34px; padding: 0; justify-content: center; }
+  .tag-new { display: inline-block; margin-left: 4px; padding: 0 4px; border-radius: 3px;
+    background: var(--orange); color: #20130a; font-size: 10px; font-weight: 700; vertical-align: 2px; }
+
+  /* ===== 三栏 ===== */
+  .main { flex: 1; display: grid; grid-template-columns: 250px 1fr 330px; gap: 10px; padding: 10px; min-height: 0; }
+  .col { background: var(--panel); border: 1px solid var(--line-soft); border-radius: 8px;
+    display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .col h3 { font-size: 12px; color: var(--muted); font-weight: 600; padding: 10px 12px 6px; letter-spacing: .05em; }
+  .col .scroll { flex: 1; overflow-y: auto; padding: 0 12px 12px; }
+
+  /* ===== 左栏：素材卡 ===== */
+  .src-card { position: relative; border: 1px solid var(--line-soft); border-radius: 8px;
+    background: var(--panel-2); padding: 10px; margin-bottom: 10px; }
+  .src-thumb { height: 64px; border-radius: 5px; background: linear-gradient(135deg, #1e3a40, #14262b);
+    display: grid; place-items: center; color: var(--muted); font-size: 22px; margin-bottom: 8px; }
+  .src-card b { font-size: 13px; display: block; }
+  .src-card .meta { color: var(--muted); font-size: 12px; }
+  .hover-row { display: flex; gap: 6px; margin-top: 8px; }
+  .hover-row .btn { height: 26px; padding: 0 8px; font-size: 12px; }
+  .btn.danger-solid { background: var(--red-dim); border-color: #6d2b2b; color: #ffb3b3; }
+
+  .clip-card { position: relative; border: 1px solid var(--line-soft); border-radius: 8px;
+    background: var(--panel-2); margin-bottom: 10px; overflow: hidden; }
+  .clip-card.active { border-color: var(--cyan); }
+  .clip-thumb { height: 72px; background: linear-gradient(135deg, #24303a, #161f26);
+    display: grid; place-items: center; color: #4d6470; font-size: 26px; position: relative; }
+  .clip-thumb .v-badge { position: absolute; top: 6px; right: 6px; background: rgba(6,10,12,.8);
+    border: 1px solid var(--line); border-radius: 4px; font-size: 11px; padding: 0 5px; color: var(--cyan); }
+  .clip-thumb .cover-del { position: absolute; top: 6px; left: 6px; background: rgba(6,10,12,.8);
+    border: 1px solid #6d2b2b; border-radius: 4px; font-size: 11px; padding: 1px 6px; color: #ffb3b3; display: none; }
+  .clip-card:hover .cover-del { display: block; }
+  .clip-body { padding: 8px 10px; }
+  .clip-body b { font-size: 13px; }
+  .clip-body .meta { color: var(--muted); font-size: 12px; display: flex; justify-content: space-between; }
+  .ok { color: var(--green); }
+  .clip-actions { display: flex; gap: 6px; padding: 0 10px 10px; }
+  .clip-actions .btn { height: 26px; padding: 0 8px; font-size: 12px; flex: 1; justify-content: center; }
+  .regen-all { width: 100%; margin-top: 4px; }
+
+  /* ===== 中栏：播放器 + 时间线 ===== */
+  .player { margin: 12px; border-radius: 8px; background: #0b0f11; border: 1px solid var(--line-soft);
+    height: 46%; display: grid; place-items: center; color: #3c4f58; font-size: 15px; }
+  .tl { margin: 0 12px 12px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-2); padding: 10px; }
+  .tl h4 { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .track { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .track label { width: 44px; color: var(--muted); font-size: 12px; flex: 0 0 auto; }
+  .track .lane { flex: 1; height: 26px; border-radius: 4px; background: #131a1e; position: relative; overflow: hidden; }
+  .lane .seg { position: absolute; top: 3px; bottom: 3px; border-radius: 3px; background: #24505c; }
+  .lane .seg.sub { background: #234a35; }
+  .lane .wave { position: absolute; inset: 3px; background: repeating-linear-gradient(90deg, #1d3a2c 0 2px, transparent 2px 5px); }
+
+  /* ===== 右栏 ===== */
+  .tabs { display: flex; gap: 2px; padding: 8px 12px 0; }
+  .tabs button { padding: 6px 14px; border-radius: 6px 6px 0 0; color: var(--muted); font-size: 13px; }
+  .tabs button.on { background: var(--panel-2); color: var(--text); }
+  .zone { border: 1px solid var(--line-soft); border-radius: 8px; background: var(--panel-2);
+    padding: 12px; margin-bottom: 12px; }
+  .zone h4 { font-size: 13px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .zone h4 .ver { color: var(--cyan); font-weight: 600; }
+  .cover-preview { height: 120px; border-radius: 6px; border: 1px dashed var(--line);
+    display: grid; place-items: center; color: #44575f; margin-bottom: 10px; }
+  .row { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .row .btn { flex: 1; justify-content: center; white-space: nowrap; }
+  input[type=text] { width: 100%; height: 30px; border-radius: 5px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); padding: 0 8px; font: inherit; }
+  select { height: 30px; border-radius: 5px; border: 1px solid var(--line); background: var(--panel); color: var(--text); flex: 1; }
+  .field { margin-bottom: 8px; }
+  .field span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+
+  /* ===== 确认卡示例 ===== */
+  .mask { position: fixed; inset: 0; background: rgba(6,9,10,.66); display: grid; place-items: center; z-index: 50; }
+  .dialog { width: 430px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+  .dialog h4 { color: #ff8b8b; display: flex; gap: 8px; align-items: center; margin-bottom: 10px; font-size: 14px; }
+  .dialog p { color: #cfd8d6; font-size: 13px; margin-bottom: 8px; }
+  .dialog p b { color: var(--text); }
+  .dialog .warn { color: var(--orange); }
+  .dialog .acts { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+  .dialog .acts .btn { height: 32px; padding: 0 16px; }
+  .dialog .acts .danger { background: var(--red-dim); border-color: #6d2b2b; color: #ffb3b3; }
+  .hint { position: fixed; left: 12px; bottom: 12px; z-index: 60; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 14px; color: var(--muted); font-size: 12px; }
+  .hint b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <!-- 顶栏：新增「清空任务数据」 -->
+  <div class="topbar">
+    <button class="btn icon">☰</button>
+    <span class="title">AI 视频剪辑工作台</span>
+    <span style="color:var(--muted)">已保存</span>
+    <button class="btn">✂ 开始自动剪辑</button>
+    <button class="btn">⬆ 导出成片</button>
+    <button class="btn danger-ghost">🗑 清空任务数据<span class="tag-new">新</span></button>
+    <button class="btn icon">⚙</button>
+  </div>
+
+  <div class="main">
+    <!-- 左栏 -->
+    <div class="col">
+      <h3>项目素材</h3>
+      <div class="scroll">
+        <div class="src-card">
+          <div class="src-thumb">🎬</div>
+          <b>血压管理专题讲座</b>
+          <div class="meta">62:33 · 1.2 GB · 已转写</div>
+          <div class="hover-row">
+            <button class="btn">▶ 播放</button>
+            <button class="btn danger-solid">🗑 删除源片<span class="tag-new">新</span></button>
+          </div>
+          <div style="color:var(--muted);font-size:11px;margin-top:6px">删除时可选：仅删源片（保留切片）/ 连切片全部删除</div>
+        </div>
+
+        <h3 style="padding-left:0">剪辑成片（4）</h3>
+
+        <div class="clip-card active">
+          <div class="clip-thumb">🖼
+            <span class="v-badge">v3 ●当前</span>
+            <button class="cover-del">🗑 删除封面<span class="tag-new">新</span></button>
+          </div>
+          <div class="clip-body">
+            <b>切片01 · 血压监测的正确方法</b>
+            <div class="meta"><span>00:38</span><span class="ok">✅ 可用</span></div>
+          </div>
+          <div class="clip-actions">
+            <button class="btn">▶ 预览</button>
+            <button class="btn danger-solid">🗑 删除切片<span class="tag-new">新</span></button>
+          </div>
+        </div>
+
+        <div class="clip-card">
+          <div class="clip-thumb">🖼<span class="v-badge">v1</span></div>
+          <div class="clip-body">
+            <b>切片02 · 停药误区</b>
+            <div class="meta"><span>00:31</span><span class="ok">✅ 可用</span></div>
+          </div>
+          <div class="clip-actions">
+            <button class="btn">▶ 预览</button>
+            <button class="btn danger-solid">🗑 删除切片<span class="tag-new">新</span></button>
+          </div>
+        </div>
+
+        <button class="btn regen-all">🔄 重新生成全部切片<span class="tag-new">新</span></button>
+        <div style="color:var(--muted);font-size:11px;margin-top:6px">清除当前 4 张切片并重新选片渲染；可选保留旧切片到历史</div>
+      </div>
+    </div>
+
+    <!-- 中栏 -->
+    <div class="col">
+      <div class="player">视 频 预 览（选中切片01）</div>
+      <div class="tl">
+        <h4>时间线 · 切片01</h4>
+        <div class="track"><label>视频1</label><div class="lane"><div class="seg" style="left:2%;width:96%"></div></div></div>
+        <div class="track"><label>音频</label><div class="lane"><div class="wave"></div></div></div>
+        <div class="track"><label>字幕</label><div class="lane"><div class="seg sub" style="left:2%;width:30%"></div><div class="seg sub" style="left:36%;width:28%"></div><div class="seg sub" style="left:68%;width:30%"></div></div></div>
+      </div>
+    </div>
+
+    <!-- 右栏 -->
+    <div class="col">
+      <div class="tabs"><button class="on">封面</button><button>转写</button><button>效果</button></div>
+      <div class="scroll" style="padding-top:10px">
+
+        <div class="zone">
+          <h4>封面 · 切片01 <span class="ver">当前 v3</span> <button class="btn" style="margin-left:auto;height:26px;font-size:12px">🕘 历史 (3)</button></h4>
+          <div class="cover-preview">封面预览图</div>
+          <div class="row">
+            <button class="btn">🔄 重做封面</button>
+            <button class="btn">✅ 保留当前</button>
+            <button class="btn danger-solid">🗑 删除封面<span class="tag-new">新</span></button>
+          </div>
+          <div class="field"><span>底部钩子文案（两行）</span><input type="text" value="高血压不药而愈？医生揭秘"></div>
+          <div class="field"><span>风格</span><select><option>第二版 · 真实帧</option><option>第三版 · 大字</option></select></div>
+        </div>
+
+        <div class="zone">
+          <h4>切片操作 · 切片01</h4>
+          <div class="row">
+            <button class="btn">▶ 重跑本切片<span class="tag-new">新</span></button>
+            <button class="btn">✂ 重选片段<span class="tag-new">新</span></button>
+          </div>
+          <div class="row">
+            <button class="btn">🖼 重置画面</button>
+            <button class="btn">重做字幕</button>
+            <button class="btn danger-ghost">删除字幕</button>
+          </div>
+          <div class="row">
+            <button class="btn">⬆ 导出本切片</button>
+            <button class="btn danger-solid">🗑 删除切片<span class="tag-new">新</span></button>
+          </div>
+          <div style="color:var(--muted);font-size:11px">重跑 = 同窗口无条件重渲；重选 = 回到内容重新选片</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 确认卡示例：删除切片 -->
+<div class="mask">
+  <div class="dialog">
+    <h4>🗑 删除切片</h4>
+    <p>将删除 <b>切片01 · 血压监测的正确方法</b> 及其全部产物（成片、封面历史、字幕）。</p>
+    <p>源片与已完成的转写<b>保留</b>；其他 3 张切片<b>不受影响</b>。</p>
+    <p class="warn">删除不可撤销。如只想回到旧版本，请用「历史 → 设为当前」。</p>
+    <div class="acts">
+      <button class="btn">取消</button>
+      <button class="btn danger">确认删除</button>
+    </div>
+  </div>
+</div>
+
+<div class="hint">
+  <b>样板图说明</b>：红色系按钮 = 需二次确认；「新」角标 = 本次新增；v 徽标 = revision 版本链（点开历史抽屉可设为当前）。此页为静态设计稿，未接后端。
+</div>
+
+</body>
+</html>

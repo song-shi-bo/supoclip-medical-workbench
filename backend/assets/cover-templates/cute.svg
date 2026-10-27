@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="270" height="480" viewBox="0 0 270 480" role="img" aria-label="可爱版示例">
+  <rect width="270" height="480" fill="#fff1f4"/>
+  <circle cx="36" cy="60" r="46" fill="#ffd6e0" opacity="0.8"/>
+  <circle cx="240" cy="420" r="58" fill="#ffe4ec" opacity="0.9"/>
+  <rect x="24" y="120" width="222" height="150" rx="26" fill="#ffffff" stroke="#ff9eb5" stroke-width="4"/>
+  <text x="135" y="185" text-anchor="middle" font-family="sans-serif" font-weight="700" font-size="40" fill="#ff6b8f">可爱标题</text>
+  <text x="135" y="235" text-anchor="middle" font-family="sans-serif" font-size="20" fill="#ff8fab">软软的副标题</text>
+  <path d="M60 310 q10 -18 24 0 q-12 16 -24 0z" fill="#ff9eb5"/>
+  <path d="M200 320 q10 -18 24 0 q-12 16 -24 0z" fill="#ffb3c6"/>
+  <text x="135" y="392" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#c4909e">示例示意 · 非真实封面</text>
+</svg>

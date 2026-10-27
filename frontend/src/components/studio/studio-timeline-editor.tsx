@@ -51,10 +51,10 @@ function Waveform({ file, currentTime, duration }: { file: File; currentTime: nu
       if (!canvas) return;
       const context = canvas.getContext("2d");
       if (!context) return;
+      if (file.size > 32 * 1024 * 1024 || duration > 300) return;
+      const audioContext = new AudioContext();
       try {
-        const audioContext = new AudioContext();
         const decoded = await audioContext.decodeAudioData(await file.arrayBuffer());
-        await audioContext.close();
         if (cancelled) return;
         const channel = decoded.getChannelData(0);
         const buckets = Math.min(520, Math.max(64, Math.floor(canvas.clientWidth || 520)));
@@ -80,11 +80,11 @@ function Waveform({ file, currentTime, duration }: { file: File; currentTime: nu
         }
       } catch {
         // Some uploaded codecs are not decodable by Web Audio. Playback still works.
-      }
+      } finally { await audioContext.close(); }
     };
     void draw();
     return () => { cancelled = true; };
-  }, [file]);
+  }, [file, duration]);
 
   const playhead = duration > 0 ? `${Math.min(100, (currentTime / duration) * 100)}%` : "0%";
   return <div className="timeline-waveform"><canvas ref={canvasRef} /><span style={{ left: playhead }} /></div>;

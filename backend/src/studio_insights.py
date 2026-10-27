@@ -45,6 +45,8 @@ Rules:
 - A golden sentence should normally be no longer than 80 Chinese characters.
 - Return 3 to 8 concise core keywords. Use terms that occur in, or are directly supported by, the transcript.
 - Do not give medical advice or alter diagnoses, dosages, names, or other sensitive facts.
+- Medical red line: never produce individualized diagnosis or treatment advice, and never promise efficacy. When a sentence involves drug names, dosages, diagnoses, efficacy, or high-risk medical terminology, keep its exact source wording and append "（需人工复核）" to its `reason` so a human reviews it before publishing.
+- Privacy red line: never output patient names, medical-history details, contact information, or other personally identifiable content; skip such spans entirely instead of selecting them.
 """
 
 _FILLER = ("大家好", "今天", "然后", "就是", "这个", "那个", "我们", "你们", "谢谢", "好的")

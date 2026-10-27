@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .config import Config, get_config, set_config_override
 from .database import AsyncSessionLocal, close_db, configure_database, get_db, init_db
 from .runtime_settings import load_runtime_settings_cache
+from .studio_access import StudioAuthenticationMiddleware, enforce_studio_access, access_router
 from .workers.job_queue import JobQueue
 from .api.routes import tasks
 from .api.routes.admin import router as admin_router
@@ -68,6 +69,9 @@ def create_app(
 
             await queue_adapter.get_pool()
             logger.info("✅ Job queue initialized")
+            from .studio_access import resume_legacy_quota_watchers
+            from .studio_auto_edit_bridge import TASKS_ROOT
+            resume_legacy_quota_watchers(TASKS_ROOT)
 
             yield
         finally:
@@ -84,6 +88,7 @@ def create_app(
     )
     app.state.queue_adapter = queue_adapter
     app.state.config = runtime_config
+    app.add_middleware(StudioAuthenticationMiddleware)
 
     app.add_middleware(
         CORSMiddleware,
@@ -171,11 +176,16 @@ def create_app(
     from .api.routes.feedback import router as feedback_router
     from .api.routes.billing import router as billing_router
     from .api.routes.api_keys import router as api_keys_router
+    from .api.routes.jobs import router as jobs_router
 
-    app.include_router(media_router)
+    app.include_router(media_router, dependencies=[Depends(enforce_studio_access)])
     app.include_router(feedback_router)
     app.include_router(billing_router)
     app.include_router(api_keys_router)
+    app.include_router(jobs_router, dependencies=[Depends(enforce_studio_access)])
+    from .api.routes.transcripts import router as transcripts_router
+    app.include_router(transcripts_router, dependencies=[Depends(enforce_studio_access)])
+    app.include_router(access_router, dependencies=[Depends(enforce_studio_access)])
 
     @app.get("/")
     def read_root():

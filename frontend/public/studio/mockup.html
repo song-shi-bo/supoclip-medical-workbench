@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>工作台新界面 · 效果图（静态设计稿）</title>
+<style>
+:root{
+  --bg:#101518;--bar:#151b1e;--panel:#171e22;--panel2:#1c2429;--line:#2b353a;--line2:#222b30;
+  --text:#eef3f1;--muted:#96a1a4;--cyan:#20cdd0;--orange:#f17c38;--green:#27cf95;
+  --red:#ff6b6b;--redbg:#3a1d1d;--redline:#6d2b2b;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font:13px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;overflow:hidden}
+button{font:inherit;cursor:pointer;border:0;background:transparent;color:var(--text)}
+input,select{font:inherit}
+.tag{display:inline-block;margin-left:5px;padding:0 4px;border-radius:3px;background:var(--orange);color:#20130a;font-size:10px;font-weight:700;vertical-align:2px}
+
+/* ===== 顶栏 ===== */
+.topbar{display:flex;align-items:center;gap:12px;height:50px;padding:0 14px;background:var(--bar);border-bottom:1px solid var(--line)}
+.topbar .menu{width:34px;height:34px;border-radius:6px;display:grid;place-items:center;font-size:16px}
+.topbar .menu:hover{background:var(--panel2)}
+.topbar .title{font-weight:700;font-size:14px;margin-right:auto}
+.tbtn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);font-size:13px;white-space:nowrap}
+.tbtn:hover{border-color:#3d4a51}
+.tbtn.primary{background:var(--cyan);border-color:var(--cyan);color:#062a2c;font-weight:700}
+.tbtn.ghost-danger{color:#d9a0a0}
+.tbtn.ghost-danger:hover{color:var(--red);border-color:var(--redline)}
+.saved{display:inline-flex;align-items:center;gap:5px;color:#d9e2df;font-size:12px;white-space:nowrap}
+.saved::before{content:"✓";color:var(--green)}
+
+/* ===== 主体四栏 ===== */
+.editor{display:grid;grid-template-columns:252px 1fr 336px 190px;gap:8px;padding:8px;height:calc(100vh - 50px);min-width:1280px}
+.col{background:var(--panel);border:1px solid var(--line2);border-radius:8px;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.col-h{padding:9px 12px 5px;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.04em;display:flex;align-items:center}
+.col-h .cnt{margin-left:auto;color:var(--muted)}
+.scroll{flex:1;overflow-y:auto;padding:0 10px 10px}
+
+/* ===== 左栏 素材 ===== */
+.import{width:calc(100% - 0px);margin:0 0 10px;justify-content:center}
+.src-card{border:1px solid var(--line2);border-radius:8px;background:var(--panel2);padding:9px;margin-bottom:12px}
+.src-thumb{height:58px;border-radius:5px;background:linear-gradient(135deg,#1e3a40,#132429);display:grid;place-items:center;color:#4d6a72;font-size:20px;margin-bottom:7px}
+.src-card b{display:block;font-size:13px}
+.src-card .meta{color:var(--muted);font-size:12px}
+.src-acts{display:flex;gap:6px;margin-top:7px}
+.sbtn{display:inline-flex;align-items:center;justify-content:center;gap:4px;height:26px;padding:0 8px;border-radius:5px;background:#141b1f;border:1px solid var(--line2);font-size:12px}
+.sbtn:hover{border-color:#3d4a51}
+.sbtn.danger{color:#e8a7a7}
+.sbtn.danger:hover{background:var(--redbg);border-color:var(--redline);color:#ffb3b3}
+.clip-card{border:1px solid var(--line2);border-radius:8px;background:var(--panel2);margin-bottom:10px;overflow:hidden;position:relative}
+.clip-card.on{border-color:var(--cyan);box-shadow:0 0 0 1px rgba(32,205,208,.25)}
+.thumb{height:76px;position:relative;display:grid;place-items:center;background:linear-gradient(160deg,#22303c 0%,#131c22 70%)}
+.thumb .topic{position:absolute;top:7px;left:0;right:0;text-align:center;color:#fff;font-size:11px;letter-spacing:.35em;opacity:.85}
+.thumb .hook{position:absolute;bottom:9px;left:8px;right:8px;text-align:center;color:#ffd24d;font-weight:700;font-size:12px;text-shadow:0 1px 0 #000;line-height:1.3}
+.thumb .person{position:absolute;bottom:26px;left:50%;transform:translateX(-50%);width:44px;height:34px;border-radius:44px 44px 0 0;background:linear-gradient(180deg,#31424e,#1b272f)}
+.vb{position:absolute;top:6px;right:6px;background:rgba(5,9,11,.82);border:1px solid var(--line);border-radius:4px;font-size:11px;padding:0 5px;color:var(--cyan)}
+.cvdel{position:absolute;top:6px;left:6px;background:rgba(5,9,11,.82);border:1px solid var(--redline);border-radius:4px;font-size:11px;padding:1px 6px;color:#ffb3b3;display:none}
+.clip-card:hover .cvdel{display:block}
+.cbody{padding:7px 10px 4px}
+.cbody b{font-size:13px}
+.cbody .meta{color:var(--muted);font-size:12px;display:flex;justify-content:space-between}
+.okk{color:var(--green)}
+.cacts{display:flex;gap:6px;padding:5px 10px 9px}
+.cacts .sbtn{flex:1}
+.regen{width:100%;margin-top:2px;color:#ffd9b3}
+.regen:hover{border-color:var(--orange)}
+.small{color:var(--muted);font-size:11px;margin-top:5px;line-height:1.5}
+
+/* ===== 中栏 播放器+时间线 ===== */
+.stage{padding:10px;display:flex;flex-direction:column;gap:8px;min-height:0}
+.player{flex:1;border-radius:8px;background:#0a0e10;border:1px solid var(--line2);position:relative;display:grid;place-items:center;min-height:0}
+.player .ph{color:#38494f;font-size:15px}
+.player .bar{position:absolute;left:10px;right:10px;bottom:8px;display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px}
+.player .bar .line{flex:1;height:4px;border-radius:2px;background:#1a2429;position:relative}
+.player .bar .line i{position:absolute;left:0;top:0;bottom:0;width:36%;background:var(--cyan);border-radius:2px}
+.tl{border:1px solid var(--line2);border-radius:8px;background:var(--panel2);padding:8px 10px}
+.tl-tools{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px;margin-bottom:7px}
+.tl-tools .sbtn{height:24px}
+.track{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.track label{width:42px;color:var(--muted);font-size:12px;flex:0 0 auto;text-align:right}
+.lane{flex:1;height:26px;border-radius:4px;background:#12181c;position:relative;overflow:hidden}
+.lane .seg{position:absolute;top:3px;bottom:3px;border-radius:3px;background:#24505c}
+.lane .seg.hl{outline:1px solid var(--cyan)}
+.lane .sub{position:absolute;top:3px;bottom:3px;border-radius:3px;background:#1f4634;color:#bfe8d4;font-size:10px;line-height:20px;padding-left:6px;overflow:hidden;white-space:nowrap}
+.lane .wave{position:absolute;inset:3px;background:repeating-linear-gradient(90deg,#1c3a2b 0 2px,transparent 2px 5px)}
+
+/* ===== 右栏 Inspector ===== */
+.tabs{display:flex;gap:2px;padding:8px 10px 0}
+.tabs button{padding:6px 14px;border-radius:6px 6px 0 0;color:var(--muted);font-size:13px}
+.tabs button.on{background:var(--panel2);color:var(--text)}
+.zone{border:1px solid var(--line2);border-radius:8px;background:var(--panel2);padding:11px;margin-bottom:10px}
+.zone h4{font-size:13px;display:flex;align-items:center;gap:8px;margin-bottom:9px}
+.zone h4 .ver{color:var(--cyan)}
+.zone h4 .his{margin-left:auto}
+.covprev{height:118px;border-radius:6px;border:1px dashed var(--line);position:relative;background:linear-gradient(160deg,#22303c,#131c22);margin-bottom:9px;overflow:hidden}
+.covprev .topic{position:absolute;top:12px;left:0;right:0;text-align:center;letter-spacing:.4em;color:#fff;opacity:.9;font-size:13px}
+.covprev .person{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);width:70px;height:56px;border-radius:70px 70px 0 0;background:linear-gradient(180deg,#33454f,#1a252d);box-shadow:0 0 0 2px rgba(255,255,255,.75)}
+.covprev .hook{position:absolute;bottom:7px;left:10px;right:10px;text-align:center;color:#ffd24d;font-weight:700;font-size:14px;text-shadow:0 1px 1px #000}
+.row{display:flex;gap:7px;margin-bottom:8px}
+.row .sbtn{flex:1;height:28px}
+.field{margin-bottom:8px}
+.field span{display:block;color:var(--muted);font-size:12px;margin-bottom:4px}
+.field input,.field select{width:100%;height:30px;border-radius:5px;border:1px solid var(--line);background:#12181c;color:var(--text);padding:0 8px}
+.opdesc{color:var(--muted);font-size:11px;margin-top:2px;line-height:1.5}
+.trans-row{display:flex;gap:8px;padding:6px 2px;border-bottom:1px solid var(--line2);font-size:12px}
+.trans-row time{color:var(--muted);flex:0 0 86px}
+.trans-row .who{color:var(--cyan);flex:0 0 34px}
+
+/* ===== 助手栏 ===== */
+.cop .msg{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:8px 9px;font-size:12px;color:#cfd8d6;margin-bottom:8px}
+.cop .msg.me{background:#12282b;border-color:#1d4046}
+.chips{display:flex;flex-direction:column;gap:6px}
+.chip{text-align:left;border:1px solid var(--line2);border-radius:7px;background:#12181c;padding:6px 9px;font-size:12px;color:#c3cdcb}
+.chip:hover{border-color:var(--cyan)}
+.cop-input{display:flex;gap:6px;padding:9px 10px;border-top:1px solid var(--line2)}
+.cop-input input{flex:1;height:30px;border-radius:6px;border:1px solid var(--line);background:#12181c;color:var(--text);padding:0 8px}
+
+/* ===== 确认卡 ===== */
+.mask{position:fixed;inset:0;background:rgba(5,8,10,.68);display:none;place-items:center;z-index:50}
+.mask.show{display:grid}
+.dlg{width:440px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:17px 19px}
+.dlg h4{color:#ff8b8b;font-size:14px;display:flex;gap:8px;align-items:center;margin-bottom:9px}
+.dlg p{color:#cfd8d6;font-size:13px;margin-bottom:7px}
+.dlg p b{color:var(--text)}
+.dlg .warn{color:var(--orange)}
+.dlg .acts{display:flex;justify-content:flex-end;gap:9px;margin-top:13px}
+.dlg .acts .sbtn{height:32px;padding:0 15px}
+.dlg .acts .danger{background:var(--redbg);border-color:var(--redline);color:#ffb3b3}
+
+/* ===== 历史抽屉 ===== */
+.drawer{position:fixed;top:0;right:0;bottom:0;width:340px;background:var(--panel);border-left:1px solid var(--line);z-index:40;display:none;flex-direction:column}
+.drawer.show{display:flex}
+.drawer header{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--line2);font-weight:600}
+.drawer header button{margin-left:auto;color:var(--muted)}
+.rev{display:flex;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line2)}
+.rev .rth{width:56px;height:34px;border-radius:4px;background:linear-gradient(160deg,#22303c,#131c22);flex:0 0 auto;border:1px solid var(--line2)}
+.rev b{font-size:12px;display:block}
+.rev .m{color:var(--muted);font-size:11px}
+.rev .act{margin-left:auto;display:flex;gap:5px;align-items:center}
+.legend{position:fixed;left:10px;bottom:10px;z-index:30;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;color:var(--muted);font-size:11px}
+.legend b{color:var(--text)}
+</style>
+</head>
+<body>
+
+<!-- ═══ 顶栏 ═══ -->
+<header class="topbar">
+  <button class="menu">☰</button>
+  <span class="title">AI 视频剪辑工作台</span>
+  <span class="saved">已保存</span>
+  <button class="tbtn">✂ 开始自动剪辑</button>
+  <button class="tbtn">⬆ 导出成片</button>
+  <button class="tbtn ghost-danger confirm" data-t="清空当前项目的任务数据" data-b="将删除 <b>4</b> 张切片卡片、<b>6</b> 个任务记录与产物（约 47 MB）；<b>源片与已完成的转写会保留</b>。">🗑 清空任务数据<span class="tag">新</span></button>
+  <button class="tbtn" style="width:34px;justify-content:center">⚙</button>
+</header>
+
+<div class="editor">
+
+  <!-- ═══ 左：项目素材 ═══ -->
+  <aside class="col">
+    <div class="col-h">项目素材</div>
+    <div class="scroll">
+      <button class="tbtn import" style="width:100%">＋ 导入素材</button>
+
+      <div class="src-card">
+        <div class="src-thumb">🎬</div>
+        <b>血压管理专题讲座.mp4</b>
+        <div class="meta">62:33 · 1.2 GB · 已转写 ✓</div>
+        <div class="src-acts">
+          <button class="sbtn">▶ 播放</button>
+          <button class="sbtn danger confirm" data-t="删除原始素材" data-b="「血压管理专题讲座.mp4」将<b>从工作区移除</b>。<br>请选择删除范围：<b>仅删源片</b>（已生成的 4 张切片保留）或<b>连切片全部删除</b>。">🗑 删除<span class="tag">新</span></button>
+        </div>
+      </div>
+
+      <div class="col-h" style="padding-left:0">剪辑成片（4）</div>
+
+      <div class="clip-card on">
+        <div class="thumb">
+          <span class="topic">血压监测</span><span class="person"></span>
+          <span class="hook">这样测血压<br>多数人都错了</span>
+          <span class="vb">v3 ● 当前</span>
+          <button class="cvdel confirm" data-t="删除封面" data-b="将摘除 <b>切片01</b> 的当前封面（v3）。<br>历史版本保留，可随时恢复；成片本身不受影响。">🗑 删除封面<span class="tag">新</span></button>
+        </div>
+        <div class="cbody"><b>切片01 · 测血压方法</b><div class="meta"><span>00:38</span><span class="okk">✅ 可用</span></div></div>
+        <div class="cacts">
+          <button class="sbtn">▶ 预览</button>
+          <button class="sbtn danger confirm" data-t="删除切片" data-b="将删除 <b>切片01 · 测血压方法</b> 及其全部产物（成片、封面历史、字幕）。<br>源片与其他 3 张切片<b>不受影响</b>。<br><span class='warn'>删除不可撤销；只想回旧版本请用「历史 → 设为当前」。</span>">🗑 删除切片<span class="tag">新</span></button>
+        </div>
+      </div>
+
+      <div class="clip-card">
+        <div class="thumb"><span class="topic">停药时机</span><span class="person"></span><span class="hook">擅自停药<br>风险有多大</span><span class="vb">v1</span></div>
+        <div class="cbody"><b>切片02 · 停药误区</b><div class="meta"><span>00:31</span><span class="okk">✅ 可用</span></div></div>
+        <div class="cacts">
+          <button class="sbtn">▶ 预览</button>
+          <button class="sbtn danger confirm" data-t="删除切片" data-b="将删除 <b>切片02</b> 及其全部产物。源片与其他切片不受影响。">🗑 删除切片<span class="tag">新</span></button>
+        </div>
+      </div>
+
+      <button class="sbtn regen confirm" data-t="重新生成全部切片" data-b="将<b>清除当前 4 张切片</b>，按当前规则重新选片渲染并载入新切片。<br>☐ 保留旧切片到历史（默认不保留，直接清除）<br><span class='warn'>内容不满意才用；只想改封面/字幕请用右侧局部操作。</span>">🔄 重新生成全部切片<span class="tag">新</span></button>
+      <div class="small">重跑单个切片请选中卡片 → 右侧「切片操作」</div>
+    </div>
+  </aside>
+
+  <!-- ═══ 中：播放器 + 时间线 ═══ -->
+  <section class="col stage" style="background:transparent;border:0;padding:0">
+    <div class="col" style="flex:1">
+      <div class="player">
+        <span class="ph">▶ 播放器 · 切片01（v3）</span>
+        <div class="bar"><span>00:14</span><div class="line"><i></i></div><span>00:38</span></div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="tl">
+        <div class="tl-tools">
+          <button class="sbtn">＋</button><button class="sbtn">适合窗口</button>
+          <span style="margin-left:auto">字幕 ✓ · 画面 9:16 固定画框</span>
+        </div>
+        <div class="track"><label>视频 1</label><div class="lane"><div class="seg hl" style="left:1%;width:98%"></div></div></div>
+        <div class="track"><label>音频</label><div class="lane"><div class="wave"></div></div></div>
+        <div class="track"><label>字幕</label><div class="lane">
+          <div class="sub" style="left:1%;width:24%">先说结论：测血压要坐好</div>
+          <div class="sub" style="left:27%;width:30%">袖带与心脏保持同一水平</div>
+          <div class="sub" style="left:60%;width:30%">早晚各测一次，记录下来</div>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══ 右：Inspector（封面页签） ═══ -->
+  <aside class="col">
+    <div class="tabs">
+      <button class="on">封面</button><button>转写</button><button>效果</button>
+    </div>
+    <div class="scroll" style="padding-top:9px">
+
+      <div class="zone">
+        <h4>封面 · 切片01 <span class="ver">当前 v3</span>
+          <button class="sbtn his" onclick="document.getElementById('drawer').classList.add('show')">🕘 历史 (3)</button>
+        </h4>
+        <div class="covprev">
+          <span class="topic">血 压 监 测</span>
+          <span class="person"></span>
+          <span class="hook">这样测血压，多数人都错了</span>
+        </div>
+        <div class="row">
+          <button class="sbtn">🔄 重做封面</button>
+          <button class="sbtn">✅ 保留当前</button>
+          <button class="sbtn danger confirm" data-t="删除封面" data-b="将摘除 <b>切片01</b> 的当前封面。历史版本保留、可恢复；成片不受影响。">🗑 删除封面<span class="tag">新</span></button>
+        </div>
+        <div class="field"><span>底部钩子文案（两行）</span><input value="这样测血压，多数人都错了"></div>
+        <div class="field"><span>封面风格</span><select><option>第三版 · 大字（当前）</option><option>第二版 · 真实帧</option></select></div>
+      </div>
+
+      <div class="zone">
+        <h4>切片操作 · 切片01</h4>
+        <div class="row">
+          <button class="sbtn">▶ 重跑本切片<span class="tag">新</span></button>
+          <button class="sbtn">✂ 重选片段<span class="tag">新</span></button>
+        </div>
+        <div class="row">
+          <button class="sbtn">🖼 重置画面</button>
+          <button class="sbtn">重做字幕</button>
+          <button class="sbtn danger">删除字幕</button>
+        </div>
+        <div class="row">
+          <button class="sbtn">⬆ 导出本切片</button>
+          <button class="sbtn danger confirm" data-t="删除切片" data-b="将删除 <b>切片01</b> 及其全部产物。源片与其他切片不受影响。">🗑 删除切片<span class="tag">新</span></button>
+        </div>
+        <div class="opdesc">重跑 = 同窗口无条件重渲（不管之前跑没跑过）；重选 = 回到内容重新选片；其余操作只重算对应环节，不重复转写。</div>
+      </div>
+
+    </div>
+  </aside>
+
+  <!-- ═══ 最右：剪辑助手 ═══ -->
+  <aside class="col cop">
+    <div class="col-h">剪辑助手</div>
+    <div class="scroll">
+      <div class="msg">我是剪辑助手，可以直接控制当前工作区。试试：</div>
+      <div class="chips">
+        <button class="chip">跳到 1 分 20 秒并播放</button>
+        <button class="chip">打开第 1 个成片</button>
+        <button class="chip">提取金句和关键词</button>
+        <button class="chip">删除切片02</button>
+        <button class="chip">把切片01的封面换回上一版</button>
+      </div>
+    </div>
+    <div class="cop-input"><input placeholder="输入指令…"><button class="sbtn">发送</button></div>
+  </aside>
+</div>
+
+<!-- ═══ 历史抽屉 ═══ -->
+<div class="drawer" id="drawer">
+  <header>🕘 封面历史 · 切片01 <button onclick="document.getElementById('drawer').classList.remove('show')">✕</button></header>
+  <div style="flex:1;overflow-y:auto">
+    <div class="rev"><div class="rth"></div><div><b>v3 · 当前 ●</b><div class="m">重做封面 · 今天 10:21</div></div>
+      <div class="act"><button class="sbtn" style="opacity:.5">当前</button></div></div>
+    <div class="rev"><div class="rth"></div><div><b>v2</b><div class="m">改钩子文案 · 今天 09:47</div></div>
+      <div class="act"><button class="sbtn confirm" data-t="设为当前版本" data-b="将把切片01的封面<b>从 v3 切回 v2</b>。v3 保留在历史中，可随时切回。">设为当前</button></div></div>
+    <div class="rev"><div class="rth"></div><div><b>v1 · 初版</b><div class="m">自动剪辑生成 · 昨天 16:02</div></div>
+      <div class="act"><button class="sbtn confirm" data-t="设为当前版本" data-b="将把切片01的封面<b>从 v3 切回 v1</b>。历史保留，可随时切回。">设为当前</button>
+      <button class="sbtn danger">🗑</button></div></div>
+  </div>
+  <div class="small" style="padding:10px 14px">回滚不删除任何版本；删除单个历史版本需二次确认。</div>
+</div>
+
+<!-- ═══ 确认卡 ═══ -->
+<div class="mask" id="mask">
+  <div class="dlg">
+    <h4>⚠ <span id="dlg-t">删除切片</span></h4>
+    <p id="dlg-b">…</p>
+    <p class="warn">此操作需要确认后才会执行；执行过程原位显示进度，失败自动保留当前版本。</p>
+    <div class="acts">
+      <button class="sbtn" onclick="document.getElementById('mask').classList.remove('show')">取消</button>
+      <button class="sbtn danger" onclick="document.getElementById('mask').classList.remove('show')">确认执行</button>
+    </div>
+  </div>
+</div>
+
+<div class="legend"><b>效果图说明</b>：橙色「新」角标 = 本次新增能力；红色按钮 = 需二次确认；v 徽标 = 版本链；点「历史」可看版本抽屉。纯静态设计稿，原界面代码未改动。</div>
+
+<script>
+document.querySelectorAll('.confirm').forEach(function(b){
+  b.addEventListener('click', function(e){
+    e.stopPropagation();
+    document.getElementById('dlg-t').textContent = b.dataset.t;
+    document.getElementById('dlg-b').innerHTML = b.dataset.b;
+    document.getElementById('mask').classList.add('show');
+  });
+});
+document.getElementById('mask').addEventListener('click', function(e){
+  if(e.target === this) this.classList.remove('show');
+});
+document.querySelectorAll('.tabs button').forEach(function(t){
+  t.addEventListener('click', function(){
+    document.querySelectorAll('.tabs button').forEach(function(x){x.classList.remove('on')});
+    t.classList.add('on');
+  });
+});
+</script>
+</body>
+</html>

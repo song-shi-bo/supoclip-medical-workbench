@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## DSH Runtime (3445)
+
+Start with [DSH_STARTUP.md](DSH_STARTUP.md) for the DSH environment. The current frontend uses port 3107; Docker deployment instructions refer to a separate Docker-capable host. Verify existing services before starting or replacing them. Preserve incomplete work after a failed model turn.
+
 ## Project Overview
 
 SupoClip is an open-source alternative to OpusClip — an AI-powered video clipping tool that transforms long-form content into viral short clips. AGPL-3.0 licensed.
@@ -46,9 +50,9 @@ pnpm run build        # Prisma generate + Next.js build
 pnpm run lint
 ```
 
-### No tests
+### Tests
 
-The project currently has no test files.
+Existing suites include backend pytest, frontend Vitest, and Playwright. See `backend/README.md`, `backend/pyproject.toml`, `frontend/package.json`, and `docs/development.md` for commands and prerequisites. Database-backed tests require a dedicated test database. Run only the scope requested or required by the current task.
 
 ## Architecture
 

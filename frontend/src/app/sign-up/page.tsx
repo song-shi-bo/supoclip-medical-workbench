@@ -1,5 +1,6 @@
 import { SignUp } from "@/components/auth/sign-up";
 import Link from "next/link";
+import { AUTH_PATHS } from "@/lib/auth-paths";
 
 export default function SignUpPage() {
   return (
@@ -8,9 +9,9 @@ export default function SignUpPage() {
         <SignUp />
         <div className="text-center">
           <p className="text-sm text-gray-600">
-            Already have an account?{" "}
-            <Link href="/sign-in" className="font-medium text-indigo-600 hover:text-indigo-500">
-              Sign in
+            已有账号？{" "}
+            <Link href={AUTH_PATHS.signIn} className="font-medium text-indigo-600 hover:text-indigo-500">
+              登录
             </Link>
           </p>
         </div>

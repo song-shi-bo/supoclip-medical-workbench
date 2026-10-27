@@ -4,6 +4,11 @@ import re
 import struct
 
 SUPPORTED_FONT_EXTENSIONS = (".ttf", ".otf")
+# 现有内置微软雅黑集合可被渲染器使用；用户上传扩展名保持原范围。
+SYSTEM_FONT_EXTENSIONS = (*SUPPORTED_FONT_EXTENSIONS, ".ttc")
+# 精确复用系统已安装字体，不下载、不复制资产、不扩大用户上传目录。
+SYSTEM_CJK_FONT_PATHS = (Path("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"),
+                         Path("/usr/share/fonts/opentype/unifont/unifont.otf"))
 FONTS_DIR = Path(__file__).parent.parent / "fonts"
 USER_FONTS_DIR = FONTS_DIR / "users"
 TTF_NAME_ID_FONT_FAMILY = 1
@@ -53,7 +58,7 @@ def _collect_fonts_from_dir(font_dir: Path, scope: str) -> list[dict[str, Any]]:
         return []
 
     fonts: list[dict[str, Any]] = []
-    for extension in SUPPORTED_FONT_EXTENSIONS:
+    for extension in (SYSTEM_FONT_EXTENSIONS if scope == "system" else SUPPORTED_FONT_EXTENSIONS):
         for font_path in sorted(font_dir.glob(f"*{extension}")):
             fonts.append(
                 {
@@ -72,6 +77,11 @@ def _collect_fonts_from_dir(font_dir: Path, scope: str) -> list[dict[str, Any]]:
 def get_available_fonts(user_id: str | None = None) -> list[dict[str, Any]]:
     fonts: list[dict[str, Any]] = _collect_fonts_from_dir(FONTS_DIR, scope="system")
 
+    for path in SYSTEM_CJK_FONT_PATHS:
+        if path.is_file() and path.stat().st_size:
+            fonts.append({"name": path.stem, "display_name": _display_name(path.stem),
+                          "filename": path.name, "format": path.suffix.lstrip("."),
+                          "file_path": str(path), "scope": "system"})
     if user_id:
         fonts.extend(_collect_fonts_from_dir(get_user_fonts_dir(user_id), scope="user"))
 
@@ -92,18 +102,22 @@ def find_font_path(
         search_dirs.insert(0, get_user_fonts_dir(user_id))
 
     for search_dir in search_dirs:
+        extensions = SYSTEM_FONT_EXTENSIONS if search_dir == FONTS_DIR else SUPPORTED_FONT_EXTENSIONS
         exact_file = search_dir / requested
         if (
             exact_file.exists()
-            and exact_file.suffix.lower() in SUPPORTED_FONT_EXTENSIONS
+            and exact_file.suffix.lower() in extensions
         ):
             return exact_file
 
-        for extension in SUPPORTED_FONT_EXTENSIONS:
+        for extension in extensions:
             candidate = search_dir / f"{requested}{extension}"
             if candidate.exists():
                 return candidate
 
+    for path in SYSTEM_CJK_FONT_PATHS:
+        if requested in {path.name, path.stem} and path.is_file() and path.stat().st_size:
+            return path
     normalized_requested = re.sub(r"[^a-z0-9]", "", requested.lower())
     for font in get_available_fonts(user_id):
         normalized_name = re.sub(r"[^a-z0-9]", "", font["name"].lower())
@@ -137,10 +151,17 @@ def get_font_family_name(font_path: Path) -> str | None:
         if len(data) < 12:
             return None
 
-        num_tables = struct.unpack_from(">H", data, 4)[0]
+        font_offset = 0
+        if data[:4] == b"ttcf":
+            if len(data) < 16 or struct.unpack_from(">I", data, 8)[0] < 1:
+                return None
+            font_offset = struct.unpack_from(">I", data, 12)[0]
+            if font_offset + 12 > len(data):
+                return None
+        num_tables = struct.unpack_from(">H", data, font_offset + 4)[0]
         name_table_offset = None
         name_table_length = None
-        table_record_offset = 12
+        table_record_offset = font_offset + 12
         for table_index in range(num_tables):
             record_offset = table_record_offset + table_index * 16
             if record_offset + 16 > len(data):

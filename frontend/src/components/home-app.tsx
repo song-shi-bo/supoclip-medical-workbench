@@ -12,6 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { signOut, useSession } from "@/lib/auth-client";
+import { markSignedOut } from "@/components/auth/session-gate";
 import { formatBillingPlanName, isPaidBillingPlan } from "@/lib/billing-plans";
 import { track } from "@/lib/datafast";
 import { formatSupportMessage, parseApiError } from "@/lib/api-error";
@@ -427,8 +428,9 @@ export default function HomeApp() {
   const generationControlsDisabled = isLoading || generationRequiresUpgrade;
 
   const handleSignOut = async () => {
+    markSignedOut();
     await signOut();
-    window.location.href = "/sign-in";
+    window.location.href = "/studio/sign-in?reason=signed-out";
   };
 
   const getStepIcon = (step: string) => {

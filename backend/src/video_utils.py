@@ -3,6 +3,7 @@ Utility functions for video-related operations.
 Optimized for ffmpeg, AssemblyAI integration, and high-quality output.
 """
 
+import os
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 import logging
@@ -40,6 +41,8 @@ except ImportError:  # pragma: no cover - optional transcription backend
     _FASTER_WHISPER_AVAILABLE = False
 
 from .config import get_config
+from .studio_runtime import process_lock
+from .zh_text_normalizer import normalize_asr_result
 from .clip_cleanup import DEFAULT_FILTERED_WORDS, clip_cleanup_enabled
 from .clip_source_map import (
     normalize_source_ranges,
@@ -259,6 +262,13 @@ def transcribe_with_whisper(video_path: Path, model_name: str = "base") -> Dict[
 
 
 def transcribe_with_faster_whisper(video_path: Path, runtime_config) -> Dict[str, Any]:
+    # Shared with video-brain: separate processes must not run ASR together.
+    lock_path = Path(os.getenv("STUDIO_ASR_LOCK", "/domain/.studio-resources/asr.lock"))
+    with process_lock(lock_path):
+        return _transcribe_with_faster_whisper(video_path, runtime_config)
+
+
+def _transcribe_with_faster_whisper(video_path: Path, runtime_config) -> Dict[str, Any]:
     """Run the fixed local ASR profile: small model, CPU, int8 and VAD."""
     if not _FASTER_WHISPER_AVAILABLE:
         raise RuntimeError(
@@ -276,7 +286,10 @@ def transcribe_with_faster_whisper(video_path: Path, runtime_config) -> Dict[str
             *profile,
         )
         _FASTER_WHISPER_MODEL_CACHE[profile] = _FasterWhisperModel(
-            profile[0], device=profile[1], compute_type=profile[2]
+            profile[0],
+            device=profile[1],
+            compute_type=profile[2],
+            cpu_threads=int(os.getenv("FASTER_WHISPER_CPU_THREADS", "4")),
         )
 
     audio_path = _prepare_audio_for_transcription(video_path)
@@ -287,6 +300,9 @@ def transcribe_with_faster_whisper(video_path: Path, runtime_config) -> Dict[str
         vad_filter=runtime_config.faster_whisper_vad_filter,
         condition_on_previous_text=False,
         word_timestamps=True,
+        # 简体提示词偏置解码：降低 whisper 中文输出繁体的概率（配合
+        # zh_text_normalizer 的确定性 t2s 规整，见下方 normalize_asr_result）。
+        initial_prompt="以下是普通话的句子，用简体中文转写。",
     )
     normalized_segments = []
     for segment in segments:
@@ -302,11 +318,14 @@ def transcribe_with_faster_whisper(video_path: Path, runtime_config) -> Dict[str
         normalized_segments.append(
             {"start": segment.start, "end": segment.end, "text": segment.text, "words": words}
         )
-    return {
-        "text": "".join(item["text"] for item in normalized_segments).strip(),
-        "segments": normalized_segments,
-        "language": getattr(info, "language", "zh"),
-    }
+    # 源头繁→简规整：转写缓存/LLM 纠错/字幕/搜索/artifact 下游只见简体。
+    return normalize_asr_result(
+        {
+            "text": "".join(item["text"] for item in normalized_segments).strip(),
+            "segments": normalized_segments,
+            "language": getattr(info, "language", "zh"),
+        }
+    )
 
 
 def _whisper_result_to_transcript_data(whisper_result: Dict[str, Any]) -> Dict[str, Any]:

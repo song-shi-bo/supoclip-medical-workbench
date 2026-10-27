@@ -19,6 +19,7 @@ tasks/completed/
 tasks/failed/
 tasks/status/
 tasks/__pycache__/
+.studio-uploads/
 docker-build*.log
 frontend/next-dev*.log
 frontend/e2e/.seed.json
@@ -29,3 +30,23 @@ frontend/test-results/
 backend/demo_clips/
 backend/demo_clips_*.log
 backend/run_demo.py
+
+# DSH workspace runtime state: job queues, project data, locks, reports.
+# Patient/source media and per-machine state stay local (see note above).
+tasks/
+backend/tasks/
+backend/studio-artifacts/
+backend/studio.db
+backend/.env.bak-*
+backend/.env.before-*
+backend/.pytest-*/
+
+# local migration archive (extracted media) and machine bindings
+.migration-archive/
+.studio-storage-binding.json
+
+# scratch / build artifacts
+*.before-runtime-repair
+frontend/.next-*/
+frontend/.ma1-spike/
+frontend/.test-mailbox/

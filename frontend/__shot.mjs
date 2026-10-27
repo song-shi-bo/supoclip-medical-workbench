@@ -1,0 +1,20 @@
+import { chromium } from "/domain/supoclip-medical-workbench/frontend/node_modules/.pnpm/playwright@1.59.1/node_modules/playwright/index.mjs";
+
+const browser = await chromium.launch({ executablePath: "/opt/ms-playwright/chromium-1246/chrome-linux64/chrome", args: ["--no-sandbox"] });
+const page = await browser.newPage({ viewport: { width: 1600, height: 1000 } });
+const errors = [];
+page.on("console", (msg) => { if (msg.type() === "error") errors.push(msg.text().slice(0, 200)); });
+page.on("pageerror", (err) => errors.push("PAGEERROR: " + err.message.slice(0, 300)));
+await page.goto("http://127.0.0.1:3107/studio", { waitUntil: "networkidle", timeout: 60000 });
+await page.waitForTimeout(2500);
+const tabs = await page.$$eval(".inspector-tabs button", (nodes) => nodes.map((n) => n.textContent));
+const paneText = (await page.textContent(".transcript-pane")) || "";
+const hasHost = await page.$$eval(".inspector-transcript-host", (nodes) => nodes.map((n) => (n.hidden ? "hidden" : "shown")));
+const paneBody = (await page.textContent(".inspector-pane-body")) || "";
+console.log("TABS:", JSON.stringify(tabs));
+console.log("TRANSCRIPT_HOST:", JSON.stringify(hasHost));
+console.log("PANE_BODY:", paneBody.replace(/\s+/g, " ").slice(0, 260));
+console.log("PANE_HAS_SEARCH:", paneText.includes("搜索转写内容"));
+console.log("ERRORS:", JSON.stringify(errors.filter((e) => !/video-api|Failed to fetch|favicon|404/.test(e)).slice(0, 6)));
+await page.screenshot({ path: "/tmp/studio-inspector.png", fullPage: false });
+await browser.close();
