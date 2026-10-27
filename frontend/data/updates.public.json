@@ -1,0 +1,146 @@
+[
+  {
+    "id": "cover-generator",
+    "date": "2026-10-27",
+    "type": "feature",
+    "status": "done",
+    "title": "封面生成器上线：一键生成 3 种风格封面",
+    "summary": "选模板即时预览，支持视频真实帧作封面底图",
+    "modules": ["cover"],
+    "details": "在右侧面板选择模板后立即生成预览，无需等待整片渲染。底图默认取视频高光真实帧，也可以换成自定义图片。生成的封面会进入时间轴，可像普通素材一样裁剪和调整。",
+    "entry": "工作台 → 右侧面板 → 封面",
+    "links": [
+      { "label": "封面模板说明", "href": "https://github.com/song-shi-bo/supoclip-medical-workbench/blob/main/docs/cover-templates.md" }
+    ],
+    "techDetails": "cover_templates.py 提供 3 套模板参数；cover_realframe_v2 切换到真实帧采样后模板命中率从 71% 升到 89%。"
+  },
+  {
+    "id": "cover-replace",
+    "date": "2026-10-26",
+    "type": "feature",
+    "status": "done",
+    "title": "封面替换：换封面不再重剪全片",
+    "summary": "旧封面片段原位替换，导出结果秒级刷新",
+    "modules": ["cover", "timeline"],
+    "compare": {
+      "before": { "src": "/updates/cover-replace-020s-before.png", "alt": "旧版：替换封面需要重新导出全片" },
+      "after": { "src": "/updates/cover-replace-020s-after.png", "alt": "新版：封面片段原位替换，仅重渲染封面段" }
+    },
+    "details": "替换封面只重渲染封面片段，不再触发全片导出。每次替换保留历史版本，可在版本列表里一键回退到任意一版。",
+    "entry": "工作台 → 时间轴 → 封面片段 → 替换"
+  },
+  {
+    "id": "timeline-multitrack",
+    "date": "2026-10-25",
+    "type": "feature",
+    "status": "done",
+    "title": "时间轴多轨编辑：音频、图片、字幕同屏操作",
+    "summary": "多轨拖拽与吸附对齐，波形可视化辅助剪点",
+    "modules": ["workbench", "timeline"],
+    "highlight": true,
+    "details": "底部时间轴支持音频、图片、字幕多轨道，拖拽时自动吸附到相邻片段边界与播放头。音轨带波形缩略图，静音段一眼可辨，长视频按区块加载波形不卡顿。",
+    "entry": "工作台 → 底部时间轴"
+  },
+  {
+    "id": "studio-copilot",
+    "date": "2026-10-22",
+    "type": "feature",
+    "status": "done",
+    "title": "AI 剪辑助手 Copilot：对话式完成粗剪",
+    "summary": "用一句话下指令，助手直接在时间轴上执行",
+    "modules": ["workbench"],
+    "highlight": true,
+    "details": "左侧对话面板里说「删掉所有静音超过 2 秒的段落」，助手会规划成可执行的剪辑动作并应用到时间轴，执行前可预览将要发生的改动。当前支持删减、排序、字幕修正三类指令。",
+    "entry": "工作台 → 左侧 Copilot 面板"
+  },
+  {
+    "id": "auth-recovery-flows",
+    "date": "2026-10-20",
+    "type": "feature",
+    "status": "done",
+    "title": "忘记密码与邮箱验证流程上线",
+    "summary": "自助重置密码，注册邮箱可收验证邮件",
+    "modules": ["account"],
+    "details": "登录页新增「忘记密码」入口，通过注册邮箱自助重置。新注册账号可收到验证邮件，未验证期间功能不受影响，仅提示补验。",
+    "entry": "登录页 → 忘记密码"
+  },
+  {
+    "id": "medical-lexicon",
+    "date": "2026-10-18",
+    "type": "feature",
+    "status": "done",
+    "title": "医学术语纠错：转写文本自动规范",
+    "summary": "药品名与临床用语自动纠正，字幕错别字显著减少",
+    "modules": ["subtitle"],
+    "details": "转写完成后自动过一遍医学术语词典，常见药品商品名、临床缩写会被纠正为规范写法（如「拜唐苹→阿卡波糖」可按需开关）。词典可自定义扩充。",
+    "entry": "工作台 → 字幕面板 → 术语纠错"
+  },
+  {
+    "id": "project-manager",
+    "date": "2026-10-16",
+    "type": "feature",
+    "status": "done",
+    "title": "项目管理器：多项目切换与数据清理",
+    "summary": "历史项目列表化，一键清理无效数据释放磁盘",
+    "modules": ["workbench"],
+    "highlight": true,
+    "details": "右上角项目切换器可查看并打开历史项目；项目内的临时渲染产物、失效素材可以单独清理，不必删除整个项目重来。",
+    "entry": "工作台 → 右上角项目切换器"
+  },
+  {
+    "id": "player-control-bar",
+    "date": "2026-10-14",
+    "type": "improvement",
+    "status": "done",
+    "title": "播放器控制栏改版",
+    "summary": "倍速、逐帧、音量常驻控制栏，减少菜单层级",
+    "modules": ["workbench"],
+    "details": "常用播放控制从二级菜单提到常驻控制栏，逐帧步进和倍速切换各一次点击可达，预览时可随时截图当前帧作为封面候选。",
+    "entry": "工作台 → 预览区控制栏"
+  },
+  {
+    "id": "export-concurrency",
+    "date": "2026-10-12",
+    "type": "improvement",
+    "status": "done",
+    "title": "导出队列并发提升，等待时间明显缩短",
+    "summary": "并发导出任务数翻倍，队列高峰不再排长队",
+    "modules": ["export"],
+    "details": "导出队列并发上限提高一倍并优化了任务调度顺序，多个项目同时导出时总等待时间明显下降。个人配额不变。",
+    "entry": "任务中心 → 导出"
+  },
+  {
+    "id": "fix-cover-stitch",
+    "date": "2026-10-11",
+    "type": "fix",
+    "status": "done",
+    "title": "修复：时间轴导出偶发封面缺失",
+    "summary": "长视频导出时封面段拼接失败的问题已修复",
+    "modules": ["timeline", "export"],
+    "details": "修复了超过 30 分钟的视频从时间轴导出时封面段偶发丢失的问题，同时补上了失败时的自动重试。",
+    "entry": "工作台 → 导出"
+  },
+  {
+    "id": "username-login",
+    "date": "2026-10-10",
+    "type": "improvement",
+    "status": "done",
+    "title": "支持用户名登录",
+    "summary": "除邮箱外，可直接用用户名登录（不区分大小写）",
+    "modules": ["account"],
+    "details": "注册过的用户名可以直接登录，大小写不敏感。邮箱登录不受影响。",
+    "entry": "登录页"
+  },
+  {
+    "id": "workbench-first-release",
+    "date": "2026-10-09",
+    "type": "feature",
+    "status": "done",
+    "title": "本地医疗视频工作台首个版本",
+    "summary": "上传视频即可自动转写、粗剪与字幕初稿",
+    "modules": ["workbench", "subtitle"],
+    "highlight": true,
+    "details": "第一个公开可用版本：上传医疗科普视频后自动转写并生成字幕初稿，支持基础的片段删减与导出。适合先跑通完整流程再逐步精剪。",
+    "entry": "首页 → 进入工作台"
+  }
+]

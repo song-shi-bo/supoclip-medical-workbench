@@ -1,0 +1,62 @@
+[
+  {
+    "id": "jobs-api-split",
+    "date": "2026-10-27",
+    "type": "improvement",
+    "status": "done",
+    "title": "任务管线拆分：jobs API 与 worker 解耦",
+    "summary": "任务提交与执行分进程，失败互不拖累",
+    "modules": ["export"],
+    "techDetails": "backend 的 jobs 域从 studio 主进程拆出独立 worker，通过队列表状态机交接；本次提交含 12 个回归用例。"
+  },
+  {
+    "id": "middleware-move",
+    "date": "2026-10-27",
+    "type": "improvement",
+    "status": "done",
+    "title": "middleware 迁移至 src/，对齐 Next 15 规范",
+    "summary": "根目录 middleware.ts 移入 src/，构建告警清零",
+    "modules": ["workbench"],
+    "techDetails": "Next 15 要求 middleware 位于 src/ 或根二选一，迁移后 turbopack 构建告警全部消除。"
+  },
+  {
+    "id": "transcript-reuse",
+    "date": "2026-10-24",
+    "type": "improvement",
+    "status": "done",
+    "title": "转写复用 video-brain 网关",
+    "summary": "相同片段二次转写命中缓存，秒级返回",
+    "modules": ["subtitle"],
+    "techDetails": "转写前先按媒体指纹查询 video-brain 历史结果，命中直接复用（实测单任务 3ms 内返回），未命中才走转写服务。"
+  },
+  {
+    "id": "llm-budget",
+    "date": "2026-10-21",
+    "type": "improvement",
+    "status": "wip",
+    "title": "LLM 预算与用量统计接入",
+    "summary": "按项目统计 token 用量，超预算自动降级",
+    "modules": ["workbench"],
+    "techDetails": "llm_budget.py 按项目滚动窗口计数，超限后 copilot 自动降级到小模型。压测中，暂不公开。"
+  },
+  {
+    "id": "subtitle-auto-align",
+    "date": "2026-10-19",
+    "type": "experiment",
+    "status": "experimental",
+    "title": "字幕轨 LLM 自动对齐实验",
+    "summary": "长句自动断句对齐，效果不稳定，暂不公开",
+    "modules": ["subtitle"],
+    "techDetails": "transcript_correction_llm 的断句对齐分支在安静语音上效果好，但多人说话场景时间轴漂移明显，继续收集样本。"
+  },
+  {
+    "id": "capacity-guard",
+    "date": "2026-10-15",
+    "type": "improvement",
+    "status": "done",
+    "title": "容量守卫与配额冻结",
+    "summary": "磁盘水位超限时冻结新任务而非报错",
+    "modules": ["export"],
+    "techDetails": "studio_artifacts 磁盘水位超过 85% 时冻结新导出并通知清理，避免渲染中途写满盘导致素材损坏。"
+  }
+]

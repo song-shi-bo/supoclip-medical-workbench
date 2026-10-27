@@ -972,6 +972,7 @@ export default function LandingPage() {
             <Link href="/open-source-video-clipper" className="hover:text-foreground transition-colors">Open source</Link>
             <Link href="/youtube-shorts-clipper" className="hover:text-foreground transition-colors">YouTube Shorts</Link>
             <Link href="/blog" className="hover:text-foreground transition-colors">Blog</Link>
+            <Link href="/updates" className="hover:text-foreground transition-colors">Updates</Link>
             <Link href="/privacy" className="hover:text-foreground transition-colors">Privacy</Link>
             <Link href="/terms" className="hover:text-foreground transition-colors">Terms</Link>
             <a
