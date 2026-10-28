@@ -42,11 +42,14 @@ export function EntryCard({ entry, devView }: { entry: TaggedUpdateEntry; devVie
         <span className={`rounded px-1.5 py-0.5 font-medium ${TYPE_BADGE_CLASS[entry.type]}`}>
           {typeLabel(entry.type)}
         </span>
-        {entry.modules.map((module) => (
-          <span key={module} className="rounded bg-secondary px-1.5 py-0.5 text-secondary-foreground">
-            {moduleLabel(module)}
-          </span>
-        ))}
+        {entry.modules
+          // highlight 条目已用 ⚡工作台 chip 标注工作台模块，这里去重避免重复徽章
+          .filter((module) => !(entry.highlight && module === "workbench"))
+          .map((module) => (
+            <span key={module} className="rounded bg-secondary px-1.5 py-0.5 text-secondary-foreground">
+              {moduleLabel(module)}
+            </span>
+          ))}
         {entry.highlight ? (
           <span className="inline-flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 font-medium text-primary">
             <MonitorPlay className="size-3" aria-hidden />
