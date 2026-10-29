@@ -1,21 +1,25 @@
 import { SignUp } from "@/components/auth/sign-up";
+import { AuthShell } from "@/components/auth/auth-shell";
 import Link from "next/link";
 import { AUTH_PATHS } from "@/lib/auth-paths";
 
 export default function SignUpPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
+    <AuthShell>
+      <div className="w-full max-w-md space-y-6">
         <SignUp />
         <div className="text-center">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-violet-200">
             已有账号？{" "}
-            <Link href={AUTH_PATHS.signIn} className="font-medium text-indigo-600 hover:text-indigo-500">
+            <Link
+              href={AUTH_PATHS.signIn}
+              className="font-medium text-white underline-offset-4 hover:underline"
+            >
               登录
             </Link>
           </p>
         </div>
       </div>
-    </div>
+    </AuthShell>
   );
 }
