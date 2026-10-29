@@ -40,6 +40,45 @@ def shutdown(*_):
     stop = True
 
 
+PGDATA = DOMAIN / '.tools' / 'pgdata'
+
+
+def pgdata_stale_lock_cleanup(pgdata: Path = PGDATA) -> str:
+    """环境被强杀重启后，postgres 的 postmaster.pid 可能残留（指向已死进程），
+    PG 会拒绝启动（lock file already exists）→ 连锁不起 backend/worker（2026-10-28 实际故障）。
+    清理策略：锁存在且 PID 已死 → 删；PID 存活但不是 postgres（PID 被复用）→ 删；
+    存活的 postgres → 保留（绝不误删活实例的锁）。返回动作描述用于日志。"""
+    lock = pgdata / 'postmaster.pid'
+    if not lock.is_file():
+        return 'no-lock'
+    try:
+        pid = int(lock.read_text(errors='replace').splitlines()[0].strip())
+    except (OSError, ValueError, IndexError):
+        lock.unlink(missing_ok=True)
+        return 'removed-unreadable-lock'
+    if pid <= 0:
+        lock.unlink(missing_ok=True)
+        return 'removed-bad-pid'
+    try:
+        os.kill(pid, 0)
+        alive = True
+    except ProcessLookupError:
+        alive = False
+    except PermissionError:
+        alive = True
+    if alive:
+        try:
+            cmdline = (Path('/proc') / str(pid) / 'cmdline').read_bytes().decode(errors='replace')
+            if 'postgres' not in cmdline:
+                lock.unlink(missing_ok=True)
+                return f'removed-pid-reused-by-{pid}'
+        except OSError:
+            pass
+        return f'kept-live-postgres-pid-{pid}'
+    lock.unlink(missing_ok=True)
+    return f'removed-stale-pid-{pid}'
+
+
 def main():
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
@@ -58,6 +97,7 @@ def main():
     ]
     with process_lock(ROOT / 'tasks/.supervisor.lock', blocking=False):
         print('Studio supervisor ready', flush=True)
+        print('pgdata lock check:', pgdata_stale_lock_cleanup(), flush=True)
         try:
             while not stop:
                 for name, cwd, command, healthy in services:
@@ -70,6 +110,11 @@ def main():
                         continue
                     if name == 'worker' and not (listening(8000) and listening(8940)):
                         continue
+                    if name == 'postgres':
+                        # 拉起前自检：运行中 PG 崩溃残留锁也会阻塞重启，每次拉起前清理
+                        result = pgdata_stale_lock_cleanup()
+                        if result != 'no-lock':
+                            print(f'pgdata lock cleanup: {result}', flush=True)
                     with (LOGS / f'{name}.log').open('ab') as output:
                         children[name] = subprocess.Popen(command, cwd=cwd, env=env,
                             stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
