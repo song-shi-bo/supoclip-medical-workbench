@@ -37,7 +37,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from typing import Any, Callable
+import threading
+from typing import Any, Callable, Optional
 
 from pydantic import BaseModel, Field
 
@@ -168,8 +169,21 @@ def _lexicon_hint_lines(texts: list[str]) -> list[str]:
     return lines
 
 
+def _project_glossary_hint_lines(glossary_terms: list[str] | None) -> list[str]:
+    """项目术语表提示段（2026-10-28，术语定制需求）。无词表返回 []，
+    prompt 与无词表时逐字节一致。与内置词典段同规则：仅同音/形近修正，不凭空引入。"""
+    terms = [str(t).strip() for t in (glossary_terms or []) if str(t).strip()]
+    if not terms:
+        return []
+    shown = terms[:60]
+    return ["【项目术语表（说话人相关领域的正确写法；仅当原文词与术语同音/形近且语义吻合时，"
+            "修正为术语写法；拿不准保持原文并标 uncertain；不得凭空引入术语表外的修改）】",
+            "  " + "、".join(shown)]
+
+
 def _build_user_prompt(batch: list[dict[str, Any]], batch_start: int,
-                       prepared: list[dict[str, Any]], batched_mode: bool) -> str:
+                       prepared: list[dict[str, Any]], batched_mode: bool,
+                       glossary_terms: list[str] | None = None) -> str:
     """紧凑输入：每行「全局序号|文本」，无 JSON 包裹、无时间戳。
 
     分批模式上下文 = 全篇开头摘要（SUMMARY_CHARS）+ 上一批少量重叠段，
@@ -178,6 +192,7 @@ def _build_user_prompt(batch: list[dict[str, Any]], batch_start: int,
     """
     lines = [f"请校对以下 {len(batch)} 段转写（全局序号自 {batch_start} 起）。只输出发生修改的分段。"]
     lines.extend(_lexicon_hint_lines([seg["text"] for seg in batch]))
+    lines.extend(_project_glossary_hint_lines(glossary_terms))
     if batched_mode:
         summary = "".join(seg["text"] for seg in prepared)[:SUMMARY_CHARS]
         if summary:
@@ -191,10 +206,11 @@ def _build_user_prompt(batch: list[dict[str, Any]], batch_start: int,
     return "\n".join(lines)
 
 
-def _choose_mode(prepared: list[dict[str, Any]]) -> str:
+def _choose_mode(prepared: list[dict[str, Any]], glossary_terms: list[str] | None = None) -> str:
     """整篇单次 vs 分批：段数与估算 prompt 双门槛。"""
     if len(prepared) <= SINGLE_CALL_LIMIT:
-        prompt = _build_user_prompt(prepared, 0, prepared, batched_mode=False)
+        prompt = _build_user_prompt(prepared, 0, prepared, batched_mode=False,
+                                    glossary_terms=glossary_terms)
         if llm_budget.estimate_tokens(prompt) <= SINGLE_PROMPT_TOKEN_LIMIT:
             return "single"
     return "batch"
@@ -207,13 +223,14 @@ def _batch_bounds(total: int) -> list[tuple[int, int]]:
 def _run_patch_call(model_name: str, batch: list[dict[str, Any]], batch_start: int,
                     prepared: list[dict[str, Any]], batched_mode: bool,
                     progress: Callable[[str], None] | None, label: str,
-                    job_id: str | None) -> dict[str, Any]:
+                    job_id: str | None, glossary_terms: list[str] | None = None) -> dict[str, Any]:
     """一次 patch 请求（含 token-limit 提档重试一次）。返回 outcome 字典。
 
     * 成功 / token-limit 失败都会按「该次实际 max_tokens」把预留记入台账；
     * 非 token 上限的失败不重试（由调用方按批回退或整体回退）。
     """
-    prompt = _build_user_prompt(batch, batch_start, prepared, batched_mode)
+    prompt = _build_user_prompt(batch, batch_start, prepared, batched_mode,
+                                glossary_terms=glossary_terms)
     est = llm_budget.estimate_reserve(prompt, MAX_OUTPUT_TOKENS_RETRY)
     last_error: str | None = None
     token_limit = False
@@ -308,13 +325,14 @@ def _enrich(prepared: list[dict[str, Any]], asr_segments: list[dict[str, Any]],
 
 def _llm_correct(prepared: list[dict[str, Any]], model_name: str,
                  progress: Callable[[str], None] | None,
-                 job_id: str | None = None) -> dict[str, Any]:
+                 job_id: str | None = None,
+                 glossary_terms: list[str] | None = None) -> dict[str, Any]:
     """模型纠错主流程（patch 协议）；单批失败仅该批回退。"""
     from .transcript_correction import correct_segments
 
     total = len(prepared)
     engine_llm = f"dsh-llm:{model_name}"
-    mode = _choose_mode(prepared)
+    mode = _choose_mode(prepared, glossary_terms)
     segments_out: list[dict[str, Any]] = []
     audit_out: list[dict[str, Any]] = []
     fallback_reasons: list[str] = []
@@ -380,11 +398,52 @@ def _llm_correct(prepared: list[dict[str, Any]], model_name: str,
     def run_batches() -> None:
         nonlocal llm_batches, fallback_batches
         bounds = _batch_bounds(total)
+        # 并发纠错（2026-10-28）：批次间互不依赖，纯 LLM IO 等待——线程池并行后
+        # 纠错墙钟时间 ≈ 串行 / N。结果按批次序号原位收集，回退与台账合并仍在
+        # 主线程按序执行（语义与串行版逐字节一致）。
+        concurrency = max(1, min(int(os.getenv("CONTENT_CORRECTION_CONCURRENCY", "6")), 12, len(bounds)))
+        outcomes: list[Optional[dict[str, Any]]] = [None] * len(bounds)
+        if concurrency <= 1:
+            for number, (start, end) in enumerate(bounds, start=1):
+                outcomes[number - 1] = _run_patch_call(
+                    model_name, prepared[start:end], start, prepared, batched_mode=True,
+                    progress=progress, label=f"模型全文纠错（批次 {number}/{len(bounds)}）",
+                    job_id=job_id, glossary_terms=glossary_terms)
+        else:
+            progress_lock = threading.Lock()
+
+            def _safe_progress(message: str) -> None:
+                with progress_lock:
+                    if progress:
+                        progress(message)
+
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            with ThreadPoolExecutor(max_workers=concurrency) as pool:
+                futures = {
+                    pool.submit(_run_patch_call, model_name, prepared[s:e], s, prepared,
+                                batched_mode=True, progress=_safe_progress,
+                                label=f"模型全文纠错（批次 {number}/{len(bounds)}）",
+                                job_id=job_id, glossary_terms=glossary_terms): number - 1
+                    for number, (s, e) in enumerate(bounds, start=1)
+                }
+                done = 0
+                for future in as_completed(futures):
+                    index = futures[future]
+                    done += 1
+                    try:
+                        outcomes[index] = future.result()
+                    except Exception as exc:  # noqa: BLE001 — 单批意外异常不中断整批
+                        outcomes[index] = {"items": None, "error": f"批次线程异常: {exc}",
+                                           "token_limit": False, "usage": {}}
+                    if progress:
+                        with progress_lock:
+                            progress(f"纠错批次进度 {done}/{len(bounds)}")
+        # 按批次序号合并（保序）：台账 → 回退 → 应用变更
         for number, (start, end) in enumerate(bounds, start=1):
+            outcome = outcomes[number - 1] or {"items": None, "error": "批次结果缺失",
+                                               "token_limit": False, "usage": {}}
             batch = prepared[start:end]
-            outcome = _run_patch_call(
-                model_name, batch, start, prepared, batched_mode=True, progress=progress,
-                label=f"模型全文纠错（批次 {number}/{len(bounds)}）", job_id=job_id)
             merge_usage(outcome)
             if outcome["items"] is None:
                 fallback_batches += 1
@@ -398,7 +457,8 @@ def _llm_correct(prepared: list[dict[str, Any]], model_name: str,
 
     if mode == "single":
         outcome = _run_patch_call(model_name, prepared, 0, prepared, batched_mode=False,
-                                  progress=progress, label="模型全文纠错（整篇）", job_id=job_id)
+                                  progress=progress, label="模型全文纠错（整篇）", job_id=job_id,
+                                  glossary_terms=glossary_terms)
         merge_usage(outcome)
         if outcome["items"] is not None:
             llm_batches = 1
@@ -458,8 +518,12 @@ def _llm_correct(prepared: list[dict[str, Any]], model_name: str,
 
 def correct_segments_with_model(raw_segments: list[dict[str, Any]],
                                 progress: Callable[[str], None] | None = None,
-                                job_id: str | None = None) -> dict[str, Any]:
+                                job_id: str | None = None,
+                                glossary_terms: list[str] | None = None) -> dict[str, Any]:
     """转写纠错入口：DSH 模型全文纠错（patch 协议），不可用/失败回退保守规整。
+
+    ``glossary_terms``：项目术语表（正确写法清单），注入 prompt 供模型在同音/形近
+    错误时参照修正；无词表时行为与既往逐字节一致。
 
     返回形状与 :func:`src.transcript_correction.correct_segments` 兼容
     （``asr_segments`` / ``correction_audit`` / ``correction_summary``），
@@ -475,5 +539,6 @@ def correct_segments_with_model(raw_segments: list[dict[str, Any]],
         result = _fallback_all(prepared, reason)
         result["correction_summary"]["model"] = model_name or None
         return result
-    result = _llm_correct(prepared, model_name, progress, job_id=job_id)
+    result = _llm_correct(prepared, model_name, progress, job_id=job_id,
+                          glossary_terms=glossary_terms)
     return result

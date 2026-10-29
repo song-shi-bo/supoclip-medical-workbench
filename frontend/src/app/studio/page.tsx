@@ -1468,6 +1468,104 @@ export default function StudioPage() {
       ? `当前在工作台内嵌预览里，浏览器不允许预览页直接下载，已在新标签页打开导出链接：${absolute}（若新标签页仍被拦，请把这个地址复制到浏览器地址栏打开）`
       : `当前在工作台内嵌预览里，浏览器不允许预览页下载、也拦住了新标签页。请复制这个地址到浏览器地址栏打开：${absolute}`);
   };
+  // ===== 发送到豆包（95 中转 → 本地拉取 → 豆包收件箱，2026-10-28）=====
+  const [deliveringClipId, setDeliveringClipId] = useState<string | null>(null);
+  async function deliverClipToDoubao(clip: RenderedClip) {
+    if (!activeProjectId) { setMessage("尚未打开项目，无法投递。"); return; }
+    if (!window.confirm(`把成片「${clip.name}」发送到豆包收件箱？\n将经过 95 暂存 → 本地拉取，随后出现在豆包侧本地 inbox。`)) return;
+    setDeliveringClipId(clip.clip_id);
+    setMessage(`正在发送「${clip.name}」到抖音收件箱…`);
+    try {
+      const resp = await fetch(`/video-api/studio/projects/${activeProjectId}/clips/${clip.clip_id}/deliver`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ title: clip.topic || clip.name }),
+      });
+      const data = await resp.json().catch(() => ({}) as Record<string, unknown>);
+      if (resp.ok) {
+        const receipt = JSON.stringify((data as { delivery?: unknown })?.delivery ?? {});
+        setMessage(`「${clip.name}」已发送到豆包收件箱 ✓（回执：${receipt.slice(0, 140)}）。等豆包侧拉取后，即可在本地 inbox 见到该成片。`);
+      } else {
+        const detail = (data as { detail?: unknown }).detail;
+        const line = typeof detail === "string" ? detail
+          : typeof detail === "object" && detail !== null && "detail" in detail ? String((detail as { detail: unknown }).detail)
+          : `HTTP ${resp.status}`;
+        setMessage(`「${clip.name}」发送失败：${line}${resp.status === 503 ? "（投递通道未配置 upload_token）" : ""}`);
+      }
+    } catch {
+      setMessage(`「${clip.name}」发送失败：网络错误`);
+    } finally {
+      setDeliveringClipId(null);
+    }
+  }
+  // 批量投递：卡片勾选 → 一次请求逐条投递（单条失败不中断批次）。
+  const [selectedClipIds, setSelectedClipIds] = useState<string[]>([]);
+  const [batchDelivering, setBatchDelivering] = useState(false);
+  // ===== 项目术语表（转写热词 + 纠错参照，2026-10-28）=====
+  const [glossaryOpen, setGlossaryOpen] = useState(false);
+  const [glossaryText, setGlossaryText] = useState("");
+  const [glossaryBusy, setGlossaryBusy] = useState(false);
+  async function glossaryToggle() {
+    if (glossaryOpen) { setGlossaryOpen(false); return; }
+    if (!activeProjectId) { setMessage("尚未打开项目，无法编辑术语表。"); return; }
+    setGlossaryOpen(true);
+    setGlossaryBusy(true);
+    try {
+      const resp = await fetch(`/video-api/studio/projects/${activeProjectId}/glossary`, { credentials: "include" });
+      const data = await resp.json().catch(() => ({}) as { terms?: string[] });
+      setGlossaryText(((data as { terms?: string[] }).terms || []).join("\n"));
+    } catch { setMessage("术语表读取失败"); }
+    finally { setGlossaryBusy(false); }
+  }
+  async function glossarySave() {
+    if (!activeProjectId) return;
+    const terms = glossaryText.split("\n").map((x) => x.trim()).filter(Boolean);
+    setGlossaryBusy(true);
+    try {
+      const resp = await fetch(`/video-api/studio/projects/${activeProjectId}/glossary`, {
+        method: "PUT", headers: { "content-type": "application/json" }, credentials: "include",
+        body: JSON.stringify({ terms }),
+      });
+      const data = await resp.json().catch(() => ({}) as { count?: number; terms?: string[] });
+      if (resp.ok) {
+        setGlossaryText(((data as { terms?: string[] }).terms || []).join("\n"));
+        setMessage(`术语表已保存（${(data as { count?: number }).count ?? 0} 个词）。下次转写与纠错自动生效。`);
+      } else { setMessage(`术语表保存失败：HTTP ${resp.status}`); }
+    } catch { setMessage("术语表保存失败：网络错误"); }
+    finally { setGlossaryBusy(false); }
+  }
+  function toggleClipSelect(clipId: string, checked: boolean) {
+    setSelectedClipIds((old) => checked ? (old.includes(clipId) ? old : [...old, clipId]) : old.filter((x) => x !== clipId));
+  }
+  async function deliverSelectedClips() {
+    if (!activeProjectId || selectedClipIds.length === 0) return;
+    if (!window.confirm(`把已选的 ${selectedClipIds.length} 条成片批量发送到豆包收件箱？\n将经过 95 暂存 → 本地拉取，随后出现在豆包侧本地 inbox。`)) return;
+    setBatchDelivering(true);
+    setMessage(`正在批量发送 ${selectedClipIds.length} 条成片到抖音收件箱…`);
+    try {
+      const resp = await fetch(`/video-api/studio/projects/${activeProjectId}/clips/deliver-batch`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ clip_ids: selectedClipIds }),
+      });
+      const data = await resp.json().catch(() => ({}) as Record<string, unknown>);
+      if (resp.ok) {
+        const summary = data as { succeeded?: number; failed?: number; results?: Array<{ clip_id: string; ok: boolean; error?: string }> };
+        const fails = (summary.results || []).filter((r) => !r.ok).map((r) => `${r.clip_id}: ${r.error || "失败"}`).join("；");
+        setMessage(`批量发送完成：成功 ${summary.succeeded ?? 0} 条，失败 ${summary.failed ?? 0} 条。${fails ? `失败明细：${fails}` : "等豆包侧拉取后，即可在本地 inbox 见到该成片。"}`);
+        if (!summary.failed) setSelectedClipIds([]);
+      } else {
+        const detail = (data as { detail?: unknown }).detail;
+        setMessage(`批量发送失败：${typeof detail === "string" ? detail : `HTTP ${resp.status}`}`);
+      }
+    } catch {
+      setMessage("批量发送失败：网络错误");
+    } finally {
+      setBatchDelivering(false);
+    }
+  }
   const downloadRenderedClip = () => {
     if (!activeRenderedClip) return;
     const url = clipExportUrl(activeClip ?? activeRenderedClip);
@@ -3963,7 +4061,22 @@ export default function StudioPage() {
             </>}
           </section>
           <section className="asset-section">
-            <p className="asset-section-label rendered">剪辑成片（{cardCount || renderedClipList.length}）</p>
+            <p className="asset-section-label rendered">剪辑成片（{cardCount || renderedClipList.length}）<button type="button" onClick={() => void glossaryToggle()} disabled={glossaryBusy} style={{ marginLeft: 8, padding: "2px 10px", borderRadius: 6, border: "1px solid rgba(124,58,237,0.4)", background: "transparent", color: "inherit", cursor: "pointer", fontSize: 12 }}>{glossaryOpen ? "收起术语表" : "术语表"}</button></p>
+            {glossaryOpen && <div style={{ padding: 10, marginBottom: 8, borderRadius: 8, border: "1px solid rgba(124,58,237,0.4)", background: "rgba(124,58,237,0.08)" }}>
+              <p style={{ margin: "0 0 6px", fontSize: 12, opacity: 0.8 }}>每行一个术语（药名/人名/机构等）。保存后：转写时作为热词偏置、纠错时作为正确写法参照。最多 300 个。</p>
+              <textarea value={glossaryText} onChange={(event) => setGlossaryText(event.target.value)} rows={6} spellCheck={false}
+                style={{ width: "100%", boxSizing: "border-box", fontFamily: "monospace", fontSize: 13, padding: 8, borderRadius: 6, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(0,0,0,0.25)", color: "inherit", resize: "vertical" }}
+                placeholder={"氨氯地平\n汞柱\nxx医院"} />
+              <div style={{ marginTop: 6, display: "flex", gap: 8 }}>
+                <button type="button" disabled={glossaryBusy} onClick={() => void glossarySave()} style={{ padding: "4px 14px", borderRadius: 6, border: "none", background: "#7C3AED", color: "#fff", cursor: glossaryBusy ? "wait" : "pointer" }}>{glossaryBusy ? "保存中…" : "保存术语表"}</button>
+                <button type="button" onClick={() => setGlossaryOpen(false)} style={{ padding: "4px 14px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.3)", background: "transparent", color: "inherit", cursor: "pointer" }}>关闭</button>
+              </div>
+            </div>}
+            {renderedClipList.length > 0 && selectedClipIds.length > 0 && <div className="batch-deliver-bar" role="toolbar" aria-label="批量发送到豆包" style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 10px", marginBottom: 8, borderRadius: 8, background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.35)" }}>
+              <span style={{ fontSize: 13 }}>已选 {selectedClipIds.length} 条成片</span>
+              <button type="button" disabled={batchDelivering} onClick={() => void deliverSelectedClips()} style={{ padding: "4px 12px", borderRadius: 6, border: "none", background: "#7C3AED", color: "#fff", cursor: batchDelivering ? "wait" : "pointer" }}>{batchDelivering ? "批量发送中…" : "批量发送到豆包"}</button>
+              <button type="button" disabled={batchDelivering} onClick={() => setSelectedClipIds([])} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.3)", background: "transparent", color: "inherit", cursor: "pointer" }}>取消选择</button>
+            </div>}
             {renderedClipList.length === 0 && <p className="asset-subsection-empty">自动剪辑完成后，成片会显示在这里。</p>}
             {renderedClipList.length > 0 && <>
             {/* 卡片按**稳定 clip_id** 渲染（dedupeByClipId）：封面/标题/字幕/时间线局部任务
@@ -4003,11 +4116,16 @@ export default function StudioPage() {
                 </div>
                 <div className="rendered-info">
                 <button type="button" className="rendered-menu-toggle" aria-label={`${clip.name}更多操作`} aria-expanded={menuOpen} title="更多操作：播放 / 导出 / 重新制作封面 / 编辑标题 / 查看历史 / 删除" onClick={(event) => { event.stopPropagation(); setOpenCardMenu(menuOpen ? null : clip.clip_id); }}><Menu size={14} /></button>
+                <label className="rendered-select" title="勾选后可批量发送到豆包" onClick={(event) => event.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 6, cursor: "pointer", fontSize: 12 }}>
+                  <input type="checkbox" checked={selectedClipIds.includes(clip.clip_id)} onChange={(event) => { event.stopPropagation(); toggleClipSelect(clip.clip_id, event.target.checked); }} aria-label={`选择成片 ${clip.name}`} />
+                  选
+                </label>
                 <strong title={card?.title || clip.topic}>{clip.name}</strong>
                 <span>{formatTime(clip.duration)} · {card?.status || "ready"}{clip.topic ? ` · ${clip.topic}` : ""}{clip.warnings?.length ? ` · ⚠ ${clip.warnings.length} 项警告` : ""}</span>{/* 规则版本可见性（Phase B）：这条成片当时用的 workflow / skill 版本；旧成片显示「未知（无规则快照）」。 */}<small className="rendered-rules" title="本次成片实际使用的规则版本（来自项目台账）。点击查看规则快照：workflow 版本、各 skill 版本与生效规则。" onClick={(event) => { event.stopPropagation(); void viewClipRules(clip); }}>{workflowVersionLine(clip)}</small>
                 {menuOpen && <div className="rendered-menu" role="menu" onClick={(event) => event.stopPropagation()}>
                   <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setOpenCardMenu(null); void playRenderedClip(clip); }}>播放</button>
                   <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setOpenCardMenu(null); triggerArtifactDownload(clipExportUrl(clip)); }}>导出</button>
+                  <button type="button" role="menuitem" disabled={deliveringClipId === clip.clip_id} title="发送到豆包收件箱：95 暂存 → 本地拉取 → 豆包侧本地 inbox" onClick={(event) => { event.stopPropagation(); setOpenCardMenu(null); void deliverClipToDoubao(clip); }}>{deliveringClipId === clip.clip_id ? "发送中…" : "发送到豆包"}</button>
                   {coverExport && <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setOpenCardMenu(null); triggerArtifactDownload(coverExport); }}>导出封面</button>}
                   <button type="button" role="menuitem" disabled={coverBusy || localTaskBusy} title={`按当前封面风格（${COVER_STYLES.find((item) => item.id === coverStyle)?.name || coverStyle}）重新生成封面：只换封面图与 0.8s 片头，不重剪正片、不新增卡片。`} onClick={(event) => { event.stopPropagation(); setOpenCardMenu(null); void regenerateCoverForClip(clip, coverStyle).catch((error) => setMessage(error instanceof Error ? error.message : "封面重制失败")); }}>重新制作封面</button>
                   <button type="button" role="menuitem" onClick={(event) => { event.stopPropagation(); setOpenCardMenu(null); const title = promptClipTitle(clip); if (title === null) return; void updateClipTitle(clip, title || null).catch((error) => setMessage(error instanceof Error ? error.message : "标题更新失败")); }}>编辑标题</button>

@@ -261,14 +261,14 @@ def transcribe_with_whisper(video_path: Path, model_name: str = "base") -> Dict[
     return model.transcribe(str(audio_path), word_timestamps=True, language=None)
 
 
-def transcribe_with_faster_whisper(video_path: Path, runtime_config) -> Dict[str, Any]:
+def transcribe_with_faster_whisper(video_path: Path, runtime_config, hotwords: str | None = None) -> Dict[str, Any]:
     # Shared with video-brain: separate processes must not run ASR together.
     lock_path = Path(os.getenv("STUDIO_ASR_LOCK", "/domain/.studio-resources/asr.lock"))
     with process_lock(lock_path):
-        return _transcribe_with_faster_whisper(video_path, runtime_config)
+        return _transcribe_with_faster_whisper(video_path, runtime_config, hotwords=hotwords)
 
 
-def _transcribe_with_faster_whisper(video_path: Path, runtime_config) -> Dict[str, Any]:
+def _transcribe_with_faster_whisper(video_path: Path, runtime_config, hotwords: str | None = None) -> Dict[str, Any]:
     """Run the fixed local ASR profile: small model, CPU, int8 and VAD."""
     if not _FASTER_WHISPER_AVAILABLE:
         raise RuntimeError(
@@ -293,6 +293,10 @@ def _transcribe_with_faster_whisper(video_path: Path, runtime_config) -> Dict[st
         )
 
     audio_path = _prepare_audio_for_transcription(video_path)
+    transcribe_kwargs: Dict[str, Any] = {}
+    if hotwords:
+        # 项目术语表热词偏置（2026-10-28）：提高专有名词/术语的识别命中率。
+        transcribe_kwargs["hotwords"] = hotwords
     segments, info = _FASTER_WHISPER_MODEL_CACHE[profile].transcribe(
         str(audio_path),
         language="zh",
@@ -303,6 +307,7 @@ def _transcribe_with_faster_whisper(video_path: Path, runtime_config) -> Dict[st
         # 简体提示词偏置解码：降低 whisper 中文输出繁体的概率（配合
         # zh_text_normalizer 的确定性 t2s 规整，见下方 normalize_asr_result）。
         initial_prompt="以下是普通话的句子，用简体中文转写。",
+        **transcribe_kwargs,
     )
     normalized_segments = []
     for segment in segments:

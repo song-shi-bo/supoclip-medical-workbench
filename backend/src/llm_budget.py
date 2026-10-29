@@ -28,12 +28,17 @@ import math
 from collections.abc import Mapping
 import logging
 import os
+import threading
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("llm_budget")
+
+# 当日台账为「读-改-写」文件操作：纠错批次并行化（2026-10-28）后多线程并发记账，
+# 进程内用锁保证不丢条目（跨进程仍以单 worker 实例为前提）。
+_LEDGER_LOCK = threading.Lock()
 
 # 网关每请求固定开销（HANDOFF §1：prompt 含 ~220 固定开销）。
 PER_CALL_OVERHEAD_TOKENS = 220
@@ -119,30 +124,31 @@ def record_call(kind: str, *, job_id: str | None = None, est_reserved: int = 0,
     台账写失败只记日志，绝不抛错（预算记录不阻塞管线）。
     """
     try:
-        data = _load_ledger(now)
-        entry: dict[str, Any] = {
-            "ts": (now or datetime.now(UTC)).isoformat(),
-            "kind": kind,
-            "job_id": job_id,
-            "est_reserved": int(est_reserved),
-            "usage": extract_usage(usage),
-            "usage_details": extract_usage_details(usage),
-            "model": model,
-        }
-        if note:
-            entry["note"] = str(note)[:200]
-        data["entries"].append(entry)
-        data["reserved_total"] = int(data.get("reserved_total") or 0) + int(est_reserved)
-        data["requests"] = int(data.get("requests") or 0) + 1
-        directory = _ledger_root()
-        directory.mkdir(parents=True, exist_ok=True)
-        target = ledger_path(now)
-        temporary = target.with_name(f"{target.name}.{uuid.uuid4().hex}.part")
-        try:
-            temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-            os.replace(temporary, target)
-        finally:
-            temporary.unlink(missing_ok=True)
+        with _LEDGER_LOCK:  # 读-改-写原子化：纠错批次并行时不丢台账条目
+            data = _load_ledger(now)
+            entry: dict[str, Any] = {
+                "ts": (now or datetime.now(UTC)).isoformat(),
+                "kind": kind,
+                "job_id": job_id,
+                "est_reserved": int(est_reserved),
+                "usage": extract_usage(usage),
+                "usage_details": extract_usage_details(usage),
+                "model": model,
+            }
+            if note:
+                entry["note"] = str(note)[:200]
+            data["entries"].append(entry)
+            data["reserved_total"] = int(data.get("reserved_total") or 0) + int(est_reserved)
+            data["requests"] = int(data.get("requests") or 0) + 1
+            directory = _ledger_root()
+            directory.mkdir(parents=True, exist_ok=True)
+            target = ledger_path(now)
+            temporary = target.with_name(f"{target.name}.{uuid.uuid4().hex}.part")
+            try:
+                temporary.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+                os.replace(temporary, target)
+            finally:
+                temporary.unlink(missing_ok=True)
     except Exception as exc:  # noqa: BLE001 — 记账失败不影响任务
         logger.debug("llm usage ledger write skipped: %s", exc)
 

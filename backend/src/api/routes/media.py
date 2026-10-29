@@ -4055,3 +4055,145 @@ async def studio_project_exports(project_id: str, session: AsyncSession = Depend
                     entry["srt_url"] = url
         items.append(entry)
     return {"project_id": project_id, "items": items}
+
+
+# ---------------------------------------------------------------------------
+# 成片投递：发送到抖音收件箱（95 中转 → 本地拉取 → 私密上传，2026-10-28）
+# ---------------------------------------------------------------------------
+@router.post("/studio/projects/{project_id}/clips/{clip_id}/deliver")
+async def studio_clip_deliver(project_id: str, clip_id: str, request: Request):
+    """把成片投递到抖音收件箱（95 暂存 → 本地拉取 → 私密上传 → 手机复核）。
+
+    ACL：require 项目归属（与列表可见性同口径）；台账校验 clip 归属项目（防跨项目投递）；
+    投递配置未就绪 → 503 drop_inbox_not_configured。
+    """
+    from ... import studio_project_store
+    from ...clip_delivery import deliver_clip_file, fetch_user_identity, resolve_clip_final_path
+
+    principal = current_principal(request)
+    access_ledger(request).require(principal, "project", project_id)
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    payload = payload if isinstance(payload, dict) else {}
+    title_hint = str(payload.get("title") or "").strip()
+
+    def _work() -> dict:
+        try:
+            manifest = studio_project_store.load_manifest(project_id)
+        except Exception:
+            manifest = {}
+        entry = (manifest.get("clips") or {}).get(clip_id)
+        if entry is None:
+            raise HTTPException(404, "clip_not_in_project_manifest")
+        info = resolve_clip_final_path(clip_id)
+        meta = {
+            "subject": principal["subject"],
+            "project_id": project_id,
+            "clip_id": clip_id,
+            "job_id": info["job_id"],
+            "title_hint": title_hint or str(entry.get("title") or ""),
+            "duration_s": entry.get("duration"),
+            **fetch_user_identity(principal["subject"]),
+        }
+        return deliver_clip_file(info["path"], meta)
+
+    result = await run_in_threadpool(_work)
+    return {"ok": True, "project_id": project_id, "clip_id": clip_id, "delivery": result}
+
+
+@router.post("/studio/projects/{project_id}/clips/deliver-batch")
+async def studio_clip_deliver_batch(project_id: str, request: Request):
+    """批量投递成片到抖音收件箱：{clip_ids:[...], title?} → 逐条投递、逐条返回结果。
+
+    单条失败不中断批次；ACL/台账校验与单条投递同口径。
+    """
+    from ... import studio_project_store
+    from ...clip_delivery import deliver_clip_file, fetch_user_identity, resolve_clip_final_path
+
+    principal = current_principal(request)
+    access_ledger(request).require(principal, "project", project_id)
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    payload = payload if isinstance(payload, dict) else {}
+    clip_ids = [str(x).strip() for x in (payload.get("clip_ids") or []) if str(x).strip()]
+    title_hint = str(payload.get("title") or "").strip()
+    if not clip_ids:
+        raise HTTPException(400, "clip_ids_required")
+    if len(clip_ids) > 50:
+        raise HTTPException(413, "too_many_clips_per_batch")
+
+    try:
+        manifest = studio_project_store.load_manifest(project_id)
+    except Exception:
+        manifest = {}
+    known = manifest.get("clips") or {}
+
+    def _work() -> dict:
+        results: list[dict] = []
+        for cid in clip_ids:
+            entry = known.get(cid)
+            if entry is None:
+                results.append({"clip_id": cid, "ok": False, "error": "clip_not_in_project_manifest"})
+                continue
+            try:
+                info = resolve_clip_final_path(cid)
+                meta = {
+                    "subject": principal["subject"],
+                    "project_id": project_id,
+                    "clip_id": cid,
+                    "job_id": info["job_id"],
+                    "title_hint": title_hint or str(entry.get("title") or ""),
+                    "duration_s": entry.get("duration"),
+                    **fetch_user_identity(principal["subject"]),
+                }
+                out = deliver_clip_file(info["path"], meta)
+                results.append({"clip_id": cid, "ok": True, "delivery": out})
+            except HTTPException as exc:
+                detail = exc.detail
+                results.append({"clip_id": cid, "ok": False,
+                                "error": detail if isinstance(detail, str) else json.dumps(detail, ensure_ascii=False)[:200],
+                                "status": exc.status_code})
+            except Exception as exc:  # noqa: BLE001 — 批次内单条异常不中断
+                results.append({"clip_id": cid, "ok": False, "error": f"unexpected: {exc}"})
+        succeeded = sum(1 for r in results if r.get("ok"))
+        return {"ok": succeeded == len(results), "total": len(results),
+                "succeeded": succeeded, "failed": len(results) - succeeded, "results": results}
+
+    result = await run_in_threadpool(_work)
+    return {"project_id": project_id, **result}
+
+
+# ---------------------------------------------------------------------------
+# 项目术语表（ASR 热词 + 纠错参照，2026-10-28）
+# ---------------------------------------------------------------------------
+@router.get("/studio/projects/{project_id}/glossary")
+async def studio_glossary_get(project_id: str, request: Request):
+    """读取项目术语表（转写热词 + 纠错参照，随项目存储）。"""
+    from ...project_glossary import load_glossary
+
+    principal = current_principal(request)
+    access_ledger(request).require(principal, "project", project_id)
+    return {"project_id": project_id, "terms": load_glossary(project_id)}
+
+
+@router.put("/studio/projects/{project_id}/glossary")
+async def studio_glossary_put(project_id: str, request: Request):
+    """保存项目术语表：body {"terms": ["词1", …]}（去重、≤300 词、单词 ≤60 字）。"""
+    from ...project_glossary import save_glossary
+
+    principal = current_principal(request)
+    access_ledger(request).require(principal, "project", project_id)
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(400, "invalid_json")
+    terms = payload.get("terms") if isinstance(payload, dict) else None
+    if not isinstance(terms, list):
+        raise HTTPException(400, "terms_must_be_list")
+    saved = save_glossary(project_id, terms)
+    return {"ok": True, "project_id": project_id, "count": len(saved), "terms": saved}
