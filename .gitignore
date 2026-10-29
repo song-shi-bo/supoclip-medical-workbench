@@ -50,3 +50,8 @@ backend/.pytest-*/
 frontend/.next-*/
 frontend/.ma1-spike/
 frontend/.test-mailbox/
+
+# qdrant runtime artifacts (knowledge-base deployment paused; binary kept on disk only)
+backend/bin/
+backend/qdrant.log
+backend/.qdrant-initialized
