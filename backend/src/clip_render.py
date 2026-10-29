@@ -39,6 +39,7 @@ FFPROBE_TIMEOUT_SECONDS = 120
 FFMPEG_TIMEOUT_SECONDS = 3600
 from .capacity_guard import reserve_capacity, estimate_render_peak, CapacityInsufficientError
 from . import subtitle_compose as _subtitle_compose
+from . import subtitle_cueing as _subtitle_cueing
 _FF_FALLBACK_DIRS = ("/domain/dsh-home/bin", "/usr/local/bin", "/usr/bin")
 
 # 资源/性能参数（刻意保守：可解码可播放优先，不做画质竞赛）
@@ -48,6 +49,7 @@ _VIDEO_ARGS = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23",
                "-pix_fmt", "yuv420p",
                "-vf", "scale=1920:1920:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2"]
 _AUDIO_ARGS = ["-c:a", "aac", "-b:a", "128k"]
+_BURN_FONTSDIR = os.getenv("BURN_FONTSDIR", "/usr/share/fonts/truetype/wqy")
 
 
 def _resolve(bin_name: str) -> str:
@@ -95,40 +97,29 @@ def _srt_ts(ms: int) -> str:
 
 def build_srt(corrected_segments: list[dict[str, Any]], start_ms: int, end_ms: int
               ) -> tuple[str, list[str], list[str]]:
-    """从纠错转写构建切片内字幕：时间减 start_ms、裁剪到 [0, duration]。
+    """从纠错转写构建切片内字幕：cue 合成层（subtitle_cueing）+ SRT 序列化。
 
     返回 ``(srt_text, used_segment_ids, warnings)``。空Range/无命中只记
     warning，绝不抛错（字幕问题不阻止视频生成）。
 
-    文本按 subtitle_compose 默认画布样式**确定性折行**：本机 libass 对
-    「纯 CJK 无空格长行」不做自动折行（WrapStyle 0 也溢出画布），不在这里
-    折行的话烧录成片时字幕会超出 1080 宽被裁边。
+    cue 合成规则（2026-10-29 字幕切分改造，详见 src/subtitle_cueing.py 模块头）：
+    语音停顿/标点切句 → 口语冗余清理（可开关）→ 子句装箱（同屏 ≤2 行）→
+    原子 token 折行（数字单位/保护词不拆、行首无标点、每行 ≤16 字）→
+    时间轴整平（每条 ≥0.8s、不重叠、无缝隙）。可调参数走环境变量
+    ``SUBTITLE_MAX_LINE_CHARS`` / ``SUBTITLE_MAX_LINES`` /
+    ``SUBTITLE_MIN_CUE_SECONDS`` / ``SUBTITLE_STRIP_FILLERS`` /
+    ``SUBTITLE_PUNCT_STYLE`` / ``SUBTITLE_SENTENCE_PAUSE_MS``。
     """
     duration_ms = max(1, end_ms - start_ms)
-    used: list[str] = []
-    warnings: list[str] = []
+    cfg = _subtitle_cueing.config_from_env()
+    cues, used, warnings = _subtitle_cueing.build_cues_from_segments(
+        corrected_segments, float(start_ms), float(end_ms), cfg)
     blocks: list[str] = []
-    _wrap_limit = _subtitle_compose._wrap_limit(
-        _subtitle_compose.normalize_config(None), _subtitle_compose.DEFAULT_WIDTH)
-    for offset, segment in enumerate(corrected_segments, start=1):
-        text = str(segment.get("text", "")).strip()
-        if not text:
-            continue
-        seg_start = float(segment.get("start_ms", (segment.get("start") or 0.0) * 1000))
-        seg_end = float(segment.get("end_ms", (segment.get("end") or 0.0) * 1000))
-        rel_start = seg_start - start_ms
-        rel_end = seg_end - start_ms
-        if rel_end <= 0 or rel_start >= duration_ms:
-            continue  # 完全在切片之外：不允许使用其他切片/区间的文字
-        clipped_start = max(0, rel_start)
-        clipped_end = min(duration_ms, rel_end)
-        if clipped_end - clipped_start < 200:
-            warnings.append(f"字幕段 {segment.get('segment_id', offset)} 落在切片内不足 200ms，已跳过")
-            continue
-        used.append(str(segment.get("segment_id") or f"seg_{offset:04d}"))
-        wrapped = "\n".join(_subtitle_compose._wrap_display_lines(text, _wrap_limit))
-        blocks.append(
-            f"{offset}\n{_srt_ts(clipped_start)} --> {_srt_ts(clipped_end)}\n{wrapped}\n")
+    window_s = duration_ms / 1000.0
+    for i, cue in enumerate(cues, start=1):
+        s = max(0.0, min(float(cue["start"]), window_s))
+        e = max(s, min(float(cue["end"]), window_s))
+        blocks.append(f"{i}\n{_srt_ts(s * 1000)} --> {_srt_ts(e * 1000)}\n{cue['text']}\n")
     if not blocks:
         warnings.append("切片时间范围内没有命中任何转写分段，字幕文件为空（不影响视频）")
     return "\n".join(blocks), used, warnings
@@ -253,10 +244,28 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
 
     render_warnings: list[str] = list(subtitle_warnings)
     video_args = list(_VIDEO_ARGS)
-    # 字幕烧录统一移到 transform 导出（studio_transform_export._subtitle_burn_spec）：
-    # 底片只产 sidecar SRT，字幕作为画布叠加层在 1080x1920 成型后合成——
-    # zoom/pan/背景模式不再放大或推出字幕（剪映同款模型）。
-    subtitle_mode = "sidecar_only" if srt_text else "absent"
+    # 2026-10-29 字幕烧录固化（用户指令「固化烧录链」）：渲染同一遍 ffmpeg 直接烧入
+    # 固化样式 ASS（白字/纯黑 2px 描边/Shadow=0，PlayRes 1080x1920 随输出分辨率等比
+    # 缩放，滤镜链位于 scale 之后保证字幕在最终像素上成型）。成片即 burned：
+    # 工作台预览/下载/抖音投递所见即所得；studio export-transformed 对 burned 底片
+    # 自动跳过二次烧录（_subtitle_burn_spec 按 subtitle_mode=burned 返回 None）。
+    # SUBTITLE_HARDBURN=false 可回退旧行为（sidecar_only，烧录走 transform 导出）。
+    burn_ass_path: Path | None = None
+    if srt_text and _subtitle_cueing.hardburn_enabled():
+        burn_ass_path = out_dir / "subtitles.ass"
+        burn_ass_path.write_text(
+            _subtitle_cueing.srt_to_styled_ass(srt_text), encoding="utf-8")
+        vf_idx = video_args.index("-vf")
+        video_args[vf_idx + 1] = (
+            f"{video_args[vf_idx + 1]},"
+            f"subtitles=filename='{_filter_value(str(burn_ass_path))}'"
+            f":fontsdir='{_filter_value(_BURN_FONTSDIR)}'")
+        subtitle_mode = "burned"
+    elif srt_text:
+        # 兼容开关关闭：底片只产 sidecar SRT，烧录走 transform 导出。
+        subtitle_mode = "sidecar_only"
+    else:
+        subtitle_mode = "absent"
     try:
         _run_ffmpeg([
             "-ss", f"{start_ms / 1000:.3f}", "-i", str(source),
@@ -285,6 +294,14 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
         "srt_sha256": hashlib.sha256(srt_text.encode()).hexdigest(),
         "subtitle_mode": subtitle_mode, "subtitle_segments": subtitle_segments,
         "clip_id": clip_id,
+        **({"subtitle_hard_burn": {
+                "style": ("ASS PlayRes 1080x1920: Primary=white, OutlineColour=black, "
+                          "BorderStyle=1, Outline=2, Shadow=0"),
+                "font": _subtitle_cueing.BURN_FONT_NAME,
+                "font_size_px": _subtitle_cueing.BURN_FONT_SIZE_PX,
+                "max_line_chars": _subtitle_cueing.config_from_env().max_line_chars,
+                "ass": str(burn_ass_path)}}
+           if burn_ass_path is not None else {}),
         "completeness": str(clip.get("completeness") or "pass"),
         "warnings": plan_warnings,
         "render_warnings": render_warnings,

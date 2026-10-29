@@ -57,11 +57,13 @@ def _segments() -> list[dict]:
 
 def test_srt_shift_clamp_and_provenance():
     srt, used, warnings = cr.build_srt(_segments(), 0, 2000)
-    assert "00:00:00,500 --> 00:00:01,800" in srt          # seg_0000 平移
-    assert "00:00:01,500 --> 00:00:02,000" in srt          # 跨界段被裁剪到切片内
+    # 2026-10-29 cue 合成改造后：跨界段被钳到 1800-2000（200ms <0.8s）→
+    # 时间轴整平并入相邻条，与第一段合并为一条 500-2000 的 cue
+    assert "00:00:00,500 --> 00:00:02,000" in srt
+    assert "第一段" in srt and "跨界段" in srt
     assert "seg_0000" in used and "seg_0002" in used
     assert "seg_0003" not in used                           # 其他区间文字禁止出现
-    assert "第一段" in srt and "切片外" not in srt
+    assert "切片外" not in srt
     empty_srt, empty_used, empty_warnings = cr.build_srt(_segments(), 5_500, 6_500)
     assert empty_used == [] and empty_srt == ""
     assert empty_warnings and "没有命中" in empty_warnings[0]
@@ -248,25 +250,28 @@ def test_fixed_revision_subtitle_burn_arguments_boundaries_cache_and_cards(tmp_p
     options = dict(source=source,out_dir=out,corrected_segments=segments,
                    transcript_ref={"transcript_id":"synthetic-tr","transcript_version":7},rule_snapshot_id="synthetic")
     rendered = cr.render_one(clip,**options)
-    # 2026-10-19 起底片不烧字幕：mode=sidecar_only，烧录在 transform 导出（studio_transform_export）
-    assert rendered["subtitle_mode"] == "sidecar_only"
+    # 2026-10-29 烧录链固化：渲染同一遍直接烧入固化样式字幕，mode=burned（所见即所得）
+    assert rendered["subtitle_mode"] == "burned"
     assert [(cue["start"],cue["end"]) for cue in rendered["segments"]] == [(0,.2),(1.8,2)]
     seconds=[{"segment_id":seg["segment_id"],"text":seg["text"],
               "start":seg["start_ms"]/1000,"end":seg["end_ms"]/1000} for seg in segments]
     assert cr._subtitle_cues(seconds,1000,3000) == rendered["segments"]
     vf = calls[0][calls[0].index("-vf")+1]
-    assert "subtitles=" not in vf and "scale=" in vf
+    # 烧录滤镜在 scale 之后（字幕落在最终像素上），且出自固化样式 ASS
+    assert "subtitles=filename=" in vf and "scale=" in vf and "subtitles.ass" in vf
     assert calls[0][-1].endswith("clip_final.rendering.mp4")
     srt = (out/"subtitles.srt").read_text()
-    assert "00:00:00,000 --> 00:00:00,200" in srt
-    assert "00:00:01,800 --> 00:00:02,000" in srt and "片外不得" not in srt
+    # 2026-10-29 cue 合成改造：0.2s 碎片条按 ≥0.8s 规则并入相邻条 → 单条 0-2000
+    assert "00:00:00,000 --> 00:00:02,000" in srt
+    assert "合成片头重叠" in srt and "合成片尾重叠" in srt
+    assert "片外不得" not in srt
     warning = json.loads((out/"warnings.json").read_text())
     assert warning["subtitle_provenance"]["transcript_version"] == 7
     assert warning["subtitle_provenance"]["segment_ids"] == ["head","tail"]
     store.register_clips("timeline_subtitles",run,[{"clip_id":cid}])
     card = store.list_cards("timeline_subtitles")[0]
     assert [c["segment_id"] for c in card["segments"]] == ["head","tail"]
-    assert card["subtitle_provenance"]["transcript_version"] == 7 and card["subtitle_mode"] == "sidecar_only"
+    assert card["subtitle_provenance"]["transcript_version"] == 7 and card["subtitle_mode"] == "burned"
     assert cr.render_one(clip,**options)["status"] == "skipped_playable" and len(calls) == 1
     options["transcript_ref"] = {"transcript_id":"synthetic-tr","transcript_version":8}
     cr.render_one(clip,**options)
@@ -276,15 +281,16 @@ def test_fixed_revision_subtitle_burn_arguments_boundaries_cache_and_cards(tmp_p
     assert len(calls) == 3
 
 
-def test_missing_cjk_font_does_not_block_sidecar_render(tmp_path, monkeypatch, subtitle_mock_runtime):
-    # 2026-10-19 起底片不再烧字幕：无 CJK 字体也不影响底片渲染（烧录在导出侧，届时再要求字体）
+def test_hardburn_can_be_disabled_via_env(tmp_path, monkeypatch, subtitle_mock_runtime):
+    # SUBTITLE_HARDBURN=false 回退旧行为：底片只产 sidecar SRT（烧录走 transform 导出）
     source, calls = subtitle_mock_runtime
-    monkeypatch.setattr(cr,"_subtitle_font",lambda:(None,None))
-    result = cr.render_one({"clip_id":"no-font","end_ms":1000},source=source,out_dir=tmp_path/"out",
+    monkeypatch.setenv("SUBTITLE_HARDBURN", "false")
+    result = cr.render_one({"clip_id":"no-burn","end_ms":1000},source=source,out_dir=tmp_path/"out",
         corrected_segments=[{"start_ms":0,"end_ms":1000,"text":"合成字幕"}],
         transcript_ref={"transcript_version":2},rule_snapshot_id=None)
     assert result["subtitle_mode"] == "sidecar_only" and result["render_warnings"] == []
     assert "subtitles=" not in calls[0][calls[0].index("-vf")+1]
+    assert not (tmp_path/"out"/"subtitles.ass").exists()
 
 
 def test_builtin_ttc_registry_family_and_user_upload_format_unchanged(tmp_path, monkeypatch):
