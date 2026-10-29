@@ -1422,3 +1422,21 @@ def list_projects(include_archived: bool = False) -> list[dict[str, Any]]:
         })
     result.sort(key=lambda item: item["updated_at"], reverse=True)
     return result
+
+
+def ensure_manifest(project_id: str, source_name: str | None = None) -> dict[str, Any]:
+    """项目台账不存在则创建最小 manifest（上传即建项目，2026-10-29 用户需求）。
+
+    幂等：已有台账原样返回。使上传/转写中的项目立即可见于项目列表，
+    不再等到自动剪辑完成才出现。
+    """
+    if manifest_path(project_id).is_file():
+        return load_manifest(project_id)
+    manifest: dict[str, Any] = {
+        "project_id": project_id,
+        "clips": {},
+        "status": "active",
+    }
+    if source_name:
+        manifest["source"] = {"name": source_name}
+    return _save_manifest_locked(project_id, manifest)

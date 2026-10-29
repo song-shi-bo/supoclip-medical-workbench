@@ -143,13 +143,29 @@ def stage_downloading(object_key: str, job_id: str) -> Path:
     return target
 
 
-def stage_transcribing(video_path: Path, config: dict) -> tuple[list[dict], dict]:
+def stage_transcribing(video_path: Path, config: dict, project_id: str | None = None) -> tuple[list[dict], dict]:
     from src.config import get_config
     from src.video_utils import transcribe_with_faster_whisper
 
-    _state(_current_job_id(), "transcribing", "语音转写（faster-whisper small/CPU/int8/VAD/zh，词级时间戳）", 0.15)
+def stage_transcribing(video_path: Path, config: dict, project_id: str | None = None) -> tuple[list[dict], dict]:
+    from src.config import get_config
+    from src.video_utils import transcribe_with_faster_whisper
+
+    # 云端转写分支（火山豆包 ASR 录音文件识别 2.0）：TRANSCRIPTION_PROVIDER=volc_cloud 时启用；
+    # 默认仍是本地 faster-whisper。云端不受本机 3GB 内存 cgroup 限制，准确率更高。
+    if (getattr(config, "transcription_provider", "") or "") == "volc_cloud":
+        return stage_transcribing_cloud(video_path, project_id)
+
+    hotwords = None
+    try:
+        from src.project_glossary import hotwords_string
+        hotwords = hotwords_string(project_id or "")
+    except Exception:  # noqa: BLE001 — 词表故障绝不影响转写主链路
+        hotwords = None
+    _state(_current_job_id(), "transcribing",
+           "语音转写（faster-whisper small/CPU/int8/VAD/zh，词级时间戳）" + ("，含项目热词" if hotwords else ""), 0.15)
     runtime_config = get_config()
-    transcript = transcribe_with_faster_whisper(video_path, runtime_config)
+    transcript = transcribe_with_faster_whisper(video_path, runtime_config, hotwords=hotwords)
     # Rendering runs in another process; release this worker's unused ASR model.
     import gc
     import ctypes
@@ -165,14 +181,89 @@ def stage_transcribing(video_path: Path, config: dict) -> tuple[list[dict], dict
     return raw_segments, {"language": transcript.get("language", "zh"), "words": words, "segments": raw_segments}
 
 
-def stage_correcting(raw_segments: list[dict], job_id: str) -> dict:
+def _job_owner_subject(project_id: str) -> str:
+    """ACL 只读查询项目归属 subject（云端转写上传音频时的溯源标识）。"""
+    try:
+        import sqlite3
+        acl = os.environ.get("STUDIO_ACCESS_ACL", "/domain/.studio-resources/access/access.sqlite3")
+        c = sqlite3.connect(f"file:{acl}?mode=ro", uri=True)
+        try:
+            row = c.execute("SELECT owner FROM objects WHERE project_id=? LIMIT 1", (project_id,)).fetchone()
+            return str(row[0]) if row and row[0] else "unknown"
+        finally:
+            c.close()
+    except Exception:  # noqa: BLE001 — 溯源标识失败不影响转写
+        return "unknown"
+
+
+def stage_transcribing_cloud(video_path: Path, project_id: str | None = None) -> tuple[list[dict], dict]:
+    """云端转写（豆包 ASR 录音文件识别 2.0）：提音频 → 经 95 投递 → 公网 URL → 提交任务 → 轮询。
+
+    前置：① 95 侧已把 drop 收件文件以 HTTPS 暴露（VOLC_ASR_AUDIO_URL_TEMPLATE）；
+          ② VOLC_ASR_API_KEY；③ 术语表自动作为 ASR 热词直传（corpus.context）。
+    """
+    import time as _time
+
+    from src import volc_asr
+
+    job_id = _current_job_id()
+    glossary_terms: list[str] = []
+    try:
+        from src.project_glossary import load_glossary
+        glossary_terms = load_glossary(project_id or "")
+    except Exception:  # noqa: BLE001 — 词表故障不影响转写
+        glossary_terms = []
+
+    _state(job_id, "transcribing", "提取音频（云端转写用）", 0.08)
+    audio = volc_asr.extract_audio_mp3(video_path)
+
+    _state(job_id, "transcribing", "上传音频到中转（95）", 0.12)
+    remote = volc_asr.upload_audio(audio, _job_owner_subject(project_id or ""), project_id or "")
+
+    audio_url = volc_asr.audio_public_url(remote)
+    _state(job_id, "transcribing", "提交云端转写任务（豆包大模型 ASR）", 0.18)
+    task_id = volc_asr.submit_task(audio_url, glossary_terms)
+
+    _state(job_id, "transcribing", "云端转写中（每 20 秒查询，长视频约数分钟）", 0.22)
+    deadline = _time.time() + 3600
+    while _time.time() < deadline:
+        q = volc_asr.query_task(task_id)
+        done = volc_asr.is_done(q)
+        if done is True:
+            parsed = volc_asr.parse_result(q.get("json") or {})
+            segs = parsed["asr_segments"]
+            if not segs:
+                raise RuntimeError("云端转写返回空结果")
+            # 中转音频自动清理：95 侧文件 + 本地临时 mp3（成功即删，不占存储）
+            try:
+                volc_asr.cleanup_remote_audio(remote)
+            finally:
+                audio.unlink(missing_ok=True)
+            _state(job_id, "transcribing", f"云端转写完成：{len(segs)} 段（中转音频已清理）", 0.3)
+            return segs, {"language": parsed.get("language", "zh-CN"), "words": [],
+                          "segments": segs, "provider": "volc_cloud"}
+        if done is None:
+            raise RuntimeError(f"云端转写任务异常：{str(q)[:200]}")
+        _time.sleep(20)
+    raise RuntimeError("云端转写超时（>1 小时）")
+
+
+def stage_correcting(raw_segments: list[dict], job_id: str, project_id: str | None = None) -> dict:
     """纠错：DSH 文本模型按完整上下文做普通中文校对（见 transcript_correction_llm）。
 
     * 只修错别字/同音字/漏字/重复字/标点/断句，不润色、不强制医学术语表；
+    * 项目术语表注入 prompt（有参照才改术语，拿不准保留标 uncertain）；
     * 拿不准保留原文并标 uncertain；时间戳由原始分段复制，模型无权改动；
     * 模型未配置/单批失败 → 保守规整回退，engine/fallback_reasons 留痕。
     """
     from src.transcript_correction_llm import correct_segments_with_model
+
+    glossary_terms: list[str] = []
+    try:
+        from src.project_glossary import load_glossary
+        glossary_terms = load_glossary(project_id or "")
+    except Exception:  # noqa: BLE001 — 词表故障绝不影响纠错主链路
+        glossary_terms = []
 
     def _progress(message: str) -> None:
         _state(_current_job_id(), "correcting", message, 0.35)
@@ -180,7 +271,7 @@ def stage_correcting(raw_segments: list[dict], job_id: str) -> dict:
     return correct_segments_with_model([
         {"start": round(float(item["start"]), 3), "end": round(float(item["end"]), 3), "text": str(item["text"]).strip()}
         for item in raw_segments
-    ], progress=_progress, job_id=job_id or _current_job_id())
+    ], progress=_progress, job_id=job_id or _current_job_id(), glossary_terms=glossary_terms)
 
 
 def stage_analyzing(corrected_segments: list[dict], job_id: str) -> dict:
@@ -376,12 +467,12 @@ def run_transcribe_only(job: dict) -> None:
     if recovery.get("raw_segments") is not None:
         raw_segments,transcript_meta=recovery["raw_segments"],recovery["transcript_meta"]
     else:
-        raw_segments,transcript_meta=stage_transcribing(video_path,job.get("config") or {})
+        raw_segments,transcript_meta=stage_transcribing(video_path,job.get("config") or {},project_id=job.get("project_id"))
         recovery.update(raw_segments=raw_segments,transcript_meta=transcript_meta)
         _save_recovery(recovery_path,recovery,identity)
     corrected=recovery.get("corrected")
     if corrected is None:
-        corrected=stage_correcting(raw_segments,job_id)
+        corrected=stage_correcting(raw_segments,job_id,project_id=job.get("project_id"))
         recovery["corrected"]=corrected
         _save_recovery(recovery_path,recovery,identity)
 
@@ -1170,8 +1261,8 @@ def run_legacy_full(job: dict) -> None:
     project_id = job["project_id"]
 
     video_path = stage_downloading(object_key, job_id)
-    raw_segments, transcript_meta = stage_transcribing(video_path, job.get("config") or {})
-    corrected = stage_correcting(raw_segments, job_id)
+    raw_segments, transcript_meta = stage_transcribing(video_path, job.get("config") or {}, project_id=project_id)
+    corrected = stage_correcting(raw_segments, job_id, project_id=project_id)
     insights = stage_analyzing(corrected["asr_segments"], job_id)
     timeline = stage_editing(video_path, raw_segments, corrected, job_id, project_id=project_id)
     rendered, auto_edit_task = stage_rendering(project_id, video_path, corrected["asr_segments"], insights, job_id, project_override=project_id)
