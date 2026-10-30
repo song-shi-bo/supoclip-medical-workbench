@@ -145,3 +145,15 @@ uv run arq src.workers.tasks.WorkerSettings  # 需要主链路队列处理时另
   Next lint/build 通过，路由表无 /tasks、/list、/share；API 进程两次经 supervisor 自动拉起，
   `/health` 正常，legacy 路由不再注册，重启后四表未复活。
 - 前端新构建已产出（`.next`），运行中的前端进程下次重启时加载新构建；其行为不变（Studio 入口）。
+
+## 2026-10-30 前端事故与规则：dev server 运行期间禁止执行 next build
+
+- 前端在 supervisor 里是 **dev 模式**（`pnpm dev --port 3107`，Turbopack），不是 `next start`。
+  3107 与 `next build` 共用同一个 `.next` 目录：build 会清空重写该目录，删掉 dev server
+  正在使用的 `development/_buildManifest.js` 等产物，导致所有页面请求 ENOENT → 500
+  （`/` 重定向不受影响，具有迷惑性）。
+- **规则：任何构建/类型检查前，先确认 3107 是否在跑；确实要 build 时，先杀掉 dev 进程组
+  （supervisor 会自动拉起），build 完成后再放行，或者干脆不 build，用 lint + dev 按需编译验证。**
+- 修复方式：`kill -- -<pnpm主进程PGID>` 杀整组（进程树 pnpm→sh→next→next-server），
+  supervisor 5 秒内自动拉起新 dev server，Turbopack 重新按需编译（首个大页面 ~10s，之后正常）。
+  已验证恢复：/ 307 → /studio 200。
