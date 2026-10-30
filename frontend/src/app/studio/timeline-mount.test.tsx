@@ -17,13 +17,24 @@ const PROJECT = "timeline_mount";
 const projectHandlers = () => [
   http.get(`*/studio/timeline/${PROJECT}`, () => HttpResponse.json({
     id: PROJECT,
+    source: { name: "素材.mp4", duration: 45 },
     timeline: { ranges: [{ id: "clip-1", source_start: 0, source_end: 45 }] },
     transcript: [
       { start: 0, end: 2, text: "血压高要吃三种药。" },
       { start: 2, end: 4, text: "记得定期复查。" },
     ],
   })),
-  http.post(`*/studio/timeline/${PROJECT}/preview`, () => new HttpResponse(null, { status: 200 })),
+  http.post(`*/studio/timeline/${PROJECT}/preview`, () => HttpResponse.json({ state: "ready" })),
+  http.get(`*/studio/projects/${PROJECT}/transcript-ref`, () => HttpResponse.json({
+    object_key: "k", transcript_id: "t1", transcript_version: 1, project_id: PROJECT,
+  })),
+  http.get("*/api/studio/transcripts/revisions", () => HttpResponse.json({ document: {
+    transcript_id: "t1", transcript_version: 1,
+    asr_segments: [
+      { start: 0, end: 2, text: "血压高要吃三种药。" },
+      { start: 2, end: 4, text: "记得定期复查。" },
+    ],
+  } })),
   http.get(`*/studio/timeline/${PROJECT}/view`, () => HttpResponse.json({
     project_id: PROJECT,
     view: { zoom_px_per_second: 100, audio_track_height: 72, waveform_ratio: "standard", scroll_left: 0 },

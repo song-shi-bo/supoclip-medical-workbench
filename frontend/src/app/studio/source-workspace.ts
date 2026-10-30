@@ -19,13 +19,17 @@ async function readJson(response: Response): Promise<Record<string, unknown>> {
  *  代理未就绪（202 building / failed / 触发失败）时回退原片并置 fallbackNotice，
  *  由页面提示「高码率原片可能卡顿」。 */
 export async function loadSourceWorkspace(base: string, projectId: string, signal?: AbortSignal) {
-  const project = await readJson(await fetch(`${base}/studio/timeline/${encodeURIComponent(projectId)}`, { cache: "no-store", signal })) as unknown as SourceProject;
+  // 说明（2026-10-29）：signal 只保留在签名里做兼容，**不再透传给 fetch**——
+  // 迟到结果的时效由调用方的 seq 代际守卫保证（与 loadProjectTimeline 同一模式）；
+  // 且 jsdom + undici 组合下透传 window AbortSignal 会在 RequestInit 校验处直接抛错。
+  void signal;
+  const project = await readJson(await fetch(`${base}/studio/timeline/${encodeURIComponent(projectId)}`, { cache: "no-store" })) as unknown as SourceProject;
   if (project.id !== projectId || !Array.isArray(project.timeline?.ranges) || !project.source?.name || !(project.source.duration > 0)) {
     throw new Error("返回原片失败：项目或源片信息不匹配。");
   }
   let fallbackNotice = false;
   let previewUrl = `${base}/studio/timeline/${encodeURIComponent(projectId)}/source`;
-  const response = await fetch(`${base}/studio/projects/${encodeURIComponent(projectId)}/transcript-ref`, { cache: "no-store", signal });
+  const response = await fetch(`${base}/studio/projects/${encodeURIComponent(projectId)}/transcript-ref`, { cache: "no-store" });
   let credential: SourceCredential | null = null;
   let document: RevisionDocument | null = null;
   if (response.status !== 404) {
@@ -34,7 +38,7 @@ export async function loadSourceWorkspace(base: string, projectId: string, signa
       throw new Error("返回原片失败：转写凭据不属于当前项目或版本无效。");
     }
     const query = new URLSearchParams({ object_key: credential.object_key, transcript_id: credential.transcript_id, transcript_version: String(credential.transcript_version) });
-    const revision = await fetch(`${base}/api/studio/transcripts/revisions?${query}`, { cache: "no-store", signal });
+    const revision = await fetch(`${base}/api/studio/transcripts/revisions?${query}`, { cache: "no-store" });
     if (revision.status === 404) credential = null;
     else {
       document = (await readJson(revision)).document as RevisionDocument;
@@ -48,7 +52,7 @@ export async function loadSourceWorkspace(base: string, projectId: string, signa
   // 放在凭据处理之后：凭据拒绝路径不触发构建，也避免打乱调用方的 fetch once 队列。
   try {
     const trigger = await fetch(`${base}/studio/timeline/${encodeURIComponent(projectId)}/preview`,
-      { method: "POST", cache: "no-store", signal });
+      { method: "POST", cache: "no-store" });
     if (trigger.ok) {
       const status = await trigger.json() as { state?: string };
       if (status?.state === "ready") {

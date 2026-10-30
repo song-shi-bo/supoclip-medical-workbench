@@ -42,6 +42,7 @@ let revisionWait: ReturnType<typeof deferred<Response>> | null;
 let configWait: ReturnType<typeof deferred<Response>> | null;
 let initialTimelineWait: ReturnType<typeof deferred<Response>> | null;
 let timelineReads: number;
+// 读序（2026-10-29 起）：#1 = openProjectFromManager 预检，#2 = loadProjectTimeline，#3 = loadSourceWorkspace。
 let savedScale: number;
 let sourcePostWait: ReturnType<typeof deferred<Response>> | null;
 let workflowWait: ReturnType<typeof deferred<Response>> | null;
@@ -71,7 +72,7 @@ beforeEach(() => {
     if (url.endsWith(`/studio/projects/${pid}/transcript-ref`) && resolverWaitA) return resolverWaitA.promise.then((r) => r.clone());
     if (url.endsWith("/studio/projects")) return json([{ project_id: pid }]);
     if (url.endsWith("/transcript-ref")) return json(refStatus === 200 ? credential : { detail: { code: "E_TRANSCRIPT_NOT_FOUND", message: "没有已纠错转写" } }, refStatus);
-    if (url.endsWith(`/studio/timeline/${pid}`)) { timelineReads += 1; return initialTimelineWait && timelineReads === 1 ? initialTimelineWait.promise : json(project); }
+    if (url.endsWith(`/studio/timeline/${pid}`)) { timelineReads += 1; return initialTimelineWait && timelineReads === 2 ? initialTimelineWait.promise : json(project); }
     if (url.endsWith(`/studio/timeline/${bid}`)) return json({ ...project, id: bid, source: { ...project.source, name: "项目B原片.mp4" }, transcript: [] });
     if (url.endsWith(`/studio/projects/${bid}/clips`)) return json({ project_id: bid, cards: cards.map((c) => ({ ...c, name: `B${c.clip_id}` })), card_count: cards.length });
     if (url.endsWith(`/studio/projects/${pid}/clips`)) return json({ project_id: pid, cards, card_count: cards.length });
@@ -350,6 +351,8 @@ describe("项目切换代际与重新剪辑来源", () => {
     expect(screen.getByTestId("player")).toHaveAttribute("src", `/video-api/studio/timeline/${bid}/source`);
   });
   it("A旧workflow轮询迟到不接回A、不读旧artifact且不自动cancel/delete后台任务", async () => {
+    // 本用例要干净的本地文件会话：清掉 beforeEach 的 ?source_id=，禁止挂载自动打开项目。
+    window.history.replaceState({}, "", "/studio");
     render(<StudioPage />); workflowWait = deferred();
     fireEvent.change(window.document.querySelector('input[type="file"][accept="video/*"]')!, { target: { files: [new File(["synthetic"], "oldA.mp4", { type: "video/mp4" })] } });
     fireEvent.click(screen.getByRole("button", { name: "开始转写" }));

@@ -186,7 +186,7 @@ beforeEach(() => {
       return HttpResponse.json({ task_id: String(params.taskId), clip_id: clipId, deleted_revision: 2, current_revision: 1 });
     }),
     http.get("*/studio/timeline/:projectId", () => HttpResponse.json({
-      id: PROJECT_ID, timeline: { ranges: [{ id: CLIP_A, source_start: 0, source_end: 8 }] }, transcript: [],
+      id: PROJECT_ID, source: { name: "素材.mp4", duration: 30 }, timeline: { ranges: [{ id: CLIP_A, source_start: 0, source_end: 8 }] }, transcript: [],
     })),
     http.get("*/studio/projects/:projectId/clips", () => HttpResponse.json(cardsPayload())),
     http.all("*", () => HttpResponse.json({}, { status: 404 })),

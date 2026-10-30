@@ -236,8 +236,8 @@ type ProjectClipCard = {
   // 时间线图片素材（真正的时间线拖拽）：card_view 原样透出 timeline_image_clips 实例。
   timeline_image_clips?: { id: string; role: string; start_s: number; duration_s: number; asset_path?: string | null }[] | null;
 };
-// active_clip_id（2026-10-21 阶段）：服务端记录的项目唯一选中切片；随卡片载荷透出，
-// 台账载入后据此恢复上次选中（null/缺省 = 原片视图，不恢复任何成片）。
+// active_clip_id（2026-10-21 阶段）：服务端记录的项目唯一选中切片，随卡片载荷透出；
+// 前端点击时 PUT 持久化。2026-10-29 起打开项目一律原片视图，不再据此自动恢复成片。
 type ProjectClipsPayload = { project_id?: string; card_count?: number; cards?: ProjectClipCard[]; active_clip_id?: string | null; active_clip_updated_at?: string | null; detail?: string };
 // ===== 规则中心（剪辑规则注册表 / Phase B）=====
 // GET /studio/workflow 每次实时读清单：外部改 skill 文件或启停 skill 后，面板刷新即见新版本。
@@ -462,10 +462,9 @@ export default function StudioPage() {
   const [projectCardCount, setProjectCardCount] = useState(0);
   // 台账是否已成功加载：加载成功即视为事实源，未加载时回退到渲染任务列表。
   const [projectCardsLoaded, setProjectCardsLoaded] = useState(false);
-  // 切片选择（2026-10-21 阶段）：台账载荷里的项目唯一 active_clip_id（服务端事实源）。
-  const [serverActiveClip, setServerActiveClip] = useState<{ project_id: string; clip_id: string | null } | null>(null);
-  // 每个项目工作区只做一次「刷新恢复」：用户本会话已有选中后，不再被台账自动抢走。
-  const activeClipRestoreProjectRef = useRef<string | null>(null);
+  // active_clip_id（服务端记录的项目唯一选中切片）仍由点击链路 PUT 持久化到后端；
+  // 前端不再保存该状态、也不再自动恢复（2026-10-29 移除「刷新恢复上次选中成片」，
+  // 打开项目一律原片视图）。
   // 原始素材登记探测去重（2026-10-29）：每个项目只做一次只读预检，随工作区重置。
   const remoteSourceSeedRef = useRef<string | null>(null);
   // 切片切换持久化的代际：失败回滚只作用于「仍是最新一次点击、且当前还停在该切片」的情形。
@@ -677,7 +676,7 @@ export default function StudioPage() {
     workspaceEpoch.current += 1; workspaceProjectRef.current = null; setActiveProjectId(null);
     renderedClipsRef.current = []; projectCardsRef.current = []; setProjectCards([]); setProjectCardsLoaded(false);
     // 切片选择（2026-10-21 阶段）：会话重置同样清掉恢复通道与缩略图失败标记。
-    activeClipRestoreProjectRef.current = null; setServerActiveClip(null); setFirstFrameFailures({});
+    setFirstFrameFailures({});
     remoteSourceSeedRef.current = null; // 换项目/会话重置后允许重新探测原始素材。
     // 封面版型库（2026-10-21 阶段）：生成结果为会话态，随会话重置。
     setCoverTemplateGenerateBusy(null); setCoverTemplateActionBusy(false);
@@ -1333,6 +1332,8 @@ export default function StudioPage() {
         const restored = await loadSourceWorkspace(transcribeServiceBase, projectId, controller.signal);
         if (!current()) return;
         const { project, credential, document } = restored;
+        // 契约（2026-10-29 保持）：「返回原片」只认指定版本的修订稿，绝不回退工程
+        // 内嵌旧稿（过时稿会误导用户）；无凭据 = 只读源片，分段为空。
         source = { projectId, name: project.source.name, credential, document, previewUrl: restored.previewUrl,
           duration: project.source.duration, segments: (document?.asr_segments || []) as Segment[],
           timeline: { id: project.id, timeline: project.timeline, artifacts: project.artifacts }, insights: null, previewRotation: 0,
@@ -2525,9 +2526,7 @@ export default function StudioPage() {
       setRenderedClips([...byClipId.values()]);
       setProjectCards(dedupeByClipId(cards));
       setProjectCardCount(typeof payload.card_count === "number" ? payload.card_count : cards.length);
-      // 切片选择（2026-10-21 阶段）：记住服务端记录的唯一 active_clip_id，恢复 effect 据此工作。
-      setServerActiveClip({ project_id: projectId,
-        clip_id: typeof payload.active_clip_id === "string" && payload.active_clip_id ? payload.active_clip_id : null });
+      // active_clip_id 仅由点击链路 PUT 持久化到后端；前端不保存也不自动恢复（2026-10-29）。
       setProjectCardsLoaded(true);
       return true;
     } catch {
@@ -2567,7 +2566,7 @@ export default function StudioPage() {
     renderedClipsRef.current = []; projectCardsRef.current = [];
     setRenderedClips([]); setProjectCards([]); setProjectCardsLoaded(false); setProjectCardCount(0); setActiveRenderedClip(null);
     // 切片选择（2026-10-21 阶段）：换项目 = 重置恢复通道与缩略图失败标记，新台账重新恢复。
-    activeClipRestoreProjectRef.current = null; setServerActiveClip(null); setFirstFrameFailures({});
+    setFirstFrameFailures({});
     remoteSourceSeedRef.current = null; // 换项目/会话重置后允许重新探测原始素材。
     // 封面版型库（2026-10-21 阶段）：生成结果按项目工作区清空；注册表是全局的，保留。
     setCoverTemplateGenerateBusy(null); setCoverTemplateActionBusy(false);
@@ -2579,16 +2578,6 @@ export default function StudioPage() {
     void loadProjectTimeline(projectId);
     setMessage(`已打开历史项目 ${projectId}：素材区只显示该项目名下的切片。`);
   }, [loadProjectTimeline]);
-  // 唯一的自动加载通道：URL 参数 ?source_id=<project_id>（兼容 ?project_id=，挂载时读一次）。
-  // 没有参数时工作台保持全空白——不请求最近项目/切片/转写。
-  const sourceParamApplied = useRef(false);
-  useEffect(() => {
-    if (sourceParamApplied.current) return;
-    sourceParamApplied.current = true;
-    const params = new URLSearchParams(window.location.search);
-    const requested = params.get("source_id") || params.get("project_id");
-    if (requested?.startsWith("timeline_")) openHistoryProject(requested);
-  }, [openHistoryProject]);
   // legacy 实时会话（未刷新）：有成片但没有项目绑定时，按成片任务反查项目，
   // 使「重新剪辑/清空」按钮对该项目可用（loadProjectCards 声明在其后，故置于此处）。
   useEffect(() => {
@@ -2848,22 +2837,10 @@ export default function StudioPage() {
     if (!projectId?.startsWith("timeline_")) return;
     void loadProjectCards(projectId);
   }, [activeProjectId, loadProjectCards]);
-  // 刷新恢复（2026-10-21 阶段）：台账首次就绪后，把服务端记录的唯一 active_clip_id
-  // 恢复为当前选中切片（播放器/转写/切片状态经 selectRenderedClip 一次切换到位，
-  // skipPersist：服务端已是该值）。每个项目工作区只尝试一次；用户本会话已有选中不抢；
-  // 台账已不含该切片（清空/重剪替换）时不恢复也不回写。
-  useEffect(() => {
-    const pid = activeProjectId;
-    if (!pid?.startsWith("timeline_") || !projectCardsLoaded) return;
-    if (activeClipRestoreProjectRef.current === pid) return;
-    activeClipRestoreProjectRef.current = pid;
-    if (activeRenderedClip) return;
-    if (!serverActiveClip || serverActiveClip.project_id !== pid || !serverActiveClip.clip_id) return;
-    const target = renderedClipList.find((clip) => clip.clip_id === serverActiveClip.clip_id);
-    if (!target) return;
-    selectRenderedClip(target, { skipPersist: true });
-    setMessage(`已恢复上次选中的${target.name}。`);
-  }, [activeProjectId, projectCardsLoaded, serverActiveClip, renderedClipList, activeRenderedClip, selectRenderedClip]);
+  // 【2026-10-29 移除「刷新恢复上次选中成片」（2026-10-21 引入）】用户决策——打开项目
+  // 一律先看到原片（源视频可播放 + 下方成片卡片），不再被自动恢复的成片视图抢走播放器。
+  // active_clip_id 仍随点击持久化（PUT /studio/projects/{id}/active-clip），后端台账
+  // 继续记录；前端不再据此自动切换视图（如需「继续上次剪辑」将来做成显式按钮）。
   // 原始素材登记（2026-10-29）：项目绑定后即把服务端源片登记进素材区，不再要求先点
   // 「返回原片」才显示。恢复成片视图（含刷新恢复 active_clip）时素材区同样有原片卡。
   // 纯只读预检（GET /studio/timeline/{id}，与项目弹层打开预检同一端点），不改播放器
@@ -3694,6 +3671,18 @@ export default function StudioPage() {
     }
     return true;
   };
+  // 唯一的自动加载通道：URL 参数 ?source_id=<project_id>（兼容 ?project_id=，挂载时读一次）。
+  // 2026-10-29 起与「打开历史视频」完全同一体验：预检 → 绑定 → selectSourceMedia 载入
+  // 原片到播放器（此前只绑项目不载源片，播放器停在「等待导入视频」，看起来像原素材丢失）。
+  // 没有参数时工作台保持全空白——不请求最近项目/切片/转写。
+  const sourceParamApplied = useRef(false);
+  useEffect(() => {
+    if (sourceParamApplied.current) return;
+    sourceParamApplied.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const requested = params.get("source_id") || params.get("project_id");
+    if (requested?.startsWith("timeline_")) void openProjectFromManager(requested);
+  }, [openProjectFromManager]);
   // 新建项目：与 removeFile 同一套纯客户端清空（不调用后端 cancel/delete）；真正的项目
   // 在导入素材时诞生（chooseFile 生成新 project id）。
   const newProjectFromManager = () => {

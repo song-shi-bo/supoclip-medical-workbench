@@ -80,6 +80,7 @@ const mountWithNullCoverCard = () => {
   server.use(
     http.get("*/studio/timeline/:projectId", () => HttpResponse.json({
       id: PROJECT_ID,
+      source: { name: "素材.mp4", duration: 12.5 },
       timeline: { ranges: [{ id: CLIP_ID, source_start: 0, source_end: 12.5 }] },
       transcript: [],
     })),

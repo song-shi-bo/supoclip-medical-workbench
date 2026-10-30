@@ -63,6 +63,7 @@ const historyHandler = (payload = historyPayload()) => http.get(`*/studio/timeli
 const timelineHandlers = (history = historyPayload()) => [
   http.get(`*/studio/timeline/${PROJECT}`, () => HttpResponse.json({
     id: PROJECT,
+    source: { name: "素材.mp4", duration: 45 },
     timeline: { ranges: [{ id: "clip-1", source_start: 0, source_end: 45 }] },
     transcript: [{ start: 0, end: 2, text: "血压高要吃三种药。" }],
   })),

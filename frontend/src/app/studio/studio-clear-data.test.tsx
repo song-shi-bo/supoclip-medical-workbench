@@ -57,6 +57,7 @@ function mockTimelineAndCards(cards: unknown[] = [card]) {
   server.use(
     http.get("*/studio/timeline/:projectId", () => HttpResponse.json({
       id: PROJECT_ID,
+      source: { name: "素材.mp4", duration: 30.5 },
       timeline: { ranges: [{ id: CLIP_ID, source_start: 0, source_end: 30.5 }] },
       transcript: [],
     })),
