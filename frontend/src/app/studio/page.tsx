@@ -3770,6 +3770,14 @@ export default function StudioPage() {
   const transformLocked = previewRotation !== 0;
   const isGoldenSegment = (segment: Segment) => insights?.golden_sentences.some((sentence) => segment.end > sentence.start && sentence.start < sentence.end) || false;
   const currentRemoteSource = remoteSource?.projectId === activeProjectId ? remoteSource : null;
+  // 原始素材卡时长（2026-10-29）：远程项目显示**源片自身**时长（工程 manifest 提供），
+  // 不再借用播放器当前 duration——恢复成片视图时那是成片时长（如 51.9s），会误导。
+  const sourceCardDuration = file ? duration : (sourceWorkspaceRef.current?.duration || currentRemoteSource?.duration || 0);
+  // 原始素材卡缩略图（2026-10-29）：远程项目未载入源片工作区时指到源片预览代理
+  // （preload=metadata 只取首帧），不再显示当前成片的画面。
+  const sourceCardVideoSrc = sourceWorkspaceRef.current?.previewUrl
+    || (file ? previewUrl : (currentRemoteSource ? `${transcribeServiceBase}/studio/timeline/${currentRemoteSource.projectId}/preview` : null))
+    || undefined;
   const activeMediaName = activeRenderedClip?.name || file?.name || currentRemoteSource?.name || "等待导入视频";
   // ===== TimelineTracks 的派生入参 =====
   // 音轨只在「项目原始时间线视图」显示 revision 的音轨（origin=source 的原声轨
@@ -4087,10 +4095,10 @@ export default function StudioPage() {
             {!file && !currentRemoteSource && <div className="asset-empty"><FolderOpen size={25} /><p>导入视频后在这里管理素材</p></div>}
             {(file || currentRemoteSource) && <>
             <article className={`asset-card source-card ${!activeRenderedClip ? "active" : ""}`} onClick={() => void selectSourceMedia()} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter") selectSourceMedia(); }}>
-              <video src={sourceWorkspaceRef.current?.previewUrl || previewUrl || undefined} muted />
+              <video src={sourceCardVideoSrc} muted preload="metadata" />
               <div className="asset-card-body">
                 <strong title={file?.name || currentRemoteSource?.name}>{file?.name || currentRemoteSource?.name}</strong>
-                <span className="asset-card-sub"><span className="asset-card-duration">{sourceWorkspaceRef.current?.duration || duration ? formatTime(sourceWorkspaceRef.current?.duration || duration) : "读取媒体中…"}</span><em className={`asset-status ${sourceStatus.tone}`} title={sourceStatus.hint}>{sourceStatus.label}</em></span>
+                <span className="asset-card-sub"><span className="asset-card-duration">{sourceCardDuration ? formatTime(sourceCardDuration) : "读取媒体中…"}</span><em className={`asset-status ${sourceStatus.tone}`} title={sourceStatus.hint}>{sourceStatus.label}</em></span>
               </div>
               <button onClick={(event) => { event.stopPropagation(); removeFile(); }} aria-label="移除素材" title="移除素材"><X size={14} /></button>
             </article>
