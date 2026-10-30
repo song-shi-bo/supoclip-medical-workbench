@@ -71,7 +71,10 @@ describe("左侧项目素材面板（left-assets-v2）", () => {
   it("左侧素材区只保留两个分区：原始素材 / 剪辑成片（不再有封面与视觉素材）", () => {
     const { container } = render(<StudioPage />);
     const labels = [...container.querySelectorAll(".asset-section-label")].map((node) => node.textContent);
-    expect(labels).toEqual(["原始素材（0）", "剪辑成片（0）"]);
+    // 分区仍然只有两个；成片分区标题内嵌「术语表」按钮（2026-10-28），按前缀断言。
+    expect(labels.length).toBe(2);
+    expect(labels[0]).toBe("原始素材（0）");
+    expect(labels[1]?.startsWith("剪辑成片（0）")).toBe(true);
     // 封面不再作为左侧素材管理：分区标题、空状态、占位一律不得出现。
     expect(container.querySelector(".asset-section-label.visual")).toBeNull();
     expect(container.textContent).not.toContain("封面与视觉素材");

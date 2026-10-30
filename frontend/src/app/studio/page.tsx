@@ -466,6 +466,8 @@ export default function StudioPage() {
   const [serverActiveClip, setServerActiveClip] = useState<{ project_id: string; clip_id: string | null } | null>(null);
   // 每个项目工作区只做一次「刷新恢复」：用户本会话已有选中后，不再被台账自动抢走。
   const activeClipRestoreProjectRef = useRef<string | null>(null);
+  // 原始素材登记探测去重（2026-10-29）：每个项目只做一次只读预检，随工作区重置。
+  const remoteSourceSeedRef = useRef<string | null>(null);
   // 切片切换持久化的代际：失败回滚只作用于「仍是最新一次点击、且当前还停在该切片」的情形。
   const activeClipPersistSeq = useRef(0);
   // 素材卡缩略图（2026-10-21 阶段）= 切片视频真实第一帧；提取失败(404)的 clip 记住降级为
@@ -676,6 +678,7 @@ export default function StudioPage() {
     renderedClipsRef.current = []; projectCardsRef.current = []; setProjectCards([]); setProjectCardsLoaded(false);
     // 切片选择（2026-10-21 阶段）：会话重置同样清掉恢复通道与缩略图失败标记。
     activeClipRestoreProjectRef.current = null; setServerActiveClip(null); setFirstFrameFailures({});
+    remoteSourceSeedRef.current = null; // 换项目/会话重置后允许重新探测原始素材。
     // 封面版型库（2026-10-21 阶段）：生成结果为会话态，随会话重置。
     setCoverTemplateGenerateBusy(null); setCoverTemplateActionBusy(false);
     uploadBindingRef.current = null;
@@ -2565,6 +2568,7 @@ export default function StudioPage() {
     setRenderedClips([]); setProjectCards([]); setProjectCardsLoaded(false); setProjectCardCount(0); setActiveRenderedClip(null);
     // 切片选择（2026-10-21 阶段）：换项目 = 重置恢复通道与缩略图失败标记，新台账重新恢复。
     activeClipRestoreProjectRef.current = null; setServerActiveClip(null); setFirstFrameFailures({});
+    remoteSourceSeedRef.current = null; // 换项目/会话重置后允许重新探测原始素材。
     // 封面版型库（2026-10-21 阶段）：生成结果按项目工作区清空；注册表是全局的，保留。
     setCoverTemplateGenerateBusy(null); setCoverTemplateActionBusy(false);
     setFile(null); uploadBindingRef.current = null; setProjectIdRef(projectId);
@@ -2860,6 +2864,38 @@ export default function StudioPage() {
     selectRenderedClip(target, { skipPersist: true });
     setMessage(`已恢复上次选中的${target.name}。`);
   }, [activeProjectId, projectCardsLoaded, serverActiveClip, renderedClipList, activeRenderedClip, selectRenderedClip]);
+  // 原始素材登记（2026-10-29）：项目绑定后即把服务端源片登记进素材区，不再要求先点
+  // 「返回原片」才显示。恢复成片视图（含刷新恢复 active_clip）时素材区同样有原片卡。
+  // 纯只读预检（GET /studio/timeline/{id}，与项目弹层打开预检同一端点），不改播放器
+  // 当前视图；名称取台账 display_name（回退源片名）。无源片/预检失败保持空态，不打断
+  // 当前成片视图；真正的缺失提示仍由打开链路（meta.hasSource=false）负责。
+  useEffect(() => {
+    const projectId = activeProjectId;
+    if (!projectId?.startsWith("timeline_")) return;
+    if (file) return; // 本地素材模式：素材区由本地文件驱动
+    if (remoteSource?.projectId === projectId) return;
+    if (remoteSourceSeedRef.current === projectId) return;
+    remoteSourceSeedRef.current = projectId;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`${transcribeServiceBase}/studio/timeline/${encodeURIComponent(projectId)}`, { cache: "no-store", signal: controller.signal });
+        if (!response.ok) return;
+        const payload = await response.json() as {
+          id?: string;
+          source?: { name?: string; duration?: number };
+          project_name?: { display_name?: string | null; fallback_name?: string | null };
+        };
+        if (!mountedRef.current || payload?.id !== projectId) return;
+        const name = payload.project_name?.display_name || payload.project_name?.fallback_name || payload.source?.name || "";
+        if (!name) return;
+        setRemoteSource((prev) => (prev?.projectId === projectId ? prev : { projectId, name, duration: Number(payload.source?.duration) || 0 }));
+      } catch {
+        // 网络中断/项目消失：保持空态即可，错误提示由播放/打开链路给出。
+      }
+    })();
+    return () => controller.abort();
+  }, [activeProjectId, file, remoteSource]);
   // 自动剪辑完成后立刻重拉台账：新成片按 clip_id 登记，不按任务追加。
   useEffect(() => {
     const projectId = activeProjectId;
