@@ -5,10 +5,7 @@ import { getSiteUrl } from "@/lib/site";
 const privatePaths = [
   "/api/",
   "/admin/",
-  "/list",
   "/settings/",
-  "/tasks/",
-  "/share/",
 ];
 
 const aiCrawlers = [

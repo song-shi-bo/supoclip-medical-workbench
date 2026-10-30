@@ -123,3 +123,25 @@ uv run arq src.workers.tasks.WorkerSettings  # 需要主链路队列处理时另
 - Studio队列转写现在传给video-brain复用，新增输入时间戳/长度/源时长校验，医学纠错、规划、QC保留。新任务task-b213f323ad转写复用0.0027秒，成片/QC/Range下载通过。
 - 修复重生成继承旧video_brain_task_id：新生成使用新执行标识，旧成片保留。
 - 公网songshibo登录后的访问与上传，用户回复稍后验证，仍未宣称通过。真实R2与容器整体重建未专项验收；R2为可选替代路径。
+
+## 2026-10-30 A 线（legacy SupoClip 自动切片管线）移除记录
+
+- 经用户确认删除 A 线：`src/main.py`、`api/routes/tasks.py`、`services/task_service.py`、
+  `services/video_service.py`、`clip_editor.py`、`youtube_utils.py`、`apify_youtube_downloader.py`、
+  `task_completion_email_service.py`、`workers/{tasks,progress}.py`、`worker_main.py`、
+  `repositories/{task,clip,source,cache}_repository.py`、`models.py` 四个 legacy 模型类、
+  `media.py` 的 `POST /upload`、docker-compose 的 arq worker 服务、9 个 legacy 单测与
+  `test_health_and_tasks.py` 的 legacy 用例。
+- 前端 legacy 页面同批删除：`/tasks`、`/list`、`/share`、`/api/tasks/*`、`/api/share/*`、
+  `home-app`/`home-router`/`landing-page`、`font-options`；admin 页移除任务统计区（不再查
+  `prisma.task`）；根路径 `/` 重定向到 `/studio`；`settings` 页 billing-summary 404 有优雅降级。
+- 数据库：`tasks`/`generated_clips`/`sources`/`processing_cache` 四表 DROP（删前 CSV 备份在
+  `/domain/backups/eline-20261029/`；行数极小：2/1/27/0）。注意 `database.py` 的
+  `create_all` 会按 `models.py` 重建表——legacy 模型类必须删干净，否则重启后空表复活（已验证）。
+- 保留共享模块：`ai.py`、`video_utils.py`、`caption_templates.py`、`emoji_captions.py`、
+  `clip_source_map.py`、`broll.py`、`workers/job_queue.py`（Redis 池，Studio 仍在用）。
+- 验证：`main_refactored` 离线导入 OK；unit 60 failed/1477 passed 与 stash 基线完全一致
+  （60 个失败为环境固有，`test_studio_local_tasks` 内部存在顺序依赖抖动，与本次无关）；
+  Next lint/build 通过，路由表无 /tasks、/list、/share；API 进程两次经 supervisor 自动拉起，
+  `/health` 正常，legacy 路由不再注册，重启后四表未复活。
+- 前端新构建已产出（`.next`），运行中的前端进程下次重启时加载新构建；其行为不变（Studio 入口）。

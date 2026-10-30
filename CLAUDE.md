@@ -10,6 +10,29 @@ Start with [DSH_STARTUP.md](DSH_STARTUP.md) for the DSH environment. The current
 
 SupoClip is an open-source alternative to OpusClip — an AI-powered video clipping tool that transforms long-form content into viral short clips. AGPL-3.0 licensed.
 
+## 2026-10-30: Legacy auto-clip pipeline (A-line) removed
+
+The original SupoClip pipeline is **deleted**: ARQ worker (`src/workers/tasks.py`,
+`src/worker_main.py`, `src/workers/progress.py`), legacy routes
+(`src/api/routes/tasks.py`, `POST /upload`), legacy services
+(`task_service.py`, `video_service.py`, `clip_editor.py`, `youtube_utils.py`,
+`apify_youtube_downloader.py`, `task_completion_email_service.py`), the legacy
+monolith `src/main.py`, repositories for tasks/clips/sources/cache, their
+SQLAlchemy models, and the DB tables (`tasks`, `generated_clips`, `sources`,
+`processing_cache`). Legacy frontend pages (`/tasks`, `/list`, `/share`,
+`/api/tasks/*`, `/api/share/*`, marketing home) were also removed; the root
+path now redirects to `/studio`.
+
+The **only** editing pipeline is the Studio line: `/studio` → `studio_jobs`
+(R2/local upload) → Studio job worker → `autoedit_runner_video_brain.py` →
+video-brain (:8940): preflight → transcribe → medical correction → rules →
+planning (hooks/themes/quotes) → render → QC.
+
+Still shared and kept: `ai.py` (Studio copilot/planning/cover), `video_utils.py`,
+`caption_templates.py`, `emoji_captions.py`, `clip_source_map.py`, `broll.py`,
+`workers/job_queue.py` (Redis pool), `main_refactored.py` (API entry served by
+`studio_server.py`).
+
 ## Development Commands
 
 ### Docker (recommended)
@@ -56,47 +79,40 @@ Existing suites include backend pytest, frontend Vitest, and Playwright. See `ba
 
 ## Architecture
 
-### System Overview
+### System Overview (2026-10-30, Studio line only)
 
 ```
-User → Frontend (Next.js 15) → Backend API (FastAPI) → Redis Queue → ARQ Worker
-                                      ↓                                  ↓
-                               PostgreSQL ←───────────────────────────────┘
+User → /studio (Next.js) → Studio API (main_refactored:app via studio_server)
+        → studio_jobs (Postgres leases) → Studio job worker (subprocess, heartbeat)
+        → tasks/in/autoedit_*.json (file queue) → autoedit_runner_video_brain.py
+        → video-brain :8940 (/v1/tasks): preflight → transcribe → medical correct
+          → rules → planning (hooks/themes/quotes) → render N clips → QC
+        → artifacts back to Studio (R2/filesystem) → manual timeline / export → 投递
 ```
 
-Task creation returns immediately (<100ms). Video processing happens asynchronously in the worker. Frontend connects via SSE for real-time progress updates.
-
-### Backend: Layered Architecture
-
-The backend was refactored from monolithic (`main.py`, legacy) to layered (`main_refactored.py`, active):
+Backend layout that remains:
 
 ```
-api/routes/          → HTTP handlers (tasks.py, media.py)
-services/            → Business logic (task_service.py, video_service.py)
-repositories/        → Raw SQL via asyncpg (task_repository.py, clip_repository.py, source_repository.py)
-workers/             → ARQ job queue (tasks.py, job_queue.py, progress.py)
-utils/               → Thread pool helpers for blocking operations (async_helpers.py)
+api/routes/          → HTTP handlers (jobs.py, transcripts.py, media.py, admin.py, ...)
+services/            → api_key/billing/email services (no clip pipeline)
+repositories/        → api_key_repository.py only
+workers/             → job_queue.py (Redis/arq pool, used by Studio stores)
+studio_*.py          → Studio server, job store/worker, copilot, workspace, access
 ```
 
 **Key patterns:**
-- All DB access goes through repository classes using raw SQL (`text()` queries), not SQLAlchemy ORM
-- Blocking operations (video processing, downloads, transcription) wrapped in `run_in_thread()` to avoid blocking the async event loop
-- Progress tracking uses Redis pub/sub → SSE to frontend
-- Task status flow: `queued → processing → completed/error/cancelled`
+- Studio job state lives in `studio_jobs` (Postgres leases + heartbeat), artifacts in `studio_artifacts` pointing at R2/filesystem keys
+- Blocking operations wrapped in `run_in_thread()`; the worker runs each task in an isolated subprocess with a 3600s cap
+- Progress via `tasks/status/*.json` polled by the frontend (no Redis SSE anymore)
+- Auto-edit is a file-queue contract (`tasks/in|processing|completed|failed`) between Studio and the video-brain runner
 
 ### Video Processing Pipeline
 
-1. **Input** → YouTube URL (yt-dlp) or uploaded file
-2. **Transcription** → AssemblyAI word-level timestamps (cached as `.transcript_cache.json`)
-3. **AI Analysis** → Pydantic AI selects 3-7 viral segments (10-45s each) with virality scoring
-4. **Clip Generation** → MoviePy creates 9:16 clips with:
-   - Face-centered cropping: MediaPipe → OpenCV DNN → Haar cascade (fallback chain)
-   - Word-synced subtitles from AssemblyAI
-   - Custom fonts (TTF files in `backend/fonts/`)
-   - Optional transition effects (`backend/transitions/`)
-   - Optional B-roll overlays (Pexels API)
-   - Caption templates with animation styles
-5. **Storage** → Clips to `{TEMP_DIR}/clips/`, metadata to PostgreSQL
+1. **Input** → Studio project upload (R2 session or local, resumable chunks)
+2. **Transcription** → faster-whisper / volc ASR; Studio queue transcribe is reused by video-brain
+3. **Medical correction** → homophone lexicon + optional LLM pass with similarity safety gate
+4. **Planning** → video-brain `planning_prompt.py`: theme types, quote evidence threshold 0.7, timestamps validated; auto k=1-4
+5. **Rendering** → video-brain renders `clip_final.mp4` + `cover.jpg` + `clip_plan.json`; QC stage; results restored into the Studio timeline
 
 ### Frontend Architecture
 
@@ -122,51 +138,43 @@ PostgreSQL 15. Schema in `init.sql`. Mixed naming conventions:
 
 | File | Purpose |
 |------|---------|
-| `src/main_refactored.py` | Active FastAPI entry point (129 lines) |
-| `src/main.py` | Legacy monolithic entry point (do not use for new work) |
-| `src/api/routes/tasks.py` | Task CRUD, SSE progress, clip editing endpoints (711 lines) |
-| `src/api/routes/media.py` | Fonts, transitions, uploads, templates |
-| `src/services/task_service.py` | Task orchestration, clip editing logic (574 lines) |
-| `src/services/video_service.py` | Video download, transcription, AI analysis, clip generation |
-| `src/workers/tasks.py` | ARQ worker task definitions |
-| `src/workers/job_queue.py` | Job queue management |
-| `src/workers/progress.py` | Real-time progress via Redis |
-| `src/ai.py` | Pydantic AI agents, system prompt, segment validation |
-| `src/video_utils.py` | Video processing, cropping, subtitles (~820 lines) |
-| `src/clip_editor.py` | Clip trim, split, merge, export presets |
+| `src/main_refactored.py` | FastAPI entry point (Studio + shared routes; served by `studio_server.py`) |
+| `src/api/routes/jobs.py` | Studio job pipeline API: R2 upload sessions, job submit/progress, artifacts, executor endpoints |
+| `src/api/routes/transcripts.py` | Studio transcript retrieval/revisions |
+| `src/api/routes/media.py` | Fonts, caption templates, B-roll status, `/studio/transcribe` |
+| `src/studio_job_worker.py` / `src/studio_supervisor.py` | Studio worker process + container supervisor |
+| `src/autoedit_runner_video_brain.py` | File-queue executor bridging Studio → video-brain (:8940) |
+| `src/studio_copilot.py` / `src/timeline_copilot.py` | LLM editing assistant (uses `ai.py`) |
+| `src/ai.py` | Pydantic AI agents/models shared by copilot, planning, cover render |
+| `src/video_utils.py` | Shared video/subtitle helpers (used by Studio worker, clip_transform, media routes) |
+| `src/caption_templates.py` / `src/emoji_captions.py` | Caption template system (imported by video_utils) |
+| `src/medical_lexicon.py` / `src/project_glossary.py` | Medical correction lexicons |
 | `src/broll.py` | Pexels API B-roll integration |
-| `src/caption_templates.py` | Caption template system |
 | `src/config.py` | Environment variable configuration |
 
 ## API Endpoints (routes in `api/routes/`)
 
-**Task lifecycle:**
-- `POST /start-with-progress` — Create task, enqueue to worker (returns task_id)
-- `GET /tasks/` — List user tasks
-- `GET /tasks/{id}` — Get task with clips
-- `GET /tasks/{id}/progress` — SSE real-time progress stream
-- `POST /tasks/{id}/cancel` — Cancel processing
-- `POST /tasks/{id}/resume` — Resume cancelled/errored task
-- `DELETE /tasks/{id}` — Delete task
+**Studio job pipeline (`jobs.py`, mounted with studio access enforcement):**
+- `POST /api/uploads` + `/api/uploads/{id}/complete` — R2/local resumable upload sessions
+- `POST /api/jobs` — create Studio jobs (transcribe/auto-edit/re-edit)
+- `GET /api/jobs/{id}` — job status/progress; artifact download endpoints
+- `/api/internal/jobs/*` — claim/activate/artifacts/state for the worker and runner
 
-**Clip editing:**
-- `PATCH /tasks/{id}/clips/{clip_id}` — Trim clip
-- `POST /tasks/{id}/clips/{clip_id}/split` — Split at timestamp
-- `POST /tasks/{id}/clips/merge` — Merge selected clips
-- `PATCH /tasks/{id}/clips/{clip_id}/captions` — Update captions
-- `GET /tasks/{id}/clips/{clip_id}/export?preset=tiktok` — Export with platform preset
+**Media (`media.py`):**
+- `GET /fonts`, `GET /fonts/{name}`, `POST /fonts/upload`, `DELETE /fonts/{name}`
+- `GET /caption-templates`, `GET /broll/status`
+- `POST /studio/transcribe`, `/studio/transcribe/start`, `/studio/transcribe/chunk` — Studio transcription entry points
 
-**Media:**
-- `GET /fonts`, `GET /transitions`, `GET /caption-templates`, `GET /broll/status`
-- `POST /upload` — Upload video file
-- `GET /clips/{filename}` — Serve generated clips
+**Admin/feedback/billing/api-keys/transcripts/access routers** remain as before;
+the legacy task endpoints (`/start-with-progress`, `/tasks/*`, `/upload`,
+`/clips/{filename}`) were removed on 2026-10-30 together with the A-line.
 
 **API keys (programmatic access):**
 - `GET /api-keys/` — List the user's API keys (metadata only)
 - `POST /api-keys/` — Create a key (plaintext `sk_...` returned exactly once)
 - `DELETE /api-keys/{key_id}` — Revoke a key
 
-API keys authenticate `/tasks/*`, `/fonts` and `/upload` directly via
+API keys authenticate `/fonts` and `/studio/transcribe` directly via
 `Authorization: Bearer sk_...` or `x-api-key`. Resolution lives in
 `auth_headers.resolve_authenticated_user_id` (API key → DB lookup, else falls
 back to the frontend's HMAC-signed session headers). Only the SHA-256 hash is
