@@ -175,6 +175,10 @@ def create_app(
     from .api.routes.billing import router as billing_router
     from .api.routes.api_keys import router as api_keys_router
     from .api.routes.jobs import router as jobs_router
+    from .api.routes.ingest_kb import router as ingest_kb_router
+
+    # 双库：豆包入库 + 知识库检索（独立 Bearer token，路由内校验；中间件已豁免）
+    app.include_router(ingest_kb_router)
 
     app.include_router(media_router, dependencies=[Depends(enforce_studio_access)])
     app.include_router(feedback_router)

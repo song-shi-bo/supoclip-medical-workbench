@@ -605,6 +605,11 @@ class StudioAuthenticationMiddleware:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope.get("path") in {"/", "/health"}:
             return await self.app(scope, receive, send)
+        path0 = scope.get("path", "")
+        # 2026-10-30 双库：/api/v1/ingest/* 与 /api/v1/kb/search 走独立 Bearer token
+        # （值在 backend/.env.kb，路由内校验）；confirm 仍在会话保护下。
+        if path0.startswith("/api/v1/ingest/") or path0 == "/api/v1/kb/search":
+            return await self.app(scope, receive, send)
         request = Request(scope, receive=receive)
         path = scope.get("path", "")
         if _is_worker_request(request.method, path):
