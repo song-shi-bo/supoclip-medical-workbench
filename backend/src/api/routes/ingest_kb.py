@@ -247,6 +247,7 @@ async def ingest_scripts(payload: ScriptsIn, request: Request,
 async def kb_search(request: Request, q: str = "", tag: str = "", status: str = "",
                     table: str = "both",
                     mode: str = Query("keyword", pattern="^(keyword|semantic)$"),
+                    full: bool = Query(False, description="true=返回文稿全部内容（正文/CTA/拍摄提示/依据）"),
                     limit: int = Query(10, ge=1, le=50),
                     db: AsyncSession = Depends(get_db)):
     _check(request, "KB_READ_TOKEN")
@@ -261,8 +262,10 @@ async def kb_search(request: Request, q: str = "", tag: str = "", status: str = 
         query_vec = vectors[0] if vectors and vectors[0] else None
         if query_vec is None:
             use_semantic = False
+    extra_cols = ", s.body, s.cta, s.shooting_notes, s.refs" if full else ""
     out: dict[str, Any] = {"q": q, "tag": tag_list,
-                           "mode": "semantic" if use_semantic else "keyword"}
+                           "mode": "semantic" if use_semantic else "keyword",
+                           "full": full}
 
     if table in ("both", "topics"):
         if use_semantic:
@@ -293,9 +296,9 @@ async def kb_search(request: Request, q: str = "", tag: str = "", status: str = 
 
     if table in ("both", "scripts"):
         if use_semantic:
-            rows = (await db.execute(text("""
+            rows = (await db.execute(text(f"""
                 SELECT s.id, s.title, s.hook, s.status, s.topic_id, s.model, s.created_at,
-                       t.title AS topic_title, s.embedding_json
+                       t.title AS topic_title, s.embedding_json{extra_cols}
                 FROM scripts s LEFT JOIN hot_topics t ON t.id = s.topic_id
                 WHERE s.embedding_json IS NOT NULL
                   AND (:status = '' OR s.status = :status)
@@ -306,9 +309,9 @@ async def kb_search(request: Request, q: str = "", tag: str = "", status: str = 
                                   if k != "embedding_json"},
                                "similarity": round(sim, 4)} for sim, r in scored]
         else:
-            rows = (await db.execute(text("""
+            rows = (await db.execute(text(f"""
                 SELECT s.id, s.title, s.hook, s.status, s.topic_id, s.model, s.created_at,
-                       t.title AS topic_title
+                       t.title AS topic_title{extra_cols}
                 FROM scripts s LEFT JOIN hot_topics t ON t.id = s.topic_id
                 WHERE (:q = '' OR s.title ILIKE :like OR s.hook ILIKE :like OR s.body ILIKE :like)
                   AND (:status = '' OR s.status = :status)
