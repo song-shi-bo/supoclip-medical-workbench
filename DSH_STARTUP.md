@@ -157,3 +157,17 @@ uv run arq src.workers.tasks.WorkerSettings  # 需要主链路队列处理时另
 - 修复方式：`kill -- -<pnpm主进程PGID>` 杀整组（进程树 pnpm→sh→next→next-server），
   supervisor 5 秒内自动拉起新 dev server，Turbopack 重新按需编译（首个大页面 ~10s，之后正常）。
   已验证恢复：/ 307 → /studio 200。
+
+## 2026-10-30 PostgreSQL 数据目录迁移至 vdb1
+
+- 起因：vda3 系统盘 95% 满（宿主机系统+平台占用，非用户数据），数据库不宜住在最挤的盘上；
+  工作台自 2026-10-20 起绑定 vdb1 数据盘（141G 空闲），数据库随之迁移解耦。
+- 变更：`studio_supervisor.py` 的 `PGDATA` 由 `DOMAIN/.tools/pgdata` 改为 `ROOT/.pgdata`
+  （= /domain/supoclip-medical-workbench/.pgdata，vdb1；已加入 .gitignore）。
+  `pg_ctl` 停/起一律带 `-D /domain/supoclip-medical-workbench/.pgdata`。
+- 迁移方式：fast 停库 → cp -a → 原子改名 → 手动 pg_ctl 起库；验证 15 表/users/studio_jobs 一致。
+- 回滚：旧数据目录完整保留在 `/domain/.tools/pgdata.vda3-backup-20261030`（78M）；
+  回滚 = 还原 supervisor 两处引用 + 用旧目录起库。
+- 注意：① 连接串不变（127.0.0.1:5432/supoclip）；② 手动 initdb/起库教程里的旧路径
+  `/domain/.tools/pgdata` 已失效，新路径以本节为准；③ vda3 95% 满是宿主机系统盘问题，
+  已提请管理员关注，与本数据库无关。

@@ -40,7 +40,7 @@ def shutdown(*_):
     stop = True
 
 
-PGDATA = DOMAIN / '.tools' / 'pgdata'
+PGDATA = ROOT / '.pgdata'  # 2026-10-30 迁移：vda3 系统盘(95%满) → vdb1 数据盘(141G空闲)
 
 
 def pgdata_stale_lock_cleanup(pgdata: Path = PGDATA) -> str:
@@ -86,7 +86,7 @@ def main():
                STUDIO_TASKS_ROOT=str(ROOT / 'tasks'), VIDEO_BRAIN_URL='http://127.0.0.1:8940',
                STUDIO_ASR_LOCK=str(DOMAIN / '.studio-resources/asr.lock'))
     services = [
-        ('postgres', DOMAIN / '.tools', [str(DOMAIN / '.tools/pg16/bin/postgres'), '-D', 'pgdata', '-p', '5432', '-c', 'listen_addresses=127.0.0.1'], lambda: listening(5432)),
+        ('postgres', ROOT, [str(DOMAIN / '.tools/pg16/bin/postgres'), '-D', str(PGDATA), '-p', '5432', '-c', 'listen_addresses=127.0.0.1'], lambda: listening(5432)),
         ('redis', ROOT, [str(DOMAIN / '.tools/redis-src/src/redis-server'), '--bind', '127.0.0.1', '--port', '6379', '--save', '', '--appendonly', 'no'], lambda: listening(6379)),
         ('frontend', ROOT / 'frontend', [str(DOMAIN / '.tools/bin/pnpm'), 'dev', '--port', '3107'], lambda: listening(3107)),
         ('frontend-proxy', ROOT / 'backend', ['.venv/bin/python', '-m', 'src.studio_frontend_proxy'], lambda: running_module('src.studio_frontend_proxy')),

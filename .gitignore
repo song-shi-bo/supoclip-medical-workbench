@@ -55,3 +55,6 @@ frontend/.test-mailbox/
 backend/bin/
 backend/qdrant.log
 backend/.qdrant-initialized
+
+# PostgreSQL 数据目录（2026-10-30 迁移至 vdb1）
+.pgdata/
