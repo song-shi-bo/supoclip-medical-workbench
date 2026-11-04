@@ -203,6 +203,10 @@ def _cached_entry(clip, source, out_dir, segments, transcript_ref, rule_snapshot
             return None
     except (OSError, ValueError):
         return None
+    if doc.get("subtitle_mode") == "sidecar_only":
+        # 2026-11-04 固化契约（切片预览必须显示字幕）：旧 sidecar_only 缓存一律
+        # 视为过期，返回 None 触发强制重渲染为 burned。
+        return None
     if not _ffprobe_playable(final)[0]:
         return None
     return {"clip_id": clip["clip_id"], "status": "skipped_playable", "path": str(final),
@@ -249,7 +253,9 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
     # 缩放，滤镜链位于 scale 之后保证字幕在最终像素上成型）。成片即 burned：
     # 工作台预览/下载/抖音投递所见即所得；studio export-transformed 对 burned 底片
     # 自动跳过二次烧录（_subtitle_burn_spec 按 subtitle_mode=burned 返回 None）。
-    # SUBTITLE_HARDBURN=false 可回退旧行为（sidecar_only，烧录走 transform 导出）。
+    # SUBTITLE_HARDBURN=false 仅为紧急停机开关：有 cue 的切片会硬失败
+    # （ClipRenderError），不再静默降级 sidecar_only（2026-11-04 固化契约：
+    # 切片预览必须显示字幕）。
     burn_ass_path: Path | None = None
     if srt_text and _subtitle_cueing.hardburn_enabled():
         burn_ass_path = out_dir / "subtitles.ass"
@@ -262,8 +268,12 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
             f":fontsdir='{_filter_value(_BURN_FONTSDIR)}'")
         subtitle_mode = "burned"
     elif srt_text:
-        # 兼容开关关闭：底片只产 sidecar SRT，烧录走 transform 导出。
-        subtitle_mode = "sidecar_only"
+        # 2026-11-04 固化契约（用户指令「切片预览必须显示字幕」）：有 cue 的切片必须
+        # 同遍烧录。SUBTITLE_HARDBURN=false 不再静默降级 sidecar_only，而是硬失败
+        # （render_plan 按 technical_error 隔离，该条绝不发布），杜绝预览无字幕回归。
+        raise ClipRenderError(
+            "切片含字幕 cue 但 SUBTITLE_HARDBURN 已关闭：预览/成片必须烧录字幕，"
+            "拒绝产出 sidecar_only 底片（2026-11-04 固化契约）")
     else:
         subtitle_mode = "absent"
     try:

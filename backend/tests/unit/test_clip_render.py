@@ -217,6 +217,44 @@ def test_worker_render_stage_registers_artifacts_and_partial_status(
     assert posts[0].get("clip_id") == "clip-a"
 
 
+def test_worker_never_registers_sidecar_only_clip(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
+    # 2026-11-04 固化契约（切片预览必须显示字幕）：发布层纵深防御——即使出现
+    # sidecar_only 成片（如手工放置/旧暂存），也绝不登记发布。
+    from src import studio_job_worker as worker
+
+    monkeypatch.setenv("STUDIO_TASKS_ROOT", str(tmp_path / "tasks"))
+    from src import studio_project_store
+    monkeypatch.setattr(studio_project_store, "TASKS_ROOT", tmp_path / "tasks")
+    monkeypatch.setattr(worker, "_state",
+                        lambda job_id, status, stage, progress, error=None: None)
+    monkeypatch.setattr(worker, "_materialise_source_for_job", lambda key, jid: "video.mp4")
+    monkeypatch.setattr("src.r2.upload_file", lambda path, key: {"object_key": key, "size": 1})
+    posts: list[dict] = []
+    monkeypatch.setattr(worker, "_http", lambda method, url, payload=None, timeout=60: {"artifacts":[]} if method=="GET" else {"accepted":True} if url.endswith("/activate") else posts.append(payload) or {})
+    aggregate = {
+        "job_status": "partial_succeeded",
+        "entries": [
+            {"clip_id": "clip-sidecar", "status": "rendered", "technical_error": None,
+             "warnings": [], "render_warnings": [], "subtitle_mode": "sidecar_only"},
+        ],
+        "counts": {"total": 1, "succeeded": 1, "technical_error": 0, "skipped_playable": 0},
+        "warnings": [],
+    }
+    monkeypatch.setattr(cr, "render_plan", lambda plan, **kwargs: aggregate)
+
+    base = tmp_path / "tasks" / "output" / "autoedit_r2" / "clips" / "clip-sidecar"
+    base.mkdir(parents=True)
+    (base / "clip_final.mp4").write_bytes(b"x")
+    (base / "warnings.json").write_text(json.dumps({"subtitle_mode": "sidecar_only"}))
+    worker._run_clip_render_stage(
+        {"job_id": "autoedit_r2", "object_key": "local:/v.mp4", "project_id": "timeline_t"},
+        "autoedit_r2", {"asr_segments": []},
+        {"plan_source": "llm", "clips": [], "rule_snapshot_id": "v1"})
+
+    assert posts == []  # sidecar_only 成片不得登记任何 artifact
+
+
 @pytest.fixture
 def subtitle_mock_runtime(tmp_path, monkeypatch):
     from src import capacity_guard as cg
@@ -281,16 +319,40 @@ def test_fixed_revision_subtitle_burn_arguments_boundaries_cache_and_cards(tmp_p
     assert len(calls) == 3
 
 
-def test_hardburn_can_be_disabled_via_env(tmp_path, monkeypatch, subtitle_mock_runtime):
-    # SUBTITLE_HARDBURN=false 回退旧行为：底片只产 sidecar SRT（烧录走 transform 导出）
+def test_hardburn_disabled_is_hard_error(tmp_path, monkeypatch, subtitle_mock_runtime):
+    # 2026-11-04 固化契约（切片预览必须显示字幕）：SUBTITLE_HARDBURN=false 不再
+    # 静默降级 sidecar_only——有 cue 的切片直接 ClipRenderError（render_plan 按
+    # technical_error 隔离，该条绝不发布），且不执行任何渲染。
     source, calls = subtitle_mock_runtime
     monkeypatch.setenv("SUBTITLE_HARDBURN", "false")
-    result = cr.render_one({"clip_id":"no-burn","end_ms":1000},source=source,out_dir=tmp_path/"out",
-        corrected_segments=[{"start_ms":0,"end_ms":1000,"text":"合成字幕"}],
-        transcript_ref={"transcript_version":2},rule_snapshot_id=None)
-    assert result["subtitle_mode"] == "sidecar_only" and result["render_warnings"] == []
-    assert "subtitles=" not in calls[0][calls[0].index("-vf")+1]
+    with pytest.raises(cr.ClipRenderError, match="必须烧录字幕"):
+        cr.render_one({"clip_id":"no-burn","end_ms":1000},source=source,out_dir=tmp_path/"out",
+            corrected_segments=[{"start_ms":0,"end_ms":1000,"text":"合成字幕"}],
+            transcript_ref={"transcript_version":2},rule_snapshot_id=None)
+    assert calls == []  # 拒绝在关闭烧录时渲染有 cue 切片
+    assert not (tmp_path/"out"/"clip_final.mp4").exists()
     assert not (tmp_path/"out"/"subtitles.ass").exists()
+
+
+def test_stale_sidecar_only_cache_is_not_reused(tmp_path, monkeypatch, subtitle_mock_runtime):
+    # 2026-11-04 固化契约：旧 sidecar_only 缓存（指纹/SRT 全匹配、可解码）一律
+    # 视为过期——render_one 拒绝复用并强制重渲染为 burned。
+    source, calls = subtitle_mock_runtime
+    out = tmp_path / "out"
+    clip = {"clip_id": "stale-sidecar", "start_ms": 0, "end_ms": 1000}
+    segs = [{"start_ms": 0, "end_ms": 1000, "text": "合成字幕"}]
+    tref = {"transcript_id": "synthetic-tr", "transcript_version": 2}
+    opts = dict(source=source, out_dir=out, corrected_segments=segs,
+                transcript_ref=tref, rule_snapshot_id=None)
+    assert cr.render_one(clip, **opts)["subtitle_mode"] == "burned"
+    assert len(calls) == 1
+    wpath = out / "warnings.json"
+    doc = json.loads(wpath.read_text())
+    doc["subtitle_mode"] = "sidecar_only"  # 伪装成旧 sidecar 产物（其余字段全匹配）
+    wpath.write_text(json.dumps(doc))
+    again = cr.render_one(clip, **opts)
+    assert again["subtitle_mode"] == "burned" and again["status"] == "rendered"
+    assert len(calls) == 2  # 缓存被拒绝 → 重新渲染
 
 
 def test_builtin_ttc_registry_family_and_user_upload_format_unchanged(tmp_path, monkeypatch):

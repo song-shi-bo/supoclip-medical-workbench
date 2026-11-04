@@ -1008,6 +1008,10 @@ def _run_clip_render_stage(job: dict, job_id: str, transcript: dict,
         if entry.get("status") not in {"rendered", "skipped_playable"}:
             continue
         clip_id = entry["clip_id"]
+        if entry.get("subtitle_mode") == "sidecar_only":
+            # 2026-11-04 固化契约（切片预览必须显示字幕）：sidecar_only 成片禁止
+            # 发布。正常流程已不可能产出（render 层硬失败），此处为纵深防御。
+            continue
         base = out_root / "clips" / clip_id
         kinds = [("clip_final", "clip_final.mp4"), ("clip_warnings", "warnings.json"), ("srt", "subtitles.srt")]
         kinds += _cover_artifact_kinds(base)

@@ -603,7 +603,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 def hardburn_enabled(env: dict | None = None) -> bool:
-    """渲染时是否直接把固化样式字幕烧进成片（默认开，`SUBTITLE_HARDBURN=false` 关闭）。"""
+    """渲染时是否直接把固化样式字幕烧进成片（默认开）。
+
+    ``SUBTITLE_HARDBURN=false`` 仅作紧急停机开关：有 cue 的切片会因此硬失败
+    （ClipRenderError），不再静默降级 sidecar_only——2026-11-04 固化契约：
+    切片预览必须显示字幕。
+    """
     e = os.environ if env is None else env
     raw = e.get("SUBTITLE_HARDBURN")
     if raw is None or raw == "":
