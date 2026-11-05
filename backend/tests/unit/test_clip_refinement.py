@@ -409,3 +409,78 @@ def test_refined_copy_route_serves_markdown(tmp_path, monkeypatch: pytest.Monkey
         asyncio.run(media_routes.studio_clip_refined_copy("job-none", "clip-x"))
     assert "404" in str(getattr(excinfo.value, "status_code", "")) or \
         getattr(excinfo.value, "status_code", None) == 404
+
+
+# =====================================================================
+# 右侧精修面板（结构化 JSON，实施清单第 6 项消费侧）
+# =====================================================================
+
+def test_transcript_payload_relative_timecodes(monkeypatch: pytest.MonkeyPatch):
+    """面板行 = cue 四列语义，时间码换算成切片相对毫秒（模板口径 00:00–00:02）。"""
+    monkeypatch.setattr(cr, "_model_ready", lambda: (True, "fixture-model", ""))
+    monkeypatch.setattr(cr, "_REFINE_LLM_FN", lambda prompt: _refined_output())
+    record = cr.refine_clips(_plan_record(), _segments(), job_id="job-panel")
+    payload = cr.build_transcript_payload("job-panel", "clip-abc1234567",
+                                          _plan_record(), record)
+    assert payload["source"] == "llm"
+    assert payload["theme"] == "误区一：规范治疗"
+    assert payload["checklist_pending"] and payload["ending_cards"]
+    rows = payload["rows"]
+    assert len(rows) == 2
+    assert rows[0]["speaker"] == "医生"
+    assert rows[0]["text"] == "确诊高血压就要规范治疗"
+    # cue 绝对 6000–12000 / 12000–19500，切片起点 6500：
+    # 相对 0–5500（负值钳 0）/ 5500–13000。
+    assert rows[0]["start_ms"] == 0 and rows[0]["end_ms"] == 5500
+    assert rows[1]["start_ms"] == 5500 and rows[1]["end_ms"] == 13000
+
+
+def test_transcript_payload_fallback_null_timecodes():
+    """fallback 行没有时间码字段 → start/end 为 None（如实，不编造）。"""
+    fallback_record = {"prompt_version": "refine-test", "clips": {"clip-abc1234567": {
+        "segments": [{"segment_id": "seg_0001", "refined_text": "原文一", "speaker": ""}],
+        "source": "fallback", "fallback_reason": "llm_unavailable",
+        "warnings": ["w1"], "prompt_version": "refine-test"}}}
+    payload = cr.build_transcript_payload("job-p", "clip-abc1234567",
+                                          _plan_record(), fallback_record)
+    assert payload["source"] == "fallback"
+    assert payload["fallback_reason"] == "llm_unavailable"
+    assert payload["rows"][0]["start_ms"] is None
+    assert payload["rows"][0]["end_ms"] is None
+    assert payload["rows"][0]["text"] == "原文一"
+    assert payload["warnings"] == ["w1"]
+
+
+def test_transcript_payload_missing_plan_no_fake_timecodes(monkeypatch: pytest.MonkeyPatch):
+    """计划缺失 → 不按 0 偏移冒充相对时间：行时间码 None + warning。"""
+    monkeypatch.setattr(cr, "_model_ready", lambda: (True, "fixture-model", ""))
+    monkeypatch.setattr(cr, "_REFINE_LLM_FN", lambda prompt: _refined_output())
+    record = cr.refine_clips(_plan_record(), _segments(), job_id="job-noplan")
+    payload = cr.build_transcript_payload("job-noplan", "clip-abc1234567", None, record)
+    assert payload["source"] == "llm"
+    assert all(row["start_ms"] is None and row["end_ms"] is None for row in payload["rows"])
+    assert any("缺少切片计划" in w for w in payload["warnings"])
+
+
+def test_refined_transcript_route_serves_json(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    """面板端点：读精修产物 → 结构化 JSON；缺失任务 / 未知切片 → 404。"""
+    from src.api.routes import media as media_routes
+    monkeypatch.setenv("STUDIO_TASKS_ROOT", str(tmp_path / "tasks"))
+    monkeypatch.setattr(cr, "_model_ready", lambda: (True, "fixture-model", ""))
+    monkeypatch.setattr(cr, "_REFINE_LLM_FN", lambda prompt: _refined_output())
+    record = cr.refine_clips(_plan_record(), _segments(), job_id="job-panel-api")
+    cr.save_refinement_record("job-panel-api", record)
+    cp.save_plan_record("job-panel-api", _plan_record())
+
+    payload = asyncio.run(
+        media_routes.studio_clip_refined_transcript("job-panel-api", "clip-abc1234567"))
+    assert payload["source"] == "llm"
+    assert payload["rows"][0]["speaker"] == "医生"
+    assert payload["rows"][0]["start_ms"] == 0
+
+    for task_id, clip_id in [("job-none", "clip-x"),
+                             ("job-panel-api", "clip-doesnotexist")]:
+        with pytest.raises(Exception) as excinfo:
+            asyncio.run(media_routes.studio_clip_refined_transcript(task_id, clip_id))
+        assert getattr(excinfo.value, "status_code", None) == 404 or \
+            "404" in str(getattr(excinfo.value, "status_code", ""))

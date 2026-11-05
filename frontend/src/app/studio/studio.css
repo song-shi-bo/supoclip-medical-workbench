@@ -4431,3 +4431,96 @@ button {
   cursor: pointer;
 }
 .studio-message button:hover { color: #e8f6f7; border-color: #2b8587; }
+
+/* ============================================================
+   右侧「切片精修文案」面板（两步制第二步消费侧，2026-11-05）
+   四列表头固定：# / 时间码 / 角色 / 上屏字幕；时间为切片相对时间。
+   ============================================================ */
+.refined-transcript-panel .refined-source.llm {
+  color: #bff8ec;
+  background: #175c56;
+}
+.refined-transcript-panel .refined-source.fallback {
+  color: #f3d5a5;
+  background: #684b25;
+}
+.refined-transcript-panel .refined-meta {
+  margin: 0 0 7px;
+  color: #aac0c3;
+  font-size: 11px;
+  line-height: 1.45;
+}
+.refined-table-wrap {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid #284247;
+  border-radius: 4px;
+}
+.refined-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.refined-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 7px;
+  text-align: left;
+  white-space: nowrap;
+  color: #e6eeee;
+  background: #1d3136;
+  border-bottom: 1px solid #284247;
+}
+.refined-table tbody td {
+  padding: 5px 7px;
+  color: #d9e7e5;
+  border-bottom: 1px solid #223438;
+  vertical-align: top;
+  line-height: 1.45;
+}
+.refined-table tbody tr:last-child td { border-bottom: 0; }
+.refined-table td.refined-time {
+  white-space: nowrap;
+  color: #9fc6c2;
+  font-variant-numeric: tabular-nums;
+}
+.refined-table td.refined-speaker { white-space: nowrap; }
+.refined-table td.refined-speaker.doctor { color: #9fe3f2; }
+.refined-table td.refined-speaker.patient { color: #f2cf9f; }
+.refined-table td.refined-text { word-break: break-word; }
+.refined-table td.refined-empty {
+  padding: 12px 7px;
+  color: #8aa1a0;
+  text-align: center;
+}
+.refined-transcript-panel .refined-download {
+  display: inline-block;
+  margin-top: 8px;
+}
+.refined-fold {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+.refined-fold details {
+  padding: 4px 7px;
+  border: 1px solid #24383c;
+  border-radius: 4px;
+  background: #14242a;
+}
+.refined-fold summary {
+  color: #c3d8d6;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+.refined-fold ul {
+  margin: 6px 0 2px;
+  padding-left: 16px;
+  color: #aac0c3;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.refined-fold .refined-warnings { border-color: #4b3524; }
+.refined-fold .refined-warnings li { color: #e8b98f; }

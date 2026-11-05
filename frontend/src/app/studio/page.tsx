@@ -10,6 +10,7 @@ import { ChangeEvent, DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as 
 import { AudioLines, Check, Download, Film, FolderOpen, House, ListVideo, LoaderCircle, Menu, Plus, RotateCcw, Save, Scissors, Search, Settings2, Trash2, Upload, X } from "lucide-react";
 import "./studio.css";
 import { ProjectManager } from "@/components/studio/project-manager";
+import RefinedTranscriptPanel from "@/components/studio/refined-transcript-panel";
 import { StudioCopilot, type CopilotAction, type CopilotMessage } from "./studio-copilot";
 import { TimelineToolbar, type TimelineAddKind } from "@/components/studio/timeline-toolbar";
 import { TimelineTracks, TIMELINE_COVER_DRAG_TYPE, findActiveTimelineImage, type TimelineSubtitleCue } from "@/components/studio/timeline-tracks";
@@ -4442,6 +4443,12 @@ export default function StudioPage() {
   {activeRenderedClip.subtitle_notice && <p>{activeRenderedClip.subtitle_notice}</p>}
   {activeRenderedClip.subtitle_url && <a href={workflowArtifactUrl(transcribeServiceBase, activeRenderedClip.subtitle_url)} download target="_blank" rel="noreferrer">下载本成片SRT</a>}
 </section>}
+{/* 右侧切片精修文案面板（两步制第二步消费侧）：只在查看成片时挂载，key 随切片切换重挂载防串片 */}
+{activeRenderedClip && <RefinedTranscriptPanel
+  key={`${activeRenderedClip.task_id}:${activeRenderedClip.clip_id}`}
+  taskId={activeRenderedClip.task_id}
+  clipId={activeRenderedClip.clip_id}
+  apiBase={transcribeServiceBase} />}
 {sourceReviewOpen && !activeRenderedClip && <section className="insight-panel" aria-label="源转写核听与人工修订">
   <header><strong>源转写核听与人工修订</strong><button className="insights-action" onClick={() => setSourceReviewOpen(false)}>收起（保留草稿）</button></header>
   <p>原始转写只读。请核听原片后修订文本；时间戳保持程序原值。当前剪辑引用 v{transcriptRef?.transcript_version ?? "未知"}。</p>

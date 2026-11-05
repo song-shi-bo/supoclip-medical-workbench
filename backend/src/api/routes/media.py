@@ -1298,6 +1298,33 @@ def _apply_timeline_image_tails(source: Path, clip_id: str,
     return work
 
 
+@router.get("/studio/auto-edit/{task_id}/clips/{clip_id}/refined-transcript")
+async def studio_clip_refined_transcript(task_id: str, clip_id: str):
+    """右侧「切片精修文案」面板数据（两步制第二步消费侧，2026-11-05）。
+
+    数据源与 refined-copy.md 相同；这里出**结构化 JSON**：逐条 cue 行
+    （#/时间码/角色/上屏字幕），时间码为切片相对毫秒。fallback 如实标注，
+    行时间码为 null（前端显示 —）。精修产物缺失或切片未知 → 404。
+    """
+    from ... import clip_planning, clip_refinement
+
+    def _build() -> dict:
+        refinement = clip_refinement.load_refinement_record(task_id)
+        if refinement is None:
+            raise HTTPException(
+                status_code=404,
+                detail="精修产物不存在（任务可能早于两步制运行，重新规划后可用）")
+        plan_record = clip_planning.load_plan_record(task_id)
+        known_clip = clip_id in (refinement.get("clips") or {}) or any(
+            isinstance(c, dict) and str(c.get("clip_id")) == clip_id
+            for c in ((plan_record or {}).get("clips") or []))
+        if not known_clip:
+            raise HTTPException(status_code=404, detail=f"切片不存在：{clip_id}")
+        return clip_refinement.build_transcript_payload(task_id, clip_id, plan_record, refinement)
+
+    return await run_in_threadpool(_build)
+
+
 @router.get("/studio/auto-edit/{task_id}/clips/{clip_id}/refined-copy.md")
 async def studio_clip_refined_copy(task_id: str, clip_id: str, download: bool = True):
     """切片文案导出（两步制精修版 markdown，2026-11-05）。

@@ -641,3 +641,65 @@ def build_copy_markdown(job_id: str, clip_id: str, plan_record: dict[str, Any] |
 def _mmss(total_seconds: int) -> str:
     minutes, seconds = divmod(max(0, int(total_seconds)), 60)
     return f"{minutes:02d}:{seconds:02d}"
+
+
+# ---------------------------------------------------------------- 面板数据
+def build_transcript_payload(job_id: str, clip_id: str, plan_record: dict[str, Any] | None,
+                             refinement: dict[str, Any]) -> dict[str, Any]:
+    """右侧「切片精修文案」面板数据（2026-11-05，实施清单第 6 项消费侧）。
+
+    行结构固定四列语义：``index / start_ms / end_ms / speaker / text``，其中
+    时间码已换算成**切片相对毫秒**（模板口径 00:00–00:02；cue 原值是源片
+    绝对时间，减去计划里该切片的 start_ms）。fallback 条目的 segments 没有
+    时间码字段（如实回退，不编造）→ ``start_ms/end_ms`` 为 None，前端显示 —。
+
+    精修产物缺失或该切片不存在时由路由层给 404；这里只做拼装，绝不抛错。
+    计划缺失（或该切片不在计划里）时无法换算相对时间码——**不按 0 偏移
+    冒充相对时间**，行时间码置 None 并追加 warning（前端时间列显示 —）。
+    """
+    entry = (refinement.get("clips") or {}).get(clip_id) or {}
+    clip = next((c for c in ((plan_record or {}).get("clips") or [])
+                 if isinstance(c, dict) and str(c.get("clip_id")) == clip_id), None)
+    relative_known = clip is not None
+    clip_start = int((clip or {}).get("start_ms") or 0)
+    source = str(entry.get("source") or "fallback")
+
+    rows: list[dict[str, Any]] = []
+    if source == "llm" and entry.get("cues"):
+        for cue in entry["cues"]:
+            start_ms = int(cue.get("start_ms") or 0)
+            end_ms = int(cue.get("end_ms") or 0)
+            rows.append({"index": int(cue.get("index") or len(rows) + 1),
+                         "start_ms": max(0, start_ms - clip_start) if relative_known else None,
+                         "end_ms": max(0, end_ms - clip_start) if relative_known else None,
+                         "speaker": str(cue.get("speaker") or ""),
+                         "text": str(cue.get("text") or "")})
+    else:
+        for order, seg in enumerate(entry.get("segments") or [], 1):
+            start_ms = None if seg.get("start_ms") is None else int(seg.get("start_ms") or 0)
+            end_ms = None if seg.get("end_ms") is None else int(seg.get("end_ms") or 0)
+            rows.append({"index": order,
+                         "start_ms": None if (start_ms is None or not relative_known)
+                         else max(0, start_ms - clip_start),
+                         "end_ms": None if (end_ms is None or not relative_known)
+                         else max(0, end_ms - clip_start),
+                         "speaker": str(seg.get("speaker") or ""),
+                         "text": str(seg.get("refined_text") or "")})
+    warnings = [str(w) for w in (entry.get("warnings") or [])]
+    if not relative_known:
+        warnings.append("缺少切片计划，无法换算切片相对时间码（时间列显示为空，不按 0 偏移冒充）")
+    return {
+        "task_id": job_id,
+        "clip_id": clip_id,
+        "theme": str((clip or {}).get("topic") or entry.get("theme") or ""),
+        "source": source,
+        "fallback_reason": entry.get("fallback_reason"),
+        "prompt_version": str(entry.get("prompt_version")
+                              or refinement.get("prompt_version") or ""),
+        "model": entry.get("model"),
+        "rows": rows,
+        "warnings": warnings,
+        "checklist_pending": [str(r) for r in (entry.get("checklist_pending") or [])],
+        "checklist_compliance": [str(r) for r in (entry.get("checklist_compliance") or [])],
+        "ending_cards": [str(r) for r in (entry.get("ending_cards") or [])],
+    }
