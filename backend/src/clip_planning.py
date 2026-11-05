@@ -120,10 +120,12 @@ SCORE_WEIGHTS = {
 # 第一步·范围规划系统提示词（2026-11-05 两步制）——用户提示词A原文逐字，
 # 一字不动（防混契约：与 docs/prompts/step1-slice-planning.md 逐字节一致，
 # 断言见 tests/unit/test_clip_refinement.py）。旧单步提示词已退役删除。
+# 修订（2026-11-05 用户确认）：原文「约 29 分钟」为示例时长，已泛化为
+# 「视频实际时长以输入说明为准」（拼装层在用户提示给出实际时长）。
 # 注意：原文含 JSON 花括号，绝不可对齐提示词调用 str.format。
 # =====================================================================
 _PLAN_SYSTEM_PROMPT = """# 角色
-你是医疗科普短视频的切片策划。输入是一段约 29 分钟医患对话视频经转写纠错后的文本（带时间戳）。你的任务是把它规划成若干个可独立发布的短视频切片，供下游逐条精修。
+你是医疗科普短视频的切片策划。输入是一段医患对话视频经转写纠错后的文本（带时间戳），视频实际时长以输入说明为准。你的任务是把它规划成若干个可独立发布的短视频切片，供下游逐条精修。
 
 # 规划原则
 1. 主题完整：每个切片只讲一个主题，且该主题在切片内讲完（有结论或明确收尾），不依赖其他切片才能看懂；切片之间不重复讲同一内容。
@@ -605,7 +607,7 @@ def _record(*, plan_source: str, llm_requested: bool, llm_error: str | None,
 
 
 PLAN_SCHEMA_VERSION = "clip-plan/v3"
-PLAN_PROMPT_VERSION = "clip-plan-prompt/2026-11-05-slice-a1"
+PLAN_PROMPT_VERSION = "clip-plan-prompt/2026-11-05-slice-a2"
 PLAN_ADAPTER_VERSION = "clip-plan-adapter/v2"
 
 
