@@ -20,9 +20,10 @@ candidate_intervals）之后、渲染之前，把纠错转写规划为若干「�
   绝不重新上传 / ASR / 纠错；
 * 全覆盖契约（提示词A）：不平均切开，但切片+弃用段必须覆盖全片；
   寒暄 / 重复 / 无信息量段落必须明确弃用，不允许静默丢段；
-* 时长与数量（提示词A常量化）：单切片 60~180 秒为宜、全片 5~10 个切片、
-  不产出低于 40 秒的切片；一切时长偏差只记 warning，**没有 reject、
-  不阻断任务、不等人工确认**；
+* 时长与数量（提示词A常量化，2026-11-05 第二次修订）：单切片 60~180 秒为宜、
+  不产出低于 40 秒的切片；**切片数量不固定**——按视频实际时长与可切取的
+  完整内容动态决定（程序侧只保留资源保护上限）；一切时长偏差只记 warning，
+  **没有 reject、不阻断任务、不等人工确认**；
 * 每条切片是**一个连续源区间**（start..end 之间全部分段归属该切片，程序侧
   按分段重算 start_ms / end_ms / duration_ms，模型无权产生时间戳、不能拼接
   不连续讲话）；
@@ -85,9 +86,9 @@ DUR_ACCEPT_MS = (40_000, 210_000)
 # 提示词A「不产出低于 40 秒的切片」：程序侧仍是只记 warning 不淘汰（本模块
 # 无 reject 契约不变），但 <40s 一定带 short_duration warning 并降低时长得分。
 MIN_CLIP_MS = 40_000
-# 提示词A数量规则：全片 5~10 个切片。上限仍是**资源保护上限**（不要求凑满），
-# 目标条数 5 由提示词自身传达给模型，程序不做凑数补切。
-SLICE_TARGET_COUNT = 5
+# 提示词A数量规则（2026-11-05 第二次修订）：切片数量**不固定**，由视频实际
+# 时长与可切取的完整内容决定（原「5~10 个」是示例口径，已从提示词移除）。
+# 程序侧只保留资源保护上限（不要求凑满），超限按综合得分保留最优并记 warning。
 # 提示词A time_range → 分段边界吸附：模型时间是定位线索，权威毫秒由分段重算。
 # 声明边界距最近分段边界超过该容差 → 记 warning（仍吸附，不淘汰）。
 SLICE_SNAP_TOLERANCE_MS = 2_500
@@ -96,14 +97,14 @@ SLICE_SNAP_TOLERANCE_MS = 2_500
 def _max_clips() -> int:
     """切片数量上限：**资源保护上限，不是目标数量**（不要求凑满）。
 
-    2026-11-05 按提示词A常量化：默认 10（全片 5~10 个切片），可用
-    CONTENT_PLAN_MAX_CLIPS 调整；超过时按综合得分保留最优，并在计划级
-    warnings 记录。正常情况下切片数量由提示词A按主题密度输出 5~10 条。
+    2026-11-05 起切片数量由提示词A按视频时长与内容动态决定，本上限只做
+    配额/耗时保护：默认 12，可用 CONTENT_PLAN_MAX_CLIPS 调整；超过时按综合
+    得分保留最优，并在计划级 warnings 记录。
     """
     try:
-        return max(1, int(os.getenv("CONTENT_PLAN_MAX_CLIPS", "10")))
+        return max(1, int(os.getenv("CONTENT_PLAN_MAX_CLIPS", "12")))
     except ValueError:
-        return 10
+        return 12
 # 去重：与已选切片重叠超过较短者 50% 视为高度重复
 DUP_OVERLAP_RATIO = 0.5
 
@@ -130,7 +131,7 @@ _PLAN_SYSTEM_PROMPT = """# 角色
 # 规划原则
 1. 主题完整：每个切片只讲一个主题，且该主题在切片内讲完（有结论或明确收尾），不依赖其他切片才能看懂；切片之间不重复讲同一内容。
 2. 切点自然：起止点选在话题转换处，不从半句话中间切；起点附近必须存在能当钩子的信息。
-3. 时长与数量：单切片 60~180 秒为宜，全片切成 5~10 个切片；话题确实单薄时可更短，但不产出低于 40 秒的切片。
+3. 时长与数量：单切片 60~180 秒为宜，不产出低于 40 秒的切片。切片数量不固定，根据视频实际时长以及其中可以切取的完整内容来定：能切出多少个主题完整、可独立成立的切片就切多少个，宁缺毋滥，不凑数、不硬切。
 4. 钩子：为每个切片写 1 句钩子首句 + 1 句封面文字。钩子只能使用切片内实际存在的信息，机制从冲突、反常识、具体疑问、身份共鸣中选；禁止内容兑现不了的承诺，禁止绝对化、恐吓式表达。
 5. 信息忠实：主题、钩子、摘要只能来自转写文本，不得引入文本外的医学结论、数据或案例。
 6. 弃用与风险标注：寒暄、重复、无信息量段落标记为弃用；含绝对化表述、无出处数字、患者隐私信息的段落标记为风险，供第二步处理。
@@ -607,7 +608,7 @@ def _record(*, plan_source: str, llm_requested: bool, llm_error: str | None,
 
 
 PLAN_SCHEMA_VERSION = "clip-plan/v3"
-PLAN_PROMPT_VERSION = "clip-plan-prompt/2026-11-05-slice-a2"
+PLAN_PROMPT_VERSION = "clip-plan-prompt/2026-11-05-slice-a3"
 PLAN_ADAPTER_VERSION = "clip-plan-adapter/v2"
 
 
@@ -854,7 +855,6 @@ def build_current_plan_provenance(corrected_segments: list[dict[str, Any]],
     rules = {"rule_snapshot_id": rule_snapshot_id, "external_snapshot": copy.deepcopy(rules_snapshot),
              "score_weights": SCORE_WEIGHTS, "duration_prefer_ms": list(DUR_PREFER_MS),
              "duration_accept_ms": list(DUR_ACCEPT_MS), "min_clip_ms": MIN_CLIP_MS,
-             "slice_target_count": SLICE_TARGET_COUNT,
              "slice_snap_tolerance_ms": SLICE_SNAP_TOLERANCE_MS,
              "slice_global_max_segments": SLICE_GLOBAL_MAX_SEGMENTS,
              "max_clips": _max_clips(), "duplicate_overlap_ratio": DUP_OVERLAP_RATIO,
