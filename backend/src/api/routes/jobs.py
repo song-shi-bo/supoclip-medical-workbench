@@ -44,6 +44,8 @@ _WORKER_SECRET = os.getenv("WORKER_SHARED_SECRET", "")
 ALLOWED_JOB_STATUSES: frozenset[str] = frozenset({
     "downloading", "extracting_audio", "transcribing", "correcting", "transcript_ready",
     "retrieving_rules", "extracting_highlights", "planning", "analysis_ready", "plan_ready",
+    # 两步制切片精修（2026-11-05）：规划（提示词A）后的第二步（提示词B）阶段状态
+    "refining",
     "analyzing", "editing", "rendering", "uploading",
     "completed", "completed_with_warnings", "partial_succeeded", "technical_failed",
     "reedit_requested", "staging_run", "verifying_outputs", "activating_run",

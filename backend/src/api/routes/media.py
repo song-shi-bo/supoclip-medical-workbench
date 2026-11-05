@@ -3,7 +3,7 @@ Media API routes (fonts, transitions, uploads).
 """
 
 from pydantic import BaseModel, Field, ValidationError
-from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Request, Response, UploadFile, File, Form
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from pathlib import Path
@@ -21,6 +21,7 @@ import aiofiles
 import os
 import subprocess
 import threading
+from urllib.parse import quote
 from starlette.requests import ClientDisconnect
 from ...studio_runtime import process_lock
 from ...capacity_guard import reserve_capacity, estimate_upload_peak, CapacityInsufficientError
@@ -1295,6 +1296,35 @@ def _apply_timeline_image_tails(source: Path, clip_id: str,
     finally:
         tmp.unlink(missing_ok=True)
     return work
+
+
+@router.get("/studio/auto-edit/{task_id}/clips/{clip_id}/refined-copy.md")
+async def studio_clip_refined_copy(task_id: str, clip_id: str, download: bool = True):
+    """切片文案导出（两步制精修版 markdown，2026-11-05）。
+
+    数据源：``tasks/plans/<task_id>/clip_refinement.json``（提示词B精修产物）
+    + ``clip_plan.json``（主题/时长等规划信息）。精修缺失或该切片为 fallback
+    时如实回退原始纠错转写拼装并标注——绝不冒充精修文本。
+    """
+    from ... import clip_planning, clip_refinement
+
+    def _build() -> tuple[str, str]:
+        refinement = clip_refinement.load_refinement_record(task_id)
+        if refinement is None:
+            raise HTTPException(
+                status_code=404,
+                detail="精修产物不存在（任务可能早于两步制运行，重新规划后可用）")
+        plan_record = clip_planning.load_plan_record(task_id)
+        markdown = clip_refinement.build_copy_markdown(task_id, clip_id, plan_record, refinement)
+        filename = f"{clip_id}-文案.md"
+        return markdown, filename
+
+    markdown, filename = await run_in_threadpool(_build)
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(filename)}"
+    return Response(content=markdown, media_type="text/markdown; charset=utf-8",
+                    headers=headers)
 
 
 @router.get("/studio/auto-edit/{task_id}/clips/{clip_id}/export-transformed")

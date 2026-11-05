@@ -808,6 +808,76 @@ def _run_clip_planning_stage(job: dict, job_id: str, transcript: dict,
     return record
 
 
+def _run_clip_refinement_stage(job: dict, job_id: str, transcript: dict,
+                               plan_record: dict) -> dict:
+    """第四步半（2026-11-05 两步制）：切片精修——clip_refinement.json。
+
+    * 提示词B（clip_refinement.PROMPT_REFINE_VERBATIM）逐切片精修，紧随规划
+      立即执行、产物随规划一起落盘，一次任务内完成（用户拍板）；
+    * 任何失败按**切片粒度**回退原始纠错转写 + warning（source=fallback 如实
+      标注），不阻断任务；stage 层再兜一层意外异常 → 空产物工件 + warning；
+    * 恢复语义：同指纹同 generation 的精修工件直接复用，不重复调用模型；
+    * 成片烧录字幕不受影响（仍用原纠错转写）；本产物只供右侧面板与文案导出。
+    """
+    from src import clip_refinement
+    from src import r2
+
+    started = time.time()
+    fingerprint = clip_refinement.plan_fingerprint(plan_record)
+    cached = clip_refinement.load_refinement_record(job_id, expected_fingerprint=fingerprint)
+    if cached is not None and int(cached.get("plan_generation") or 0) == _generation(job):
+        _state(job_id, "refining",
+               "检测到已保存的切片精修结果（计划指纹一致），恢复复用，不重新调用模型。", 0.72)
+        return cached
+
+    def _progress(message: str) -> None:
+        _state(job_id, "refining", message, 0.72)
+
+    _state(job_id, "refining", "切片精修（提示词B逐条；失败回退原转写，只记 warning）", 0.7)
+    try:
+        record = clip_refinement.refine_clips(
+            plan_record, list(transcript.get("asr_segments") or []),
+            job_id=job_id, progress=_progress)
+    except Exception as exc:  # noqa: BLE001 — 兜底契约：精修阶段绝不阻断任务
+        _log(f"job {job_id}（auto_edit/refine）精修阶段异常，落空产物继续: {exc!r}")
+        record = {"refinement_version": clip_refinement.REFINE_SCHEMA_VERSION,
+                  "prompt_version": clip_refinement.REFINE_PROMPT_VERSION,
+                  "prompt_sha256": clip_refinement.prompt_sha256(),
+                  "adapter_version": clip_refinement.REFINE_ADAPTER_VERSION,
+                  "plan_source": plan_record.get("plan_source"),
+                  "model": None, "llm_requested": False,
+                  "llm_error": f"refine_stage_error: {type(exc).__name__}: {str(exc)[:200]}",
+                  "llm_calls": 0, "llm_duration_ms": 0,
+                  "clip_count": 0, "fallback_count": 0,
+                  "warnings": [f"精修阶段异常，产物为空（不阻断任务）：{type(exc).__name__}"],
+                  "clips": {}, "job_id": job_id,
+                  "plan_fingerprint": fingerprint,
+                  "created_at_utc": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + "Z"}
+    record["plan_generation"] = _generation(job)
+    record["transcript_version"] = transcript.get("transcript_version")
+    saved = clip_refinement.save_refinement_record(job_id, record)
+    # 兜底契约（2026-11-05）：精修工件上传/登记失败**不阻断任务**——本地文件已
+    # 落盘，artifact 台账只影响回传可见性；渲染/发布链路照常继续。
+    try:
+        stored = _guarded_upload_file(Path(saved["path"]),
+                                      f"studio-artifacts/{_run_id(job_id)}/clip_refinement.json")
+        _http("POST", f"{BACKEND_INTERNAL_URL}/internal/jobs/{job_id}/artifacts",
+              {"kind": "clip_refinement", "object_key": stored["object_key"],
+               "size_bytes": stored["size"]})
+    except Exception as exc:  # noqa: BLE001 — 上传失败只记 warning
+        record.setdefault("warnings", []).append(
+            f"精修工件上传/登记失败（本地已保存 {saved['path']}，不阻断）: "
+            f"{type(exc).__name__}: {str(exc)[:120]}")
+        _log(f"job {job_id}（auto_edit/refine）精修工件上传失败（不阻断）: {exc!r}")
+    llm_clips = record.get("clip_count", 0) - record.get("fallback_count", 0)
+    summary = (f"切片精修完成（llm {llm_clips}/{record.get('clip_count', 0)}，"
+               f"fallback {record.get('fallback_count', 0)}）")
+    _state(job_id, "refining", summary, 0.74)
+    _log(f"job {job_id}（auto_edit/refine）切片精修完成：{saved['path']}，"
+         f"用时 {time.time() - started:.0f}s")
+    return record
+
+
 # 封面文案 LLM 注入口（测试桩）：None = 生产默认（真实文本 LLM，llm_budget 记账）。
 _COVER_LLM_FN = None
 
@@ -1098,6 +1168,9 @@ def _run_reedit_replace(job: dict, job_id: str, transcript: dict) -> None:
     else:
         plan_record = _run_clip_planning_stage(job, job_id, transcript, analysis_record)
 
+    # 两步制（2026-11-05）：重新剪辑同样先精修再渲染（产物随新计划落盘）。
+    _run_clip_refinement_stage(job, job_id, transcript, plan_record)
+
     _persist_workflow_snapshot(job,plan_record)
     _state(job_id, "rendering", "渲染新切片到 staging 目录", 0.5)
     source = _materialise_source_for_job(job["object_key"], job_id)
@@ -1231,7 +1304,12 @@ def run_auto_edit_only(job: dict) -> None:
             _state(job_id, "analysis_ready", f"{summary}；本阶段到此为止，未渲染。", 1.0)
             return
         plan_record = _run_clip_planning_stage(job, job_id, transcript, analysis_record)
-        _state(job_id, "plan_ready", "clip_plan.json 已保存（诊断停点；正式任务自动继续渲染）。", 0.75)
+        # 两步制（2026-11-05）：plan_ready 停点后移——规划（提示词A）+ 精修
+        # （提示词B）都完成后才发射诊断停点（用户拍板）。
+        _run_clip_refinement_stage(job, job_id, transcript, plan_record)
+        _state(job_id, "plan_ready",
+               "clip_plan.json + clip_refinement.json 已保存（两步完成；诊断停点，正式任务自动继续渲染）。",
+               0.75)
         return
 
     # 正式 AUTO_EDIT（第五步）：分析 → 规划 → 渲染，全自动不等待确认。
@@ -1253,6 +1331,8 @@ def run_auto_edit_only(job: dict) -> None:
     else:
         plan_record = _run_clip_planning_stage(job, job_id, transcript, analysis_record)
 
+    # 两步制（2026-11-05）：规划完成后立即逐条精修，产物随规划落盘；渲染不动。
+    _run_clip_refinement_stage(job, job_id, transcript, plan_record)
     _run_clip_render_stage(job, job_id, transcript, plan_record)
     _log(f"job {job_id}（auto_edit）全部阶段完成，用时 {time.time() - started:.0f}s")
 

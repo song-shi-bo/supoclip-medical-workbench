@@ -251,6 +251,8 @@ describe("项目状态与时间纯函数", () => {
   it("projectStatusChip：常见 PG 状态映射中文标签与色调，未知状态透出原文", () => {
     expect(projectStatusChip(null)).toEqual({ label: "未开始", tone: "idle" });
     expect(projectStatusChip("transcript_ready")).toEqual({ label: "转写就绪", tone: "done" });
+    expect(projectStatusChip("planning")).toEqual({ label: "切片规划中", tone: "running" });
+    expect(projectStatusChip("refining")).toEqual({ label: "切片精修中", tone: "running" });
     expect(projectStatusChip("completed_with_warnings")).toEqual({ label: "已完成（有警告）", tone: "warn" });
     expect(projectStatusChip("failed")).toEqual({ label: "失败", tone: "bad" });
     expect(projectStatusChip("cancelled")).toEqual({ label: "已取消", tone: "idle" });

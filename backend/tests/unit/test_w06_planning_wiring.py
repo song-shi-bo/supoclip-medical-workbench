@@ -1,4 +1,9 @@
-"""W06B真实plan_clips入口，模型为纯fixture；不运行worker/API/渲染。"""
+"""W06B 真实 plan_clips 入口（两步制第一步·提示词A），模型为纯 fixture。
+
+2026-11-05 两步制改造：分层窗口机制退役，提示词A是全局一次规划
+（time_range 吸附 + 全覆盖契约 + 单次重试）。本文件验证真实入口接线：
+prompt 拼装、缓存身份、ContextVar 隔离、失败降级与来源标注。
+"""
 import copy
 import json
 import sys
@@ -31,28 +36,39 @@ def analysis(count):
 
 
 def ids_of(prompt):
-    return [line.split("|")[0] for line in prompt.splitlines() if line.startswith("s") and "|" in line]
+    return [line.split("|")[0] for line in prompt.splitlines()
+            if line.startswith("s") and "|" in line and " --> " not in line]
 
 
-def out_for(ids):
-    return cp._PlanOut(clips=[cp._PlanClipOut(topic="完整主题", start_segment_id=ids[0],
-                                             end_segment_id=ids[-1])])
+def out_for(ids, video_summary="高血压常见误区科普"):
+    """全局一次规划的正常输出：首尾时间码 = 首末分段（提示词A格式）。"""
+    first = ids[0]
+    last = ids[-1]
+    start = cp._clock_of(next(int(s[1:]) for s in ids) * 1000)
+    end = cp._clock_of((max(int(s[1:]) for s in ids) + 1) * 1000)
+    return cp._SlicePlanOut(
+        video_summary=video_summary, slice_count=1,
+        slices=[cp._SliceOut(id=1, time_range=[start, end], theme="完整主题",
+                             hook_first_line="钩子", cover_text="封面")],
+        discarded_segments=[])
 
 
-def test_long_input_real_entry_covers_last_window_bounded_prompt_and_stable_ids(monkeypatch):
-    source, summary, calls = segments(1307), analysis(1307), []
+def test_long_input_single_global_call_covers_all_segments(monkeypatch):
+    """长输入不再拆窗口：提示词A必须一次看到整片（≤全局上限时）。"""
+    source, summary, prompts = segments(1307), analysis(1307), []
     before = copy.deepcopy([source, summary])
+
     def callback(model, prompt):
         ids = ids_of(prompt)
-        calls.append(ids)
-        assert len(ids) <= 400
-        assert prompt.count("全篇主题概览") == 1
+        prompts.append(ids)
         return out_for(ids)
+
     monkeypatch.setattr(cp, "_run_plan_agent", callback)
     result = cp.plan_clips(source, summary, transcript_version=3, project_id="p")
-    assert result["plan_source"] == "llm" and result["llm_calls"] == len(calls) == 4
-    assert {sid for window in calls for sid in window} == {row["segment_id"] for row in source}
-    assert result["clips"][-1]["end_segment_id"] == "s1306"
+    assert result["plan_source"] == "llm" and result["llm_calls"] == len(prompts) == 1
+    assert prompts[0] == [row["segment_id"] for row in source]      # 全量一次给到
+    assert result["clips"][0]["end_segment_id"] == "s1306"
+    assert result["clips"][0]["start_ms"] == 0 and result["clips"][0]["end_ms"] == 1307000
     assert all(clip["clip_id"] == cp._clip_id("p", clip["start_ms"], clip["end_ms"])
                for clip in result["clips"])
     assert [source, summary] == before
@@ -61,68 +77,64 @@ def test_long_input_real_entry_covers_last_window_bounded_prompt_and_stable_ids(
 
 def test_normal_entry_keeps_single_call(monkeypatch):
     calls = []
+
     def callback(model, prompt):
         calls.append(ids_of(prompt))
         return out_for(calls[-1])
+
     monkeypatch.setattr(cp, "_run_plan_agent", callback)
     result = cp.plan_clips(segments(479), analysis(479), transcript_version=1)
     assert result["plan_source"] == "llm" and result["llm_calls"] == 1
     assert len(calls[0]) == 479 and cp.LLM_CALL_TIMEOUT_SECONDS >= 240
 
 
-def test_failed_window_only_is_split_successful_window_not_replayed(monkeypatch):
+def test_llm_failure_retries_once_then_falls_back(monkeypatch):
+    """失败外层只重试一次（无窗口可拆）；仍失败 → 本地回退，degradations 如实标注。"""
     calls = []
-    def callback(model, prompt):
-        ids = ids_of(prompt)
-        calls.append(ids)
-        if 360 <= int(ids[0][1:]) and int(ids[-1][1:]) < 760 and len(ids) > 200:
-            raise RuntimeError("local window too large")
-        cp._plan_call_metadata.set({"usage": llm_budget.extract_usage_details(
-            {"input_tokens": 0, "output_tokens": 0}), "settings": {"actual": "fixture"}})
-        return out_for(ids)
-    monkeypatch.setattr(cp, "_run_plan_agent", callback)
-    result = cp.plan_clips(segments(1307), analysis(1307), transcript_version=1)
-    assert sum(ids[0] == "s0000" for ids in calls) == 1
-    assert result["failed_windows"] == [] and "local_split_retry" in result["degradations"]
-    assert any(len(ids) < 400 and 360 <= int(ids[0][1:]) < 760 for ids in calls)
-    assert result["clips"][-1]["end_segment_id"] == "s1306"
-    assert result["llm_usage"]["usage_status"] == "partial"
-    assert result["llm_usage"]["prompt_tokens"] is None
-    assert result["llm_calls"] <= result["callback_budget"]
 
+    def flaky(model, prompt):
+        calls.append(1)
+        raise RuntimeError("local permanent failure")
 
-def test_terminal_local_failure_becomes_mixed_and_all_failure_rule_source(monkeypatch):
-    def partial(model, prompt):
-        ids = ids_of(prompt)
-        if 360 <= int(ids[0][1:]) and int(ids[-1][1:]) < 760:
-            raise RuntimeError("local permanent failure")
-        return out_for(ids)
-    monkeypatch.setattr(cp, "_run_plan_agent", partial)
-    result = cp.plan_clips(segments(1307), analysis(1307), transcript_version=1)
-    assert result["plan_source"] == "mixed" and not result["llm_enabled"]
-    assert result["failed_windows"] and result["warnings"]
-    assert any(clip["plan_source"] == "llm" for clip in result["clips"])
-    def fail(*args):
-        raise RuntimeError("all windows failed")
-    monkeypatch.setattr(cp, "_run_plan_agent", fail)
+    monkeypatch.setattr(cp, "_run_plan_agent", flaky)
+    monkeypatch.setattr(cp.time, "sleep", lambda s: None)
     failed = cp.plan_clips(segments(1307), analysis(1307), transcript_version=1)
     assert failed["plan_source"] == "heuristic_fallback" and failed["clips"]
     assert all(clip["plan_source"] == "heuristic_fallback" for clip in failed["clips"])
-    assert failed["failed_windows"] and failed["llm_calls"] <= failed["callback_budget"]
+    assert failed["llm_calls"] == 2 and len(calls) == 2
+    assert failed["failed_windows"] == [] and "slice_plan_failed" in failed["degradations"]
+    assert "local permanent failure" in (failed["llm_error"] or "")
     assert failed["llm_usage"]["usage_status"] == "unknown"
 
 
-def test_invalid_ids_rejected_and_overlap_deduplicated_at_actual_entry(monkeypatch):
+def test_out_of_video_range_dropped_and_overlap_trimmed_at_actual_entry(monkeypatch):
+    """越界 time_range 舍弃留痕；相邻切片重叠时后者收缩（覆盖契约：不共享素材）。"""
     def callback(model, prompt):
-        return cp._PlanOut(clips=[
-            cp._PlanClipOut(topic="valid", start_segment_id="s0001", end_segment_id="s0005"),
-            cp._PlanClipOut(topic="duplicate", start_segment_id="s0002", end_segment_id="s0005"),
-            cp._PlanClipOut(topic="invalid", start_segment_id="missing", end_segment_id="s0009")])
+        ids = ids_of(prompt)
+        return cp._SlicePlanOut(
+            video_summary="s", slice_count=3,
+            slices=[
+                cp._SliceOut(id=1, time_range=[cp._clock_of(1000), cp._clock_of(5000)],
+                             theme="valid"),                                   # s0001..s0004
+                cp._SliceOut(id=2, time_range=[cp._clock_of(2000), cp._clock_of(9000)],
+                             theme="duplicate"),                               # 重叠 → 收缩到 s0005..s0008
+                cp._SliceOut(id=3, time_range=["99:59:00", "99:59:30"],
+                             theme="越界"),                                    # 全片外 → 舍弃
+            ],
+            discarded_segments=[])
     monkeypatch.setattr(cp, "_run_plan_agent", callback)
     result = cp.plan_clips(segments(10), analysis(10), transcript_version=1)
-    assert len(result["clips"]) == 1 and result["clips"][0]["start_ms"] == 1000
-    assert result["hierarchical_planning"]["rejected_candidates"]
-    assert result["hierarchical_planning"]["duplicates"]
+    assert len(result["clips"]) == 2
+    assert result["clips"][0]["start_segment_id"] == "s0001"
+    assert result["clips"][0]["end_segment_id"] == "s0004"
+    assert result["clips"][1]["start_segment_id"] == "s0005"
+    assert result["clips"][1]["end_segment_id"] == "s0008"
+    assert result["clips"][1]["start_ms"] == 5000
+    assert any("越界" in note for note in result["notes"])
+    # 全覆盖契约：缺口（s0000 / s0009）程序侧补齐进 discarded
+    discarded_ids = {sid for d in result["discarded"] for sid in d["segment_ids"]}
+    assert {"s0000", "s0009"} <= discarded_ids
+    assert any(d["type"] == "未覆盖" for d in result["discarded"])
 
 
 def test_run_result_usage_before_output_zero_and_missing(monkeypatch):
@@ -209,11 +221,15 @@ def test_planning_concurrent_usage_and_actual_settings_isolated(monkeypatch):
 
 
 def test_discarded_overlap_with_selected_neighbor_clip_is_removed(monkeypatch):
+    """模型矛盾舍弃（与已选切片重叠）不进最终 discarded；切片优先。"""
     def callback(model, prompt):
         ids = ids_of(prompt)
-        return cp._PlanOut(clips=[cp._PlanClipOut(topic="完整内容", start_segment_id=ids[0],
-            end_segment_id=ids[-1])], discarded=[cp._DiscardedOut(segment_ids=[ids[0]],
-                reason="模型矛盾舍弃", type="重复表达")])
+        return cp._SlicePlanOut(
+            video_summary="s", slice_count=1,
+            slices=[cp._SliceOut(id=1, time_range=[cp._clock_of(0), cp._clock_of(len(ids) * 1000)],
+                                 theme="完整内容")],
+            discarded_segments=[cp._SliceDiscardOut(
+                time_range=[cp._clock_of(0), cp._clock_of(3000)], reason="模型矛盾舍弃")])
     monkeypatch.setattr(cp, "_run_plan_agent", callback)
     record = cp.plan_clips(segments(1307), analysis(1307), transcript_version=1)
     assert record["discarded"] == []

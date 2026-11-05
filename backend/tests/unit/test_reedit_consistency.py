@@ -280,4 +280,8 @@ def test_worker_partial_and_all_publish_failure_are_consistent(sandbox, monkeypa
         assert ledger["clips"]["clip-stable"]["render_task_id"] == run
         assert states[-1] == "completed_with_warnings"
         assert not (sandbox/"output"/"old").exists()
-        assert len(posts) == 1
+        # 两步制（2026-11-05）：reedit 链在规划后先精修再渲染——posts 里除了
+        # 唯一的 clip_final 发布，还有一份 clip_refinement 精修工件登记。
+        kinds = [args[2]["kind"] for args in posts if args[0] == "POST"]
+        assert kinds.count("clip") == 1   # 重新剪辑发布用的 kind 是 clip
+        assert kinds.count("clip_refinement") == 1

@@ -27,6 +27,11 @@ export function projectStatusChip(status: string | null | undefined):
       return { label: "排队中", tone: "running" };
     case "extracting_highlights":
       return { label: "内容分析中", tone: "running" };
+    case "planning":
+      return { label: "切片规划中", tone: "running" };
+    case "refining":
+      // 两步制切片精修（2026-11-05）：规划（提示词A）后的第二步（提示词B）
+      return { label: "切片精修中", tone: "running" };
     case "transcript_ready":
       return { label: "转写就绪", tone: "done" };
     case "analysis_ready":

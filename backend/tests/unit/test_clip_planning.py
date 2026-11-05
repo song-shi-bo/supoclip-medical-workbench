@@ -1,11 +1,13 @@
-"""AUTO_EDIT 完整切片规划（clip_planning，第四步）契约测试。
+"""AUTO_EDIT 完整切片规划（clip_planning，两步制第一步·范围规划）契约测试。
 
 不调真实模型：``_model_ready`` / ``_run_plan_agent`` 打桩；worker 层把
 editing/rendering/源片搬运设为守卫桩（被调用即失败，证明不渲染）。
-核心契约：
-* 输入只有纠错转写分段 + 分析产物；时间戳/连续区间/去重全部程序决定；
-* 柔性时长只产 warning，无 reject、不阻断；
-* 模型失败最多自动重试一次，仍失败 → 本地回退并保存最优计划。
+核心契约（2026-11-05 两步制，提示词A）：
+* 输入只有纠错转写分段 + 分析产物；模型只给 time_range 定位线索，
+  吸附到分段边界后权威毫秒由程序重算；
+* 全覆盖契约：切片 + 弃用段拼起来覆盖全片，缺口程序侧补齐；
+* 时长（60~180 宜、最低 40s）与数量（5~10）只产 warning，无 reject、不阻断；
+* 模型失败自动重试一次，仍失败 → 本地回退并保存最优计划。
 """
 
 from __future__ import annotations
@@ -69,47 +71,67 @@ def _analysis() -> dict:
     }
 
 
-def _clip_out(**overrides):
+def _slice_out(time_range: list[str], theme: str = "误区一：确诊就要规范治疗",
+               **overrides) -> cp._SliceOut:
+    """提示词A输出的一条切片（time_range 由程序解析吸附，模型时间只是定位线索）。"""
     base = {
-        "topic": "误区一：确诊就要规范治疗",
-        "start_segment_id": "seg_0001", "end_segment_id": "seg_0005",
-        "opening_context": "从慢性病定义讲起，不看前文也能懂",
-        "core_points": ["确诊即治疗", "保护靶器官"],
-        "closing_thought": "结尾落在完整结论之后",
-        "evidence_segment_ids": ["seg_0003"],
-        "cut_in_reason": "自然边界", "cut_out_reason": "整句结束且有停顿",
+        "id": 1, "time_range": time_range, "theme": theme,
+        "hook_first_line": "高血压确诊就要规范治疗",
+        "cover_text": "规范治疗", "content_summary": "确诊即治疗。目标是保护器官。",
+        "completeness_note": "从慢性病定义讲起，不看前文也能懂",
+        "risk_flags": [],
     }
     base.update(overrides)
-    return cp._PlanClipOut(**base)
+    return cp._SliceOut(**base)
+
+
+def _slice_plan(slices: list[cp._SliceOut],
+                discarded: list[cp._SliceDiscardOut] | None = None,
+                video_summary: str = "高血压常见误区科普") -> cp._SlicePlanOut:
+    return cp._SlicePlanOut(video_summary=video_summary, slice_count=len(slices),
+                            slices=slices,
+                            discarded_segments=discarded
+                            or [cp._SliceDiscardOut(time_range=["00:00:00", "00:00:05"],
+                                                    reason="开场寒暄，无内容价值")])
 
 
 def test_llm_plan_validated_deduped_and_sorted(monkeypatch: pytest.MonkeyPatch):
+    """提示词A输出 → time_range 吸附 → 权威毫秒重算 + 弃用合并（两步制第一步）。"""
     monkeypatch.setattr(cp, "_model_ready", lambda: (True, "openai:test-model", ""))
-    monkeypatch.setattr(cp, "_run_plan_agent", lambda model, prompt: cp._PlanOut(clips=[
-        _clip_out(),                                                   # 有效：108.5s
-        _clip_out(topic="坏引用", start_segment_id="seg_9999"),         # 引用不存在 → 舍弃
-        _clip_out(topic="高度重复", start_segment_id="seg_0002"),       # 与前者重叠>50% → 舍弃
-    ], discarded=[cp._DiscardedOut(segment_ids=["seg_0000"], type="寒暄", reason="开场")]))
+    monkeypatch.setattr(cp, "_run_plan_agent", lambda model, prompt: _slice_plan([
+        _slice_out(["00:00:06", "00:01:55"]),                          # 有效：吸附 seg_0001..seg_0005
+        _slice_out(["00:02:10", "00:04:05"], theme="误区二三：停药与保健品",
+                   id=2),                                              # 有效：吸附 seg_0006..seg_0010
+        _slice_out(["09:59:00", "10:00:00"], theme="越界区间", id=3),   # 全片外 → 舍弃留痕
+    ]))
     record = cp.plan_clips(_segments(), _analysis(), transcript_version=1,
                            job_id="job-p", project_id="timeline_t")
 
     assert record["plan_source"] == "llm" and record["llm_error"] is None
     assert record["llm_calls"] == 1 and record["transcript_version"] == 1
-    assert len(record["clips"]) == 1
+    assert len(record["clips"]) == 2
     clip = record["clips"][0]
     assert clip["start_segment_id"] == "seg_0001" and clip["end_segment_id"] == "seg_0005"
     assert clip["start_ms"] == 6500 and clip["end_ms"] == 115000          # 时间戳由分段重算
     assert clip["duration_ms"] == 108500
     assert clip["clip_id"].startswith("clip-")
-    assert any("引用分段不存在" in note for note in record["notes"])
-    assert any("高度重复" in note for note in record["notes"])
-    assert record["discarded"][0]["type"] == "寒暄"
+    assert clip["plan_source"] == "llm"
+    # 提示词A策划字段透传（第二步精修按 clip_id 消费 theme/hook）
+    assert clip["hook_first_line"] == "高血压确诊就要规范治疗"
+    assert clip["cover_text"] == "规范治疗"
+    assert clip["declared_time_range"] == ["00:00:06", "00:01:55"]
+    assert record["video_summary"] == "高血压常见误区科普"
+    assert any("越界区间" in note for note in record["notes"])
+    # 全覆盖契约：寒暄段 + 结尾引流段被程序补齐/模型弃用
+    discarded_ids = {sid for d in record["discarded"] for sid in d["segment_ids"]}
+    assert "seg_0000" in discarded_ids and "seg_0011" in discarded_ids
 
 
 def test_continuity_middle_segments_belong_to_clip(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(cp, "_model_ready", lambda: (True, "openai:test-model", ""))
-    monkeypatch.setattr(cp, "_run_plan_agent", lambda model, prompt: cp._PlanOut(
-        clips=[_clip_out(start_segment_id="seg_0001", end_segment_id="seg_0005")], discarded=[]))
+    monkeypatch.setattr(cp, "_run_plan_agent", lambda model, prompt: _slice_plan(
+        [_slice_out(["00:00:06", "00:01:55"])],
+        discarded=[cp._SliceDiscardOut(time_range=["00:04:20", "00:04:35"], reason="结尾引流")]))
     record = cp.plan_clips(_segments(), _analysis(), transcript_version=1)
     clip = record["clips"][0]
     # 连续区间：start/end 之间的分段（2/3/4）全部归属该切片，时长=首尾差
@@ -120,44 +142,46 @@ def test_continuity_middle_segments_belong_to_clip(monkeypatch: pytest.MonkeyPat
 def test_soft_duration_only_warns_never_rejects(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(cp, "_model_ready", lambda: (True, "openai:test-model", ""))
 
-    def run_case(rows, topic):
+    def run_case(rows, theme):
         segments = [seg(i, t, s, e) for i, (t, s, e) in enumerate(rows)]
         analysis = {"keywords": [], "golden_quotes": [], "topic_units": [], "candidate_intervals": []}
-        monkeypatch.setattr(cp, "_run_plan_agent", lambda model, prompt: cp._PlanOut(
-            clips=[_clip_out(topic=topic, start_segment_id="seg_0000",
-                             end_segment_id=segments[-1]["segment_id"], evidence_segment_ids=[])], discarded=[]))
+        first = cp._clock_of(segments[0]["start_ms"])
+        last = cp._clock_of(segments[-1]["end_ms"])
+        monkeypatch.setattr(cp, "_run_plan_agent", lambda model, prompt: _slice_plan(
+            [_slice_out([first, last], theme=theme)],
+            discarded=[cp._SliceDiscardOut(time_range=["23:59:59", "23:59:59"], reason="无")]))
         return cp.plan_clips(segments, analysis, transcript_version=1)["clips"][0]
 
-    # 偏短 44s（<90s）：保留 + warning
+    # 偏短 44s（<60s 目标下限）：保留 + warning（提示词A：不低于 40s 即可入选）
     short = run_case([("内容甲。", 0, 20000), ("内容乙。", 21000, 44000)], "偏短44s")
     assert short["completeness"] == "warning"
-    assert any("90" in w for w in short["warnings"])
-    # 可接受 108s（90–210s）：正常接受，无时长偏离 warning
+    assert any("short_duration" not in w and "目标下限" in w for w in short["warnings"]) or \
+        any("44" in w for w in short["warnings"])
+    # 可接受 108s（60–180s 优选区间）：正常接受，无时长偏离 warning
     ok = run_case([(f"第{i}句完整表达。", i * 20000, (i + 1) * 20000 - 1500) for i in range(6)], "可接受108s")
     assert ok["duration_ms"] == 118500
     assert not any("偏离" in w for w in ok["warnings"])
-    # 超长 240s（>210s）：保留 + warning（不截断、不拒绝）
+    # 超长 240s（>180s 目标上限）：保留 + warning（不截断、不拒绝）
     long_one = run_case([(f"第{i}句完整表达。", i * 20000, (i + 1) * 20000 - 1500) for i in range(13)], "超长240s")
     assert any("偏离" in w for w in long_one["warnings"])
     assert long_one["completeness"] == "warning"
 
 
-def test_retry_smaller_windows_then_llm_succeeds(monkeypatch: pytest.MonkeyPatch):
+def test_retry_once_then_llm_succeeds(monkeypatch: pytest.MonkeyPatch):
+    """提示词A是全局单次规划：失败外层只重试一次（无窗口可拆）。"""
     calls = {"n": 0}
 
     def flaky(model, prompt):
         calls["n"] += 1
         if calls["n"] == 1:
             raise RuntimeError("网关瞬时错误")
-        ids = [line.split("|")[0] for line in prompt.splitlines() if "|" in line and line.startswith("seg_")]
-        return cp._PlanOut(clips=[_clip_out(start_segment_id=ids[0], end_segment_id=ids[-1],
-                                           evidence_segment_ids=[])], discarded=[])
+        return _slice_plan([_slice_out(["00:00:06", "00:01:55"])], discarded=[])
 
     monkeypatch.setattr(cp, "_model_ready", lambda: (True, "openai:test-model", ""))
     monkeypatch.setattr(cp, "_run_plan_agent", flaky)
     monkeypatch.setattr(cp.time, "sleep", lambda s: None)
     record = cp.plan_clips(_segments(), _analysis(), transcript_version=1)
-    assert record["plan_source"] == "llm" and record["llm_calls"] == 3
+    assert record["plan_source"] == "llm" and record["llm_calls"] == 2
 
 
 def test_retry_exhausted_falls_back_with_best_effort(monkeypatch: pytest.MonkeyPatch):
@@ -169,9 +193,10 @@ def test_retry_exhausted_falls_back_with_best_effort(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(cp.time, "sleep", lambda s: None)
     record = cp.plan_clips(_segments(), _analysis(), transcript_version=1)
     assert record["plan_source"] == "heuristic_fallback"
-    assert record["llm_requested"] is True and 1 < record["llm_calls"] <= record["callback_budget"]
+    assert record["llm_requested"] is True and record["llm_calls"] == 2
     assert "配额不足" in (record["llm_error"] or "")
     assert record["clips"], "回退也应保存当前最优计划（不阻断任务）"
+    assert any("提示词A全局规划失败" in w for w in record["warnings"])
 
 
 def test_fallback_uses_analysis_trims_greeting_and_marks_discards(monkeypatch: pytest.MonkeyPatch):
@@ -213,10 +238,10 @@ def test_short_clip_25s_kept_with_short_duration_warning(monkeypatch: pytest.Mon
     ]
     segments = [seg(i, t, s, e) for i, (t, s, e) in enumerate(rows)]
     monkeypatch.setattr(cp, "_model_ready", lambda: (True, "openai:test-model", ""))
-    monkeypatch.setattr(cp, "_run_plan_agent", lambda model, prompt: cp._PlanOut(
-        clips=[_clip_out(topic="规范用药一句话", start_segment_id="seg_0000", end_segment_id="seg_0001",
-                         opening_context="自含主题句", closing_thought="完整结论后结束", evidence_segment_ids=[])],
-        discarded=[]))
+    monkeypatch.setattr(cp, "_run_plan_agent", lambda model, prompt: _slice_plan(
+        [_slice_out(["00:00:00", "00:00:25"], theme="规范用药一句话",
+                    completeness_note="自含主题句")],
+        discarded=[cp._SliceDiscardOut(time_range=["23:59:59", "23:59:59"], reason="无")]))
     record = cp.plan_clips(segments, _analysis(), transcript_version=1)
     assert len(record["clips"]) == 1, "25s 主题完整的候选不允许被时长淘汰"
     clip = record["clips"][0]
@@ -225,18 +250,18 @@ def test_short_clip_25s_kept_with_short_duration_warning(monkeypatch: pytest.Mon
     assert not any("无法独立成立" in n and "25" in n for n in record["notes"])
 
 
-def test_semantic_discard_45s_reason_must_not_be_duration(monkeypatch: pytest.MonkeyPatch):
-    """45 秒但内容无法独立理解的候选：因语义原因进 discarded，理由不得是时长。"""
+def test_semantic_discard_reason_preserved_not_duration(monkeypatch: pytest.MonkeyPatch):
+    """提示词A弃用区间：语义理由必须原样保留，且不得是时长理由。"""
     monkeypatch.setattr(cp, "_model_ready", lambda: (True, "openai:test-model", ""))
-    monkeypatch.setattr(cp, "_run_plan_agent", lambda model, prompt: cp._PlanOut(
-        clips=[_clip_out()],
-        discarded=[cp._DiscardedOut(segment_ids=["seg_0009", "seg_0010"], type="无法独立成立",
-                                    reason="承接上文的零散补充，单独看不知道在讲什么")]))
+    monkeypatch.setattr(cp, "_run_plan_agent", lambda model, prompt: _slice_plan(
+        [_slice_out(["00:00:06", "00:01:55"])],
+        discarded=[cp._SliceDiscardOut(time_range=["00:03:16", "00:03:45"],
+                                       reason="承接上文的零散补充，单独看不知道在讲什么")]))
     record = cp.plan_clips(_segments(), _analysis(), transcript_version=1)
-    entry = next(d for d in record["discarded"] if d["type"] == "无法独立成立")
-    assert "seg_0009" in entry["segment_ids"]
+    entry = next(d for d in record["discarded"] if "seg_0009" in d["segment_ids"])
+    assert "承接上文的零散补充" in entry["reason"]
     assert "时长" not in entry["reason"]                    # 舍弃理由是语义，不是时长
-    assert len(entry["reason"]) >= 5
+    assert entry["type"] == "弃用"
 
 
 def test_max_clips_is_resource_cap_not_target(monkeypatch: pytest.MonkeyPatch):
@@ -245,9 +270,17 @@ def test_max_clips_is_resource_cap_not_target(monkeypatch: pytest.MonkeyPatch):
     segments = [seg(i, t, s, e) for i, (t, s, e) in enumerate(rows)]
     monkeypatch.setenv("CONTENT_PLAN_MAX_CLIPS", "2")
     monkeypatch.setattr(cp, "_model_ready", lambda: (True, "openai:test-model", ""))
-    monkeypatch.setattr(cp, "_run_plan_agent", lambda model, prompt: cp._PlanOut(clips=[
-        _clip_out(topic=f"主题{c}", start_segment_id=f"seg_{c:04d}", end_segment_id=f"seg_{c:04d}", evidence_segment_ids=[])
-        for c in range(3)], discarded=[]))
+
+    def fake_agent(model, prompt):
+        slices = []
+        for i in range(3):
+            start = cp._clock_of(segments[i]["start_ms"])
+            end = cp._clock_of(segments[i]["end_ms"])
+            slices.append(_slice_out([start, end], theme=f"主题{i}", id=i + 1))
+        return _slice_plan(slices, discarded=[cp._SliceDiscardOut(
+            time_range=["23:59:59", "23:59:59"], reason="无")])
+
+    monkeypatch.setattr(cp, "_run_plan_agent", fake_agent)
     record = cp.plan_clips(segments, _analysis(), transcript_version=1)
     assert len(record["clips"]) == 2                       # 资源保护上限生效
     assert any("资源保护上限" in w for w in record["warnings"])
@@ -272,6 +305,12 @@ def test_worker_resume_reuses_persisted_analysis_without_model_call(
 
     monkeypatch.setattr(ca, "analyze_content", _guard("analyze_content"))
     monkeypatch.setattr(ca, "save_analysis_record", _guard("save_analysis_record"))
+    # 恢复语义：load_analysis_record 命中 → 直接复用（真实实现做 provenance
+    # 校验需要模型指纹，单测环境没有，这里桩成「已保存可复用」；真实落盘记录
+    # 还带 analysis_artifact_path，恢复路径要靠它把工件路径传给规划阶段）。
+    monkeypatch.setattr(ca, "load_analysis_record",
+                        lambda job_id, expected_provenance=None, require_verified=False:
+                        dict(saved_analysis, analysis_artifact_path="/tmp/analysis.json"))
 
     monkeypatch.setattr(worker, "stage_editing", _guard("stage_editing"))
     monkeypatch.setattr(worker, "stage_rendering", _guard("stage_rendering"))
@@ -289,8 +328,10 @@ def test_worker_resume_reuses_persisted_analysis_without_model_call(
                 "discarded": [], "notes": []}
 
     monkeypatch.setattr(cp, "plan_clips", fake_plan)
+    plan_file = tmp_path / "clip_plan.json"
+    plan_file.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(cp, "save_plan_record",
-                        lambda job_id, record: {"path": "/tmp/clip_plan.json", "size_bytes": 10})
+                        lambda job_id, record, **kwargs: {"path": str(plan_file), "size_bytes": 2})
     monkeypatch.setattr(worker, "_http", lambda *a, **k: {})
     monkeypatch.setattr("src.r2.upload_file", lambda path, key: {"object_key": key, "size": 10})
     states: list[str] = []
@@ -410,8 +451,10 @@ def test_worker_plan_stage_saves_and_stops_before_render(monkeypatch: pytest.Mon
             "discarded": [], "notes": []}
 
     monkeypatch.setattr(cp, "plan_clips", fake_plan)
+    plan_file = tmp_path / "clip_plan.json"
+    plan_file.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(cp, "save_plan_record",
-                        lambda job_id, record: {"path": "/tmp/clip_plan.json", "size_bytes": 10})
+                        lambda job_id, record, **kwargs: {"path": str(plan_file), "size_bytes": 2})
     posts: list[dict] = []
     monkeypatch.setattr(worker, "_http", lambda method, url, payload=None, timeout=60: posts.append(payload) or {})
     monkeypatch.setattr("src.r2.upload_file", lambda path, key: {"object_key": key, "size": 10})
