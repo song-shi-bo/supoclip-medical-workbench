@@ -2291,7 +2291,13 @@ export default function StudioPage() {
     [inspectorSubtitles],
   );
   // 字幕叠加层：只有确实有 cue 且已载入素材时渲染（否则不占位、不遮挡）。
-  const subtitleOverlayEnabled = Boolean(previewUrl && inspectorCues?.length && inspectorSubtitles?.config);
+  // 成片已硬烧字幕（warnings.json subtitle_mode=burned）时必须关闭：叠加层与画面内
+  // 字幕几乎同位（字号/边距也接近），双渲染就是用户看到的「像有一层玻璃」重影；
+  // 叠加层只服务未烧录场景（「预览 = 导出」的 Phase 2 样式预览）。时间线字幕轨不受影响。
+  const subtitleOverlayEnabled = Boolean(
+    previewUrl && inspectorCues?.length && inspectorSubtitles?.config
+    && inspectorSubtitles.subtitles_burned_in !== true,
+  );
   const captionsHidden = inspectorTab !== "transcript";
   // Inspector 绑定（契约 §1）：选中成片 → clip_id；未选成片但已载入素材 → 哨兵 "source"。
   const inspectorClipId = activeRenderedClip ? activeRenderedClip.clip_id : (file || remoteSource?.projectId === activeProjectId ? "source" : null);

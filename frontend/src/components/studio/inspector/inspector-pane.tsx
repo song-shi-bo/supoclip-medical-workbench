@@ -50,6 +50,8 @@ export const INSPECTOR_TABS: { id: InspectorTabId; label: string; title: string 
 export type InspectorSubtitleState = {
   cues: SubtitleCue[];
   config: SubtitleConfig;
+  /** 成片画面已硬烧字幕时为 true：播放器叠加层据此关闭（防重影），时间线字幕轨不受影响。 */
+  subtitles_burned_in?: boolean;
 };
 
 export type AdoptOption = { clip_id: string; name: string };
@@ -206,6 +208,7 @@ export function InspectorPane(props: InspectorPaneProps) {
   // 字幕草稿（叠加层与底部时间线字幕轨都用这一份）。
   const [subtitleConfig, setSubtitleConfig] = useState<SubtitleConfig>(DEFAULT_SUBTITLE_CONFIG);
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
+  const [subtitleBurnedIn, setSubtitleBurnedIn] = useState(false);
   const [subtitleError, setSubtitleError] = useState<string | null>(null);
   // 效果草稿（保存后摘要要刷新）。
   const [effects, setEffects] = useState<Effects>(DEFAULT_EFFECTS);
@@ -324,6 +327,7 @@ export function InspectorPane(props: InspectorPaneProps) {
     if (!hasBinding || !projectId || !clipId) {
       setSubtitleCues([]);
       setSubtitleConfig(DEFAULT_SUBTITLE_CONFIG);
+      setSubtitleBurnedIn(false);
       setSubtitleError(null);
       return undefined;
     }
@@ -335,11 +339,13 @@ export function InspectorPane(props: InspectorPaneProps) {
         if (cancelled || !mountedRef.current) return;
         setSubtitleCues(view.cues || []);
         setSubtitleConfig(view.config || DEFAULT_SUBTITLE_CONFIG);
+        setSubtitleBurnedIn(Boolean(view.subtitles_burned_in));
         setSubtitleError(null);
       } catch (error) {
         // 拉取失败不造假数据：叠加层与字幕轨回退到转写分段（页面已有兜底）。
         if (cancelled || !mountedRef.current) return;
         setSubtitleCues([]);
+        setSubtitleBurnedIn(false);
         setSubtitleError(errorText(error));
       }
     })();
@@ -374,8 +380,8 @@ export function InspectorPane(props: InspectorPaneProps) {
 
   // 上报字幕状态：播放器叠加层与时间线字幕轨的唯一数据来源。
   useEffect(() => {
-    subtitleReportRef.current(hasBinding ? { cues: subtitleCues, config: subtitleConfig } : null);
-  }, [hasBinding, subtitleCues, subtitleConfig]);
+    subtitleReportRef.current(hasBinding ? { cues: subtitleCues, config: subtitleConfig, subtitles_burned_in: subtitleBurnedIn } : null);
+  }, [hasBinding, subtitleCues, subtitleConfig, subtitleBurnedIn]);
 
   // 页面把 transform 恢复/切换后同步快照（未编辑时草稿跟随）。
   const transformSnapshotRef = useRef<ClipTransform | null>(transform);

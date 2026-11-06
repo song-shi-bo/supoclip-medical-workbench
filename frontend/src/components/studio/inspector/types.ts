@@ -285,6 +285,8 @@ export type SubtitleView = {
   latest_revision: number;
   /** 本阶段恒为 "phase2"：字幕版本已保存（预览用），烧录进导出成片属 Phase 2。 */
   export_burn_in: string;
+  /** 成片画面是否已硬烧字幕（成片 warnings.json 的烧录标记）：true 时前端关闭实时叠加层，否则必然重影。 */
+  subtitles_burned_in?: boolean;
   note: string;
 };
 

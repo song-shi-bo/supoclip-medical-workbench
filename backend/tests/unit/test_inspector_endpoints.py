@@ -455,6 +455,8 @@ async def test_subtitle_post_creates_revision_and_get_lists_it(env):
     assert fetched["revisions"][0]["ass_path"] == saved["ass_path"]
     assert fetched["revisions"][0]["cue_count"] == 1
     assert fetched["cues"][0]["text"] == "术后复查"
+    # 该夹具没有 warnings.json：不断言已烧录（叠加层仍可用）
+    assert fetched["subtitles_burned_in"] is False
 
     # 再存一次 → 新版本（旧版本保留，不覆盖），且再推进一版
     again = await media.studio_save_clip_subtitles(
@@ -464,6 +466,34 @@ async def test_subtitle_post_creates_revision_and_get_lists_it(env):
     assert again["config"]["font_size_px"] == 80
     assert _entry(env)["render_revision"] == 3
     assert {item["task_type"] for item in _entry(env)["task_history"]} == {"UPDATE_SUBTITLE"}
+
+
+@pytest.mark.asyncio
+async def test_subtitle_get_reports_burned_in_from_warnings(env):
+    """GET .../subtitles 如实上报成片是否已硬烧字幕：前端叠加层据此关闭（防重影）。"""
+    _write_render_artifacts(env, [{"start": 0.0, "end": 2.0, "text": "胰腺癌", "speaker": "医生"}])
+
+    # 没有 warnings.json → 按「未烧录」返回，绝不凭空断言
+    fetched = await media.studio_clip_subtitles(env["project_id"], env["clip_id"])
+    assert fetched["subtitles_burned_in"] is False
+
+    # 成片产物声明硬烧（两种标记任一命中）→ true
+    warnings_path = env["clip_dir"] / "warnings.json"
+    warnings_path.write_text(
+        json.dumps({"subtitle_mode": "burned", "subtitle_hard_burn": True}), encoding="utf-8")
+    fetched = await media.studio_clip_subtitles(env["project_id"], env["clip_id"])
+    assert fetched["subtitles_burned_in"] is True
+
+    # 只写 subtitle_mode=burned 也算烧录（真实成片两种写法都存在）
+    warnings_path.write_text(json.dumps({"subtitle_mode": "burned"}), encoding="utf-8")
+    fetched = await media.studio_clip_subtitles(env["project_id"], env["clip_id"])
+    assert fetched["subtitles_burned_in"] is True
+
+    # 明确未烧录 → 回到 False（每次按证据读，不缓存上次结论）
+    warnings_path.write_text(
+        json.dumps({"subtitle_mode": "overlay", "subtitle_hard_burn": False}), encoding="utf-8")
+    fetched = await media.studio_clip_subtitles(env["project_id"], env["clip_id"])
+    assert fetched["subtitles_burned_in"] is False
 
 
 @pytest.mark.asyncio

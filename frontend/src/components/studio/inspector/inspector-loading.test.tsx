@@ -124,6 +124,21 @@ describe("Inspector读取生命周期", () => {
     expect(screen.getByText("StrictMode已读取")).toBeInTheDocument();
   });
 
+  it("成片已硬烧字幕时上报 subtitles_burned_in=true，播放器叠加层据此关闭防重影", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const payload = url.endsWith("/subtitles")
+        ? subtitleView({ subtitles_burned_in: true })
+        : panePayload(url);
+      return json(payload);
+    });
+    vi.stubGlobal("fetch", fetch);
+    const props = paneProps();
+    render(<StrictMode><InspectorPane {...props} /></StrictMode>);
+    await waitFor(() => expect(props.onSubtitleStateChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ cues: subtitleView().cues, subtitles_burned_in: true })));
+  });
+
   it("已有有效稿时fallback引用变化不重复fetch或有效稿回报", async () => {
     const fetch = vi.fn(async () => json(loadedDoc("稳定有效稿")));
     vi.stubGlobal("fetch", fetch);

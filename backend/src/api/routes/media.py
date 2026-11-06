@@ -3021,6 +3021,24 @@ def _subtitle_revisions(clip_dir: Path, clip_id: str) -> list[dict[str, Any]]:
     return revisions
 
 
+def _subtitles_burned_in(clip_dir: Path) -> bool:
+    """成片画面里是否已硬烧字幕（成片产物 ``warnings.json`` 的烧录标记）。
+
+    已烧录的成片再叠前端实时字幕就是重影（预览框「像有一层玻璃」的直接来源），
+    所以把这个事实如实告诉前端，叠加层只服务未烧录（Phase 2 导出）场景。
+    ``warnings.json`` 缺失/不可读/字段缺位时按「未烧录」返回，绝不凭空断言。
+    """
+    try:
+        warnings = json.loads((clip_dir / "warnings.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(warnings, dict):
+        return False
+    if warnings.get("subtitle_hard_burn") is True:
+        return True
+    return warnings.get("subtitle_mode") == "burned"
+
+
 def _subtitle_state(project_id: str, clip_id: str) -> dict[str, Any]:
     """字幕标签读写共用的状态：有效段 → cues、config、overrides、clip 目录。"""
     entry, clip_dir = _clip_entry_and_dir(project_id, clip_id)
@@ -3050,6 +3068,8 @@ def _clip_subtitles_payload(project_id: str, clip_id: str) -> dict[str, Any]:
         "revisions": revisions,
         "latest_revision": latest,
         "export_burn_in": "phase2",
+        # 成片是否已硬烧字幕：true 时前端关闭实时叠加层（否则必然重影）。
+        "subtitles_burned_in": _subtitles_burned_in(state["clip_dir"]),
         "note": SUBTITLE_PREVIEW_NOTE,
     }
 
