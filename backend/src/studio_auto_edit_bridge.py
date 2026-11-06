@@ -696,7 +696,9 @@ def _read_rendered_clips(paths: dict[str, Path]) -> list[dict[str, Any]]:
         clip_entry: dict[str, Any] = {
             "task_id": paths["status"].stem,
             "clip_id": clip_id,
-            "name": f"剪辑成片 {index:02}",
+            # 2026-11-06 卡片名优先取规划主题，避免清一色「剪辑成片 XX」。
+            "name": str(item.get("topic") or item.get("cover_title") or "").strip()
+                    or f"剪辑成片 {index:02}",
             "topic": str(item.get("topic") or item.get("cover_title") or "自动剪辑成片"),
             "source_start": round(source_start, 3),
             "source_end": round(source_end, 3),

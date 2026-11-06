@@ -210,7 +210,12 @@ def activate_new_run(project_id, run_id, plan_record, *, published=None):
         for number, clip in enumerate(planned, 1):
             cid = store.validate_clip_id(clip["clip_id"])
             previous = ledger["clips"].get(cid) or {}
-            entries[cid] = {"clip_id": cid, "name": previous.get("name") or f"剪辑成片 {number:02d}",
+            entries[cid] = {"clip_id": cid,
+                            # 2026-11-06 卡片名优先沿用旧名 → 主题（topic）→ 序号兜底，
+                            # 不再默认「剪辑成片 XX」让用户无法分辨切片。
+                            "name": (previous.get("name")
+                                     or str(clip.get("topic") or "").strip()
+                                     or f"剪辑成片 {number:02d}"),
                             "title": str(clip.get("topic") or ""), "topic": str(clip.get("topic") or ""),
                             "source_start": float(clip.get("start_ms") or 0)/1000,
                             "source_end": float(clip.get("end_ms") or 0)/1000,

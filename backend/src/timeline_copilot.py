@@ -100,6 +100,23 @@ def _project_payload(project_dir: Path) -> dict[str, Any]:
                     }
         except Exception:  # noqa: BLE001 — 回读失败保持空段（不阻塞时间线载入）
             pass
+    # 2026-11-06 说话人标注 overlay：LLM 已生成的医生/患者/家属标签按
+    # segment_id 非破坏合并（只填「未标注」空位；指纹不符自动跳过）。
+    speaker_labels = None
+    if segments:
+        try:
+            from . import speaker_labeling
+            from .studio_transcript_store import find_latest_by_project, source_id_for, transcripts_root
+
+            credential = find_latest_by_project(str(manifest["id"]))
+            if credential:
+                record = speaker_labeling.load_labels(
+                    transcripts_root(), source_id_for(credential["object_key"]))
+                if record:
+                    merged = speaker_labeling.merge_speaker_labels(segments, record)
+                    speaker_labels = speaker_labeling.summary_for_payload(record, merged)
+        except Exception:  # noqa: BLE001 — overlay 只是增强，失败不阻塞时间线载入
+            speaker_labels = None
     return {
         "id": manifest["id"],
         "source": manifest["source"],
@@ -107,6 +124,7 @@ def _project_payload(project_dir: Path) -> dict[str, Any]:
         "edl_path": "edit/edl.json",
         "transcript": segments,
         "transcript_source": transcript_source,
+        "speaker_labels": speaker_labels,
         "artifacts": manifest["artifacts"],
     }
 
