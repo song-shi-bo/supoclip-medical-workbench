@@ -1,6 +1,6 @@
 // 封面与画面标签页测试（契约 §6）：
-// 封面按钮各自触发正确的页面回调（重新制作封面只走 REGENERATE_COVER 通道）、
-// cover_asset_id / 版本显示、画面比例菜单只改预览、变换「应用」触发回调（取消不触发）。
+// 2026-10-21 精简版：封面图片区/版本管理已迁移出本组件（页面级 CoverWorkspace 承担），
+// 这里钉住「只剩画面子区」的现状 + 画面比例菜单只改预览、变换「应用」触发回调（取消不触发）。
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
@@ -68,45 +68,20 @@ function renderTab(overrides: Partial<Parameters<typeof CoverPictureTab>[0]> = {
 }
 
 describe("CoverPictureTab", () => {
-  it("显示当前封面预览、版本与 cover_asset_id", () => {
+  it("封面管理 UI 已按精简版移除：只剩「画面」子区，不残留重做/标题/历史/沿用/撤销入口", () => {
     renderTab();
-    const cover = screen.getByTestId("inspector-cover-active");
-    expect(cover.querySelector("img")?.getAttribute("src")).toContain("cover.jpg");
-    expect(screen.getByTestId("inspector-cover-active-badge").textContent).toContain("当前使用中");
-    expect(screen.getByTestId("inspector-cover-asset").textContent).toContain("cover-asset-7");
-    expect(screen.getByTestId("inspector-cover-revision").textContent).toContain("v3");
-  });
-
-  it("「重新制作封面」只触发页面的 REGENERATE_COVER 通道回调（不触发自动剪辑/重渲）", () => {
-    const { handlers } = renderTab();
-    const input = screen.getByTestId("inspector-cover-instruction");
-    fireEvent.change(input, { target: { value: "主题更短" } });
-    fireEvent.click(screen.getByTestId("inspector-cover-regenerate"));
-    expect(handlers.onRegenerateWithInstruction).toHaveBeenCalledTimes(1);
-    expect(handlers.onRegenerateWithInstruction).toHaveBeenCalledWith("主题更短");
-    expect(handlers.onRegenerateCover).not.toHaveBeenCalled();
-    // 面板只暴露一个「重新制作封面」按钮，不存在 AUTO_EDIT / 重渲入口。
-    expect(screen.queryByRole("button", { name: /自动剪辑/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /重新生成全部成片/ })).not.toBeInTheDocument();
-  });
-
-  it("「编辑标题」「查看历史版本」「设为当前封面」「撤销」各自触发对应回调", () => {
-    const { handlers } = renderTab();
-    fireEvent.click(screen.getByTestId("inspector-cover-edit-title"));
-    fireEvent.click(screen.getByTestId("inspector-cover-history"));
-    fireEvent.click(screen.getByTestId("inspector-cover-adopt"));
-    fireEvent.click(screen.getByTestId("inspector-cover-undo"));
-    expect(handlers.onEditTitle).toHaveBeenCalledTimes(1);
-    expect(handlers.onShowCoverHistory).toHaveBeenCalledTimes(1);
-    expect(handlers.onAdoptCover).toHaveBeenCalledWith("clip-aaaa-01");
-    expect(handlers.onUndoCover).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId("inspector-cover-undo").textContent).toContain("v2");
-  });
-
-  it("未绑定到当前成片时封面按钮全部禁用（不误操作别的 clip）", () => {
-    renderTab({ boundToActiveClip: false });
-    expect(screen.getByTestId("inspector-cover-regenerate")).toBeDisabled();
-    expect(screen.getByTestId("inspector-cover-adopt")).toBeDisabled();
+    // 旧的封面版本管理（预览/重做指令/编辑标题/历史/沿用/撤销/版本列表）迁出本组件，
+    // 由页面级 CoverWorkspace 承担（见 cover-picture-tab.tsx 头注释）。
+    expect(screen.queryByTestId("inspector-cover-active")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-cover-instruction")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-cover-regenerate")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-cover-edit-title")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-cover-history")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-cover-adopt")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-cover-undo")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-cover-versions")).not.toBeInTheDocument();
+    // 画面子区仍在。
+    expect(screen.getByTestId("inspector-cover-picture-tab").textContent).toContain("画面");
   });
 
   it("比例菜单只改预览：1:1 / 16:9 只回调 viewerAspect，不改 transform；原始比例才动 fitMode", () => {
@@ -144,12 +119,5 @@ describe("CoverPictureTab", () => {
   it("旋转在本版本是只读的 0°（ClipTransform.rotation 契约恒为 0）", () => {
     renderTab();
     expect(screen.getByTestId("inspector-rotation")).toHaveValue("0°");
-  });
-
-  it("封面历史可见时列出 v{n} / kind / 时间", () => {
-    renderTab({ coverHistoryVisible: true });
-    const list = screen.getByTestId("inspector-cover-versions");
-    expect(list.textContent).toContain("v3");
-    expect(list.textContent).toContain("generated");
   });
 });

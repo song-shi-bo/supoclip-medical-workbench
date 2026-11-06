@@ -35,7 +35,7 @@ describe("cueAt", () => {
 });
 
 describe("SubtitleOverlay", () => {
-  it("已知配置 {x_pct:50,y_pct:78.125} on 1080x1920 → left 540px / bottom 420px / font 62px", () => {
+  it("已知配置 {x_pct:50,y_pct:78.125} on 1080x1920 → left 540px / bottom 420px / font 44px", () => {
     render(<SubtitleOverlay
       cues={cues}
       config={DEFAULT_SUBTITLE_CONFIG}
@@ -46,7 +46,7 @@ describe("SubtitleOverlay", () => {
     expect(cue.textContent).toBe("第一句字幕");
     expect(cue.style.left).toBe("540px");
     expect(cue.style.bottom).toBe("420px");
-    expect(cue.style.fontSize).toBe("62px");
+    expect(cue.style.fontSize).toBe("44px");
     expect(cue.style.transform).toBe("translateX(-50%)");
   });
 
@@ -61,7 +61,7 @@ describe("SubtitleOverlay", () => {
     expect(cue.textContent).toBe("第二句字幕");
     expect(cue.style.left).toBe("270px");
     expect(cue.style.bottom).toBe("210px");
-    expect(cue.style.fontSize).toBe("31px");
+    expect(cue.style.fontSize).toBe("22px");
   });
 
   it("样式改动（字号/字色/描边/背景）直接体现在叠加层", () => {

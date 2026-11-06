@@ -6,14 +6,14 @@
 //
 // W/H 是「显示出来的画布尺寸」（播放器预览里 = 1080x1920 导出画布被 CSS 缩放到的大小）。
 // 预览与 Phase 2 导出必须得到同一组像素，所以这里只放纯函数，方便单测钉死公式：
-//   {x_pct:50, y_pct:78.125} on 1080x1920 → left 540, bottom 420, font 62。
+//   {x_pct:50, y_pct:78.125} on 1080x1920 → left 540, bottom 420, font 44。
 
 import type { SubtitleConfig, SubtitlePosition } from "./types";
 
 /** 后端 subtitle_compose.DEFAULT_WIDTH / DEFAULT_HEIGHT / DEFAULT_FONT_SIZE。 */
 export const CANVAS_WIDTH_1080 = 1080;
 export const CANVAS_HEIGHT_1920 = 1920;
-export const DEFAULT_FONT_SIZE_PX = 62;
+export const DEFAULT_FONT_SIZE_PX = 44;
 
 export type SubtitlePixels = {
   left: number;

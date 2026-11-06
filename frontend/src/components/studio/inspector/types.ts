@@ -36,10 +36,11 @@ export type SubtitleConfig = {
 };
 
 export const DEFAULT_SUBTITLE_CONFIG: SubtitleConfig = {
-  // 与 backend subtitle_compose.DEFAULT_* 保持同步：54px=5% 画宽、14 字/行、3px 描边。
-  font_size_px: 54,
+  // 与 backend subtitle_compose.DEFAULT_* 保持同步（subtitles@3）：
+  // 44px≈画宽 4.1%、金黄 #FFD700、14 字/行、3px 描边（旧值 54px 白字已废弃）。
+  font_size_px: 44,
   font_family: "",
-  text_color: "#FFFFFF",
+  text_color: "#FFD700",
   outline_color: "#101010",
   outline_width: 3,
   background: { enabled: false, color: "#000000", opacity: 0.5 },

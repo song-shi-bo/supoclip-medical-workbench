@@ -1,5 +1,5 @@
 // percent→pixel 公式单测（契约 §6）：预览与 Phase 2 导出必须得到同一组像素。
-// 已知用例：{x_pct:50, y_pct:78.125} on 1080x1920 → left 540, bottom 420, font 62。
+// 已知用例（subtitles@3 默认 44px）：{x_pct:50, y_pct:78.125} on 1080x1920 → left 540, bottom 420, font 44。
 
 import { describe, expect, it } from "vitest";
 
@@ -23,12 +23,12 @@ describe("percentToPixels", () => {
 });
 
 describe("overlayPixels", () => {
-  it("已知配置：{x_pct:50, y_pct:78.125} on 1080x1920 → left 540 / bottom 420 / font 62", () => {
-    expect(overlayPixels(DEFAULT_SUBTITLE_CONFIG, 1080, 1920)).toEqual({ left: 540, bottom: 420, fontSize: 62 });
+  it("已知配置：{x_pct:50, y_pct:78.125} on 1080x1920 → left 540 / bottom 420 / font 44", () => {
+    expect(overlayPixels(DEFAULT_SUBTITLE_CONFIG, 1080, 1920)).toEqual({ left: 540, bottom: 420, fontSize: 44 });
   });
 
   it("fontSize = font_size_px * (W/1080)：半宽画布 → 字号减半", () => {
-    expect(overlayPixels(DEFAULT_SUBTITLE_CONFIG, 540, 960)).toEqual({ left: 270, bottom: 210, fontSize: 31 });
+    expect(overlayPixels(DEFAULT_SUBTITLE_CONFIG, 540, 960)).toEqual({ left: 270, bottom: 210, fontSize: 22 });
   });
 
   it("自定义字号与位置（纯公式，无隐藏偏移）", () => {
