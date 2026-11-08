@@ -322,3 +322,58 @@ def summary_for_payload(record: dict[str, Any] | None, merge_result: dict[str, A
         "llm_error": record.get("llm_error"),
         "merge": copy.deepcopy(merge_result),
     }
+
+
+def annotate_clip_segments(
+    labels: dict[str, Any] | None,
+    source_segments: list[dict[str, Any]] | None,
+    source_start: float,
+    segments: list[dict[str, Any]],
+    *,
+    intro_offset: float = 0.8,
+    min_overlap: float = 0.05,
+) -> list[dict[str, Any]]:
+    """把源级说话人 overlay 按**时间窗**映射到切片 seed 段（原位填充，返回入参）。
+
+    为什么不走 :func:`merge_speaker_labels`：桥接层重组切片段时丢掉了源
+    ``segment_id``（只留 start/end/text/speaker，且时间已平移到成片基），所以
+    这里按「切片时间 − 片头偏移 + source_start」回溯源时间窗，取重叠最大的
+    v2 段 id 再查 overlay。只填「未标注/空」，且只接受医生/患者/家属——
+    「未知」与时间线合并语义一致，不落盘。数据缺失/形状不对一律原样返回：
+    标注只是 seed 的增强，绝不让建基线失败。
+    """
+    if not segments or not isinstance(labels, dict) or not labels:
+        return segments
+    windows: list[tuple[float, float, str]] = []
+    for seg in source_segments or []:
+        if not isinstance(seg, dict):
+            continue
+        try:
+            windows.append((float(seg["start"]), float(seg["end"]), str(seg.get("segment_id") or "")))
+        except (KeyError, TypeError, ValueError):
+            continue
+    if not windows:
+        return segments
+    for seg in segments:
+        if not isinstance(seg, dict):
+            continue
+        if str(seg.get("speaker") or "").strip() not in UNLABELED_VALUES:
+            continue
+        try:
+            src_a = float(seg["start"]) - intro_offset + source_start
+            src_b = float(seg["end"]) - intro_offset + source_start
+        except (KeyError, TypeError, ValueError):
+            continue
+        best_id, best_overlap = "", 0.0
+        for a, b, sid in windows:
+            if not sid:
+                continue
+            overlap = min(src_b, b) - max(src_a, a)
+            if overlap > best_overlap:
+                best_overlap, best_id = overlap, sid
+        if not best_id or best_overlap < min_overlap:
+            continue
+        speaker = str(labels.get(best_id) or "")
+        if speaker in ALLOWED_LABELS[:3]:
+            seg["speaker"] = speaker
+    return segments

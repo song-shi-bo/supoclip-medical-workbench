@@ -683,3 +683,60 @@ def test_transcript_seed_without_audit_degrades_honestly(env):
     _write_render_artifacts(env, [{"start": 0.0, "end": 2.0, "text": "只有纠错稿"}])
     view = media._transcript_view(env["project_id"], env["clip_id"], None)
     assert view["raw_text"] == view["corrected_text"] == "只有纠错稿"
+
+
+def test_attach_speaker_overlay_maps_and_skips_unknown(env, monkeypatch):
+    """seed 段说话人：按切片时间回溯源窗填医生/患者/家属；未知/缺失原样返回。"""
+    from src import speaker_labeling as sl
+    from src import studio_transcript_store as store_mod
+
+    fake_root = env["root"] / "transcripts" / "sid-1"
+    fake_root.mkdir(parents=True, exist_ok=True)
+    (fake_root / "v2.json").write_text(json.dumps({"asr_segments": [
+        {"start": 100.0, "end": 102.0, "segment_id": "seg_0001"},
+        {"start": 104.0, "end": 106.0, "segment_id": "seg_0003"},
+    ]}), encoding="utf-8")
+    monkeypatch.setattr(store_mod, "find_latest_by_project",
+                        lambda pid: {"object_key": "local:x.mp4", "transcript_version": 2})
+    monkeypatch.setattr(store_mod, "source_id_for", lambda key: "sid-1")
+    monkeypatch.setattr(store_mod, "transcripts_root", lambda: env["root"] / "transcripts")
+    monkeypatch.setattr(sl, "load_labels",
+                        lambda root, sid: {"labels": {"seg_0001": "医生", "seg_0003": "未知"}})
+    entry = {"source_start": 100.0, "source_end": 110.0}
+    segments = [
+        {"start": 0.8, "end": 2.0, "text": "a", "speaker": "未标注"},
+        {"start": 4.9, "end": 5.8, "text": "c", "speaker": "未标注"},
+    ]
+    out = media._attach_speaker_overlay(env["project_id"], entry, segments)
+    assert out[0]["speaker"] == "医生"      # 源100.0-101.2 → seg_0001
+    assert out[1]["speaker"] == "未标注"    # 源104.1-105.0 → seg_0003 未知，不落
+
+
+def test_attach_speaker_overlay_no_credential_is_noop(env, monkeypatch):
+    from src import studio_transcript_store as store_mod
+
+    monkeypatch.setattr(store_mod, "find_latest_by_project", lambda pid: None)
+    segments = [{"start": 0.8, "end": 2.0, "text": "a", "speaker": "未标注"}]
+    out = media._attach_speaker_overlay(env["project_id"], {"source_start": 0.0}, segments)
+    assert out[0]["speaker"] == "未标注"
+
+
+def test_clip_seed_segments_falls_back_to_refinement_plan(env, monkeypatch):
+    """新渲染管线（32 位 hex job id）：从 clip_refinement.json 回退取逐切片分段（含 speaker）。"""
+    job = "0123456789abcdef0123456789abcdef"
+    plans = env["root"] / "plans" / job
+    plans.mkdir(parents=True)
+    (plans / "clip_refinement.json").write_text(json.dumps({"clips": {CLIP_ID: {"segments": [
+        {"segment_id": "seg_0102", "start_ms": 252110, "end_ms": 257980,
+         "refined_text": "做基因检测", "speaker": "家属"},
+        {"segment_id": "seg_0103", "start_ms": 258000, "end_ms": 259000,
+         "refined_text": "  ", "speaker": "医生"},
+    ]}}}), encoding="utf-8")
+    monkeypatch.setenv("STUDIO_TASKS_ROOT", str(env["root"]))
+    entry = {"render_task_id": job, "source_start": 251.31}
+    segs = media._clip_seed_segments(entry, CLIP_ID)
+    assert len(segs) == 1 and segs[0]["segment_id"] == "seg_0102"
+    assert segs[0]["speaker"] == "家属"
+    assert segs[0]["start"] == 1.6 and segs[0]["end"] == 7.47  # 源时间基 → 成片基（+0.8 片头）
+    # 已带说话人的段不被源级 overlay 覆盖
+    assert media._attach_speaker_overlay(env["project_id"], entry, segs)[0]["speaker"] == "家属"

@@ -216,3 +216,28 @@ def test_summary_for_payload_shape():
     assert summary["transcript_id"] == "tr-x"
     assert summary["merge"]["merged"] == 3
     assert sl.summary_for_payload(None, {}) == {}
+
+
+def test_annotate_clip_segments_maps_by_source_window():
+    """切片段时间窗回溯到源段：只填未标注、未知不落、人工值不覆盖。"""
+    labels = {"seg_0001": "医生", "seg_0002": "患者", "seg_0003": "未知"}
+    source_segments = [
+        {"start": 100.0, "end": 102.0, "segment_id": "seg_0001"},
+        {"start": 102.5, "end": 104.0, "segment_id": "seg_0002"},
+        {"start": 104.0, "end": 106.0, "segment_id": "seg_0003"},
+    ]
+    clips = [
+        {"start": 0.8, "end": 2.0, "text": "a", "speaker": "未标注"},  # 源100.0-101.2 → 医生
+        {"start": 2.9, "end": 4.2, "text": "b", "speaker": "未标注"},  # 源102.1-103.4 → 患者
+        {"start": 4.9, "end": 5.8, "text": "c", "speaker": "未标注"},  # 源104.1-105.0 → 未知不落
+        {"start": 6.0, "end": 7.0, "text": "d", "speaker": "医生"},    # 人工标注保留
+    ]
+    out = sl.annotate_clip_segments(labels, source_segments, 100.0, clips)
+    assert [s["speaker"] for s in out] == ["医生", "患者", "未标注", "医生"]
+
+
+def test_annotate_clip_segments_tolerates_missing_data():
+    segs = [{"start": 0.8, "end": 1.5, "text": "x", "speaker": "未标注"}]
+    assert sl.annotate_clip_segments(None, [{"start": 0, "end": 1, "segment_id": "s1"}], 0, segs) is segs
+    assert sl.annotate_clip_segments({"s1": "医生"}, None, 0, segs) is segs
+    assert sl.annotate_clip_segments({"s1": "医生"}, [{"start": 0, "end": 1, "segment_id": ""}], 0, segs) is segs

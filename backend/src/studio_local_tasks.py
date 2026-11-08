@@ -695,11 +695,19 @@ def _render_source_path(render_task_id: str) -> Path | None:
     return resolved
 
 
-def clip_segments_from_render_task(render_task_id: str, clip_id: str) -> list[dict[str, Any]]:
+def clip_segments_from_render_task(
+    render_task_id: str, clip_id: str, *, source_start: float | None = None,
+) -> list[dict[str, Any]]:
     """从成片产物里取该 clip 的转写分段（成片时间基，已含 0.8s 片头时移）。
 
     转写 seed 与字幕合成共用同一份「成片自带分段」：用户的成片一旦渲染完成，
     Inspector 的转写/字幕两条链路不必再单独调一次「建转写基线」就能工作（惰性 seed）。
+    两条产物来源：
+    * 旧文件队列 ``autoedit_*`` 任务：``read_auto_edit_task`` 的 clips[].segments；
+    * 新渲染管线（32 位 hex job id，没有旧任务 JSON）：回退读
+      ``tasks/plans/<job_id>/clip_refinement.json`` 的逐切片精修分段（源时间基
+      ``start_ms/end_ms`` + ``refined_text`` + ``speaker``，LLM 精修逐段带说话人），
+      按 ``source_start`` 平移到成片基；缺 source_start 时不自造时间基，如实返回空表。
     ``read_auto_edit_task`` 的局部 import 避免模块级循环；任务不在/产物已回收时
     按「没有分段」如实返回空表，不抛错。
     """
@@ -710,16 +718,63 @@ def clip_segments_from_render_task(render_task_id: str, clip_id: str) -> list[di
     try:
         view = read_auto_edit_task(render_task_id)
     except (FileNotFoundError, ValueError, OSError):
+        view = None
+    if view is not None:
+        for clip in view.get("clips") or []:
+            if str(clip.get("clip_id")) == str(clip_id):
+                return [item for item in (clip.get("segments") or []) if isinstance(item, dict)]
         return []
-    for clip in view.get("clips") or []:
-        if str(clip.get("clip_id")) == str(clip_id):
-            return [item for item in (clip.get("segments") or []) if isinstance(item, dict)]
-    return []
+    return refinement_segments_for_clip(render_task_id, clip_id, source_start=source_start)
+
+
+def refinement_segments_for_clip(
+    job_id: str, clip_id: str, *, source_start: float | None = None,
+) -> list[dict[str, Any]]:
+    """新渲染管线的逐切片分段（成片时间基，已含 0.8s 片头偏移）。
+
+    真源是 ``tasks/plans/<job_id>/clip_refinement.json`` 的 ``clips[clip_id].segments``
+    （源时间基 ``start_ms/end_ms`` + ``refined_text`` + ``speaker``）。这里平移到
+    成片时间基并保留源 ``segment_id``（后续说话人 overlay 可按 id 精确合并）。
+    文件/切片缺失、source_start 未给 → 空表，不抛错。
+    """
+    if not job_id or not clip_id or source_start is None:
+        return []
+    try:
+        from .clip_refinement import refinements_root  # 局部 import：避免模块级循环
+
+        record = json.loads(
+            (refinements_root() / job_id / "clip_refinement.json").read_text(encoding="utf-8"))
+        entry = (record.get("clips") or {}).get(clip_id)
+        if not isinstance(entry, dict):
+            return []
+        result: list[dict[str, Any]] = []
+        for item in entry.get("segments") or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                start = float(item.get("start_ms")) / 1000.0
+                end = float(item.get("end_ms")) / 1000.0
+            except (TypeError, ValueError):
+                continue
+            text = str(item.get("refined_text") or item.get("text") or "").strip()
+            if not text or end <= source_start:
+                continue
+            result.append({
+                "segment_id": str(item.get("segment_id") or ""),
+                "start": round(max(start, source_start) - source_start + 0.8, 3),
+                "end": round(end - source_start + 0.8, 3),
+                "text": text,
+                "speaker": str(item.get("speaker") or "未标注"),
+            })
+        return result
+    except (FileNotFoundError, ValueError, OSError):
+        return []
 
 
 def _clip_transcript_window(record: dict[str, Any], render_task_id: str) -> list[dict[str, Any]]:
     """本条 clip 的转写分段（成片时间基，已含 0.8s 片头时移）。"""
-    return clip_segments_from_render_task(render_task_id, str(record["clip_id"]))
+    return clip_segments_from_render_task(
+        render_task_id, str(record["clip_id"]), source_start=record.get("source_start"))
 
 
 def _cjk_chars(text: str) -> set[str]:
@@ -1292,7 +1347,9 @@ def _handle_update_subtitle(record: dict[str, Any]) -> dict[str, Any]:
     _save(record)
 
     segments = effective_transcript_segments(
-        project_id, clip_id, segments=clip_segments_from_render_task(render_task_id, clip_id))
+        project_id, clip_id,
+        segments=clip_segments_from_render_task(
+            render_task_id, clip_id, source_start=record.get("source_start")))
     cues = subtitle_compose.build_cues(segments, overrides=overrides)
     # 没有 cue → E_SUBTITLE_NO_CUES（在写任何配置之前失败，台账不留半成品）。
     composed = subtitle_compose.compose(clip_dir, clip_id=clip_id, cues=cues, config=config,

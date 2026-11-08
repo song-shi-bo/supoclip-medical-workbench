@@ -2840,7 +2840,9 @@ def _reject_source_binding(clip_id: str, feature: str) -> None:
 
 def _clip_seed_segments(entry: dict[str, Any], clip_id: str) -> list[dict[str, Any]]:
     """该成片产物自带的分段（转写惰性 seed 与字幕合成共用）。"""
-    return clip_segments_from_render_task(str(entry.get("render_task_id") or ""), clip_id)
+    return clip_segments_from_render_task(
+        str(entry.get("render_task_id") or ""), clip_id,
+        source_start=entry.get("source_start"))
 
 
 def _correction_audit(project_id: str) -> list[dict[str, Any]] | None:
@@ -2888,6 +2890,7 @@ def _clip_seed_baseline(project_id: str, entry: dict[str, Any],
     ``raw == corrected``，诚实退化而不是伪造一份「原始稿」。
     """
     corrected = _clip_seed_segments(entry, clip_id)
+    corrected = _attach_speaker_overlay(project_id, entry, corrected)
     audit = _correction_audit(project_id)
     if not audit or not corrected:
         return corrected, corrected
@@ -2914,6 +2917,40 @@ def _clip_seed_baseline(project_id: str, entry: dict[str, Any],
             "speaker": "未标注",
         })
     return (raw or corrected), corrected
+
+
+def _attach_speaker_overlay(project_id: str, entry: dict[str, Any],
+                            segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """切片 seed 段补说话人：源级 LLM overlay（speaker_labels.json）按时间窗映射。
+
+    桥接层重组切片段时丢掉了源 ``segment_id``，所以按「切片时间 → 源时间窗 →
+    v2 段 id → overlay 标签」回溯（见 ``speaker_labeling.annotate_clip_segments``）。
+    overlay 缺失、源转写不可解析、任何异常 → 原样返回：标注只是 seed 的增强，
+    绝不让惰性建基线失败（与 timeline_copilot 的 overlay 合并同哲学）。
+    """
+    if not segments:
+        return segments
+    try:
+        from ... import speaker_labeling
+        from ...studio_transcript_store import (
+            find_latest_by_project,
+            source_id_for,
+            transcripts_root,
+        )
+        credential = find_latest_by_project(project_id)
+        if not credential:
+            return segments
+        source_id = source_id_for(str(credential.get("object_key") or ""))
+        record = speaker_labeling.load_labels(transcripts_root(), source_id)
+        labels = (record or {}).get("labels")
+        version = int(credential.get("transcript_version") or 0)
+        v2_path = transcripts_root() / source_id / f"v{version}.json"
+        payload = json.loads(v2_path.read_text(encoding="utf-8"))
+        source_segments = payload.get("asr_segments") if isinstance(payload, dict) else None
+        return speaker_labeling.annotate_clip_segments(
+            labels, source_segments, float(entry.get("source_start") or 0.0), segments)
+    except Exception:  # noqa: BLE001 — overlay 只是增强，失败不阻塞 seed
+        return segments
 
 
 def _seed_transcript_document(project_id: str, entry: dict[str, Any],
