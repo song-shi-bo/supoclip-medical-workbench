@@ -740,3 +740,18 @@ def test_clip_seed_segments_falls_back_to_refinement_plan(env, monkeypatch):
     assert segs[0]["start"] == 1.6 and segs[0]["end"] == 7.47  # 源时间基 → 成片基（+0.8 片头）
     # 已带说话人的段不被源级 overlay 覆盖
     assert media._attach_speaker_overlay(env["project_id"], entry, segs)[0]["speaker"] == "家属"
+
+
+def test_clip_seed_baseline_audit_window_fallback(env, monkeypatch):
+    """成片产物分段缺失（如 re-edit 重切无精修）：从纠错审计按窗口裁剪纠错稿建基线。"""
+    monkeypatch.setattr(media, "_correction_audit", lambda pid: [
+        {"segment_id": "seg_0002", "start": 4.0, "end": 6.0, "corrected_text": "窗口外前段"},
+        {"segment_id": "seg_0003", "start": 10.0, "end": 13.0, "corrected_text": "窗口内"},
+        {"segment_id": "seg_0004", "start": 20.0, "end": 22.0, "corrected_text": "窗口外后段"},
+    ])
+    entry = {"render_task_id": "0123456789abcdef0123456789abcdef",
+             "source_start": 10.0, "source_end": 12.0}
+    raw, corrected = media._clip_seed_baseline(env["project_id"], entry, CLIP_ID)
+    assert [(s["segment_id"], s["text"]) for s in corrected] == [("seg_0003", "窗口内")]
+    assert corrected[0]["start"] == 0.8 and corrected[0]["end"] == 2.8
+    assert corrected[0]["speaker"] == "未标注"

@@ -808,6 +808,59 @@ def _run_clip_planning_stage(job: dict, job_id: str, transcript: dict,
     return record
 
 
+def _spawn_speaker_labeling_backfill(job: dict, transcript: dict, record: dict) -> None:
+    """精修降级时后台补跑源级说话人标注（fire-and-forget，绝不阻断主任务）。
+
+    触发条件：精修产物段几乎没带说话人（LLM 降级/空产物——正常精修逐段带
+    医生/患者/家属）。标注走 speaker_labeling：断点续跑复用已标窗口（限流重试
+    不重复花钱）、llm_budget 记账（kind=speaker_labeling）、label_transcript 绝不
+    抛出。落盘 speaker_labels.json 后，切片转写惰性 seed 的源级 overlay 回填
+    （media._attach_speaker_overlay）即可把医生/患者标注带给每条成片。
+    返回启动的线程（测试用）；无需求时返回 None，不建线程。
+    """
+    clips = record.get("clips") if isinstance(record.get("clips"), dict) else {}
+    total = labeled = 0
+    for entry in clips.values():
+        if not isinstance(entry, dict):
+            continue
+        for seg in entry.get("segments") or []:
+            if not isinstance(seg, dict):
+                continue
+            total += 1
+            if str(seg.get("speaker") or "").strip() not in ("", "未标注", "未知"):
+                labeled += 1
+    if total and labeled * 2 >= total:
+        return None  # 精修自带足够说话人，无需兜底
+
+    from . import speaker_labeling
+    from .studio_transcript_store import source_id_for, transcripts_root
+
+    object_key = str(job.get("object_key") or "")
+    segments = list(transcript.get("asr_segments") or [])
+    if not object_key or not segments:
+        return None
+    source_id = source_id_for(object_key)
+
+    def _run() -> None:
+        try:
+            resume = speaker_labeling.load_labels(transcripts_root(), source_id)
+            overlay = speaker_labeling.label_transcript(
+                segments,
+                transcript_id=str(transcript.get("transcript_id") or ""),
+                transcript_version=transcript.get("transcript_version"),
+                note="worker:refine_degraded_backfill",
+                resume_from=resume)
+            path = speaker_labeling.save_labels(transcripts_root(), source_id, overlay)
+            _log(f"job {job.get('job_id')}（speaker_labeling backfill）overlay 已落盘: {path}")
+        except Exception as exc:  # noqa: BLE001 — 后台兜底绝不影响主任务
+            _log(f"job {job.get('job_id')}（speaker_labeling backfill）失败（不影响任务）: {exc!r}")
+
+    thread = threading.Thread(target=_run, name=f"speaker-labels-{job.get('job_id')}",
+                              daemon=False)
+    thread.start()
+    return thread
+
+
 def _run_clip_refinement_stage(job: dict, job_id: str, transcript: dict,
                                plan_record: dict) -> dict:
     """第四步半（2026-11-05 两步制）：切片精修——clip_refinement.json。
@@ -875,6 +928,14 @@ def _run_clip_refinement_stage(job: dict, job_id: str, transcript: dict,
     _state(job_id, "refining", summary, 0.74)
     _log(f"job {job_id}（auto_edit/refine）切片精修完成：{saved['path']}，"
          f"用时 {time.time() - started:.0f}s")
+    # 2026-11-06 说话人标注兜底：精修 LLM 降级（段几乎全未标注/产物为空）时，
+    # 后台补跑一次源级 speaker_labels overlay——切片转写惰性 seed 的源级回填靠它。
+    # 断点续跑（已标窗口不重复花钱）+ llm_budget 记账 + label_transcript 绝不抛出；
+    # 触发本身也全面兜底，绝不阻断主任务。
+    try:
+        _spawn_speaker_labeling_backfill(job, transcript, record)
+    except Exception as exc:  # noqa: BLE001 — 兜底触发绝不阻断任务
+        _log(f"job {job_id}（speaker_labeling backfill）触发异常（不阻断）: {exc!r}")
     return record
 
 

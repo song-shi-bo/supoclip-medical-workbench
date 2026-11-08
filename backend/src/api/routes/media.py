@@ -2881,6 +2881,36 @@ def _correction_audit(project_id: str) -> list[dict[str, Any]] | None:
     return None
 
 
+def _audit_corrected_segments(audit: list[dict[str, Any]] | None,
+                              source_start: float, source_end: float) -> list[dict[str, Any]]:
+    """成片产物分段缺失时（如 re-edit 重切后没有精修文件），从纠错审计按窗口裁剪纠错稿。
+
+    文本取审计的 ``corrected_text``（真实纠错稿，绝不伪造），保留源 ``segment_id``
+    （源级 speaker overlay 可按 id 精确合并），时间钳制与 raw 重建同一套逻辑。
+    """
+    result: list[dict[str, Any]] = []
+    for item in audit or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            start, end = float(item.get("start")), float(item.get("end"))
+        except (TypeError, ValueError):
+            continue
+        if end <= source_start or start >= source_end:
+            continue
+        text = str(item.get("corrected_text") or "").strip()
+        if not text:
+            continue
+        result.append({
+            "segment_id": str(item.get("segment_id") or ""),
+            "start": round(max(start, source_start) - source_start + 0.8, 3),
+            "end": round(min(end, source_end) - source_start + 0.8, 3),
+            "text": text,
+            "speaker": str(item.get("speaker") or "未标注"),
+        })
+    return result
+
+
 def _clip_seed_baseline(project_id: str, entry: dict[str, Any],
                         clip_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """转写基线 ``(原始 ASR 段, 纠错稿段)``，都已平移到**成片时间基**。
@@ -2890,8 +2920,13 @@ def _clip_seed_baseline(project_id: str, entry: dict[str, Any],
     ``raw == corrected``，诚实退化而不是伪造一份「原始稿」。
     """
     corrected = _clip_seed_segments(entry, clip_id)
-    corrected = _attach_speaker_overlay(project_id, entry, corrected)
     audit = _correction_audit(project_id)
+    if not corrected and audit:
+        # 成片产物分段缺失（如 re-edit 重切后没有精修文件）：按当前窗口从纠错
+        # 审计裁剪纠错稿，保证转写文档仍能惰性建基线——文本真实，不伪造。
+        corrected = _audit_corrected_segments(
+            audit, float(entry.get("source_start") or 0.0), float(entry.get("source_end") or 0.0))
+    corrected = _attach_speaker_overlay(project_id, entry, corrected)
     if not audit or not corrected:
         return corrected, corrected
     source_start = float(entry.get("source_start") or 0.0)
