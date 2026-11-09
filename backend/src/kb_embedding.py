@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import threading
+from pathlib import Path
 
 MODEL_NAME = "BAAI/bge-small-zh-v1.5"
 _MAX_CHARS = 2000
@@ -29,7 +30,11 @@ def _load():
             os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
             from fastembed import TextEmbedding  # 可选依赖，未安装则降级
 
-            _model = TextEmbedding(MODEL_NAME)
+            # 缓存显式放大盘：fastembed 默认落 /tmp（128M tmpfs），91M 模型缓存
+            # 会把系统临时区挤到近乎满盘，殃及封面抽帧等（2026-11-09 Errno 2）。
+            cache_dir = os.getenv("FASTEMBED_CACHE_DIR", "/domain/.tools/fastembed-cache")
+            Path(cache_dir).mkdir(parents=True, exist_ok=True)
+            _model = TextEmbedding(MODEL_NAME, cache_dir=cache_dir)
             _state = True
         except Exception:
             _model = None

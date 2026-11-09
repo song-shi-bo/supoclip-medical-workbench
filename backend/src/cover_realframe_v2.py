@@ -122,6 +122,20 @@ PRODUCT_NAMES = (COVER_JPG_NAME, COVER_INTRO_NAME, COVER_COPY_NAME, COVER_LAYOUT
 E_COVER_CJK_FONT_MISSING = "E_COVER_CJK_FONT_MISSING"
 E_COVER_FRAME_EXTRACT_FAILED = "E_COVER_FRAME_EXTRACT_FAILED"
 
+
+def cover_frame_tmp_root() -> str:
+    """候选帧/底图工作目录：显式走 tasks 同盘大盘。
+
+    系统 /tmp 是 128M tmpfs——fastembed 模型缓存曾占 91M 把它挤到近乎满盘，
+    ``cv2.imwrite`` 静默失败导致 cover-base.png 缺失（2026-11-09 Errno 2 事故）。
+    可用 ``COVER_TMP_DIR`` / ``STUDIO_TASKS_ROOT`` 覆盖，默认仓库 tasks/tmp。
+    """
+    root = os.getenv("COVER_TMP_DIR") or os.getenv("STUDIO_TASKS_ROOT")
+    base = Path(root) if root else Path(__file__).resolve().parent.parent / "tasks"
+    target = base / "tmp" / "cover-frames"
+    target.mkdir(parents=True, exist_ok=True)
+    return str(target)
+
 # 文案生成函数注入点（测试桩替换它即可零预算零真实调用）
 CopyLlmFn = Callable[[str], str]
 
@@ -1228,7 +1242,8 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
     segments = [item for item in (segments or []) if str(item.get("text") or "").strip()]
     keywords = [str(k) for k in (analysis_keywords or []) if str(k).strip()]
 
-    with tempfile.TemporaryDirectory(prefix="cover-realframe-v2-") as temp_root:
+    with tempfile.TemporaryDirectory(prefix="cover-realframe-v2-",
+                                     dir=cover_frame_tmp_root()) as temp_root:
         workdir = Path(temp_root)
         extracted = extract_candidate_frames(Path(video_path), planned_times, workdir / "frames")
 
@@ -1257,7 +1272,11 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
         cover_base = workdir / "cover-base.png"
         import cv2 as _cv2
 
-        _cv2.imwrite(str(cover_base), crop_to_cover(chosen_image, crop))
+        # imwrite 失败只返回 False 不抛异常（ENOSPC 静默）；必须显式检查，
+        # 否则下游读取时才以 Errno 2 形式爆出来，难以定位。
+        if not _cv2.imwrite(str(cover_base), crop_to_cover(chosen_image, crop)):
+            raise CoverReplaceError(E_COVER_RENDER_FAILED,
+                                    "封面底图写盘失败（磁盘空间不足或目录不可写）")
 
         # 文案：显式覆盖 → LLM 一次 → 规则回退；选择确定性
         override = copy_override if isinstance(copy_override, dict) else None
