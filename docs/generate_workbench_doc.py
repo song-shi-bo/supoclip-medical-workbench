@@ -71,14 +71,6 @@ def _tabs() -> list[str]:
     return ["、".join(f"{label}({tid})" for tid, label in hits) or "（未扫描到）"]
 
 
-def _video_brain() -> list[str]:
-    vb = Path("/domain/video-brain/app")
-    if not vb.is_dir():
-        return ["（video-brain 不在当前环境）"]
-    mods = sorted(p.stem for p in vb.glob("*.py") if p.stem != "__init__")
-    return ["、".join(f"`{m}`" for m in mods) or "（空）"]
-
-
 def _head() -> str:
     try:
         rev = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO,
@@ -113,13 +105,17 @@ def build_snapshot() -> str:
         "",
         *_tabs(),
         "",
-        "### video-brain 模块（legacy 桥）",
-        "",
-        *_video_brain(),
-        "",
         END,
     ]
     return "\n".join(lines)
+
+
+_VOLATILE_RE = re.compile(r"- 生成时间：.*")
+
+
+def _normalize(text: str) -> str:
+    """归一化易变字段（生成时间/HEAD）：CI 与本机环境不同也能稳定比较。"""
+    return _VOLATILE_RE.sub("- 生成时间：（略）", text)
 
 
 def update_doc(check: bool = False) -> int:
@@ -134,7 +130,7 @@ def update_doc(check: bool = False) -> int:
         new_text = pre + snapshot + post
     else:
         new_text = text.rstrip() + "\n\n" + snapshot + "\n"
-    if new_text == text:
+    if _normalize(new_text) == _normalize(text):
         print("doc snapshot up-to-date")
         return 0
     if check:

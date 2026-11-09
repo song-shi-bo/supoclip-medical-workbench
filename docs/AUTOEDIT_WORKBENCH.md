@@ -170,7 +170,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 ## 7. 本文档的维护方式（自动更新）
 
-- **事实快照自动生成**：文末「附录 · 代码事实快照」由 `docs/generate_workbench_doc.py` 扫描代码生成（端点、worker 阶段、服务、Inspector 标签、video-brain 模块、git 版本），手写内容永不改动。
+- **事实快照自动生成**：文末「附录 · 代码事实快照」由 `docs/generate_workbench_doc.py` 扫描代码生成（端点、worker 阶段、服务、Inspector 标签、git 版本），手写内容永不改动。
 - **推送即刷新**：本仓库启用了 `core.hooksPath=.githooks`，`git push` 前 pre-push 钩子自动重新生成快照，有变化就先提交再推——远端文档永远与代码一致。
 - **漂移检测**：`backend/tests/unit/test_doc_workbench_snapshot.py` 在跑后端测试时校验快照是否过期，过期即红，提示执行 `python3 docs/generate_workbench_doc.py`。
 - **手动更新**：改完代码跑一次 `python3 docs/generate_workbench_doc.py` 即可。
@@ -180,7 +180,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 ## 附录 · 代码事实快照（自动生成）
 
-- 生成时间：2026-11-09 01:13 UTC · 代码版本：`a4aaa64` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
+- 生成时间：2026-11-09 01:18 UTC · 代码版本：`232ae3b` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
 
 ### HTTP 端点（backend/src/api/routes）
 
@@ -213,9 +213,5 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 ### Inspector 标签
 
 转写(transcript)、封面(cover)、效果(effects)
-
-### video-brain 模块（legacy 桥）
-
-`asr`、`correct`、`cover`、`cover_layout`、`doctor_profiles`、`kb_context`、`knowledge`、`llm`、`main`、`media`、`medical_terms`、`member_rules`、`pipeline`、`planner`、`planning_prompt`、`preflight`、`qc`、`reframe`、`render`、`rules`、`schemas`、`store`、`subtitles`、`tasks`
 
 <!-- END:AUTO-SNAPSHOT -->

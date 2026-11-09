@@ -1,0 +1,58 @@
+name: doc-snapshot-check
+
+# docs/AUTOEDIT_WORKBENCH.md 代码事实快照校验：
+# * push(main)/PR：文档快照过期即红（配合分支保护可作为合并硬门禁）
+# * 手动触发（workflow_dispatch）：勾选 autofix 即自动重新生成并提交回分支
+# 本机另有 .githooks/pre-push 在推送前自动刷新——本工作流是服务端的第二道闸。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      autofix:
+        description: "检测到过期时自动重新生成并提交（自动修正模式）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 校验 docs/AUTOEDIT_WORKBENCH.md 事实快照
+        run: python docs/generate_workbench_doc.py --check
+
+  autofix:
+    # 手动勾选 autofix 时才运行；需要写权限提交回分支
+    if: github.event_name == 'workflow_dispatch' && inputs.autofix
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 重新生成快照
+        run: python docs/generate_workbench_doc.py
+      - name: 有变化则提交并推送
+        run: |
+          if git diff --quiet -- docs/AUTOEDIT_WORKBENCH.md; then
+            echo "快照已是最新，无需修正"
+          else
+            git config user.name "doc-bot"
+            git config user.email "actions@users.noreply.github.com"
+            git add docs/AUTOEDIT_WORKBENCH.md
+            git commit -m "docs: auto-refresh workbench snapshot (actions autofix)"
+            git push
+          fi
