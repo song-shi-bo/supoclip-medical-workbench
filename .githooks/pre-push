@@ -1,0 +1,13 @@
+#!/bin/sh
+# pre-push：推送前自动刷新 docs/AUTOEDIT_WORKBENCH.md 的代码事实快照。
+# 若快照有变化则先本地提交，保证推到远端的文档永远与代码一致。
+# 依赖：仓库根的 docs/generate_workbench_doc.py；启用方式 git config core.hooksPath .githooks
+set -e
+cd "$(git rev-parse --show-toplevel)"
+python3 docs/generate_workbench_doc.py >/dev/null
+if ! git diff --quiet -- docs/AUTOEDIT_WORKBENCH.md; then
+  git add docs/AUTOEDIT_WORKBENCH.md
+  git commit -q -m "docs: auto-refresh workbench snapshot (pre-push)"
+  echo "[pre-push] docs/AUTOEDIT_WORKBENCH.md 快照已刷新并提交"
+fi
+exit 0
