@@ -46,7 +46,7 @@ from .content_analysis import (
 # 系统提示词原样携带，绝不可 str.format。
 # =====================================================================
 PROMPT_REFINE_VERBATIM = """# 角色
-你是医疗科普短视频的文案精修引擎。输入为单个切片的原始 SRT（含时间码、说话人）和该切片的规划信息。任务：在不改变原意、不新增任何医学信息的前提下，把口语转写稿改写成医生能顺口重录、可直接上屏的规范 SRT，并附三份核对清单。
+你是医疗科普短视频的文案精修引擎。输入为单个切片的原始 SRT（含时间码、说话人）和该切片的规划信息。任务：在不改变原意、不新增任何医学信息的前提下，把口语转写稿整理成医生能顺口重录、可直接上屏的规范 SRT，并附三份核对清单。精修只允许两种操作：删除无用的完整句子；删除句子中的语气词（啊、呃、嗯、那个、就是、然后呢等）。除此之外不得改写、润色、增删任何字词或调整语序。
 
 # 输入
 - 原始 SRT：序号 / 时间码 / 文本；说话人若未标注，按上下文判断并在输出中标注
@@ -55,51 +55,54 @@ PROMPT_REFINE_VERBATIM = """# 角色
 # 一、输出形式
 1. 主体为 SRT：序号 + 起止时间码 + 文本，每条一屏；时间码与原素材对齐，全程保持时间轴连续、说话顺序不变；
 2. 每条文本以角色标注开头：（医生）或（家属）；
-3. 单句不超过 15 个字（标点不计），一句一个意思，按口语停顿断句；原句过长拆成多条时，拆出的条目共用原句起止时间码区间逐条推进，不重叠、不留空档；
-4. 删口头禅后无实义的句子整条删除，时间码并入相邻条，最终时间码合计等于切片总时长。
+3. 单句不超过 15 个字（标点不计），一句一个意思，按口语停顿断句；原句过长拆成多条时，拆出的条目共用原句起止时间码区间逐条推进，不重叠、不留空档；拆条只允许断句，不允许增删改任何字词；
+4. 没有信息价值的句子整条删除，时间码并入相邻条，最终时间码合计等于切片总时长。
 
-# 二、语言风格
-1. 删除"啊、呃、嗯、那个、就是、然后呢"等口头禅和重复表述，保留自然口语节奏，不写成书面腔；
-2. 用第二人称、主动句、大白话；专业术语第一次出现时紧跟一句通俗解释（解释同样受 15 字限制，可拆条）；
-3. 逐条默读检查：医生本人念着顺口、不拗口；拗口时优先换常用词，不换意思。
+# 二、删句与语气词（仅有的两种操作）
+1. 语气词从句子中删除，句子其余文字逐字保留；删除语气词后无实义的句子整条删除；
+2. 寒暄、重复、跑题、无信息量的句子整条删除；有用但不完整的句子保留，不得改写；
+3. 禁止换词、禁止书面化改写、禁止把口语改成书面腔、禁止概括或缩写原句。
 
 # 三、数据与数字处理
-1. 精确百分比翻译成具象比例："10%" → "十个人里，大概一个"；
-2. 每个切片最多保留 1 个关键数字作为记忆点，且该数字必须来自原稿、语境明确；其余一律改为"多数、少数、非常罕见、相对常见"等定性表达；
-3. 无权威出处的精确数字、明显不严谨的口头数字（如"千万分之一"）删除或软化为定性表达；
-4. 凡涉及概率、效果、恢复情况的表述，必须补上"因人而异、个体差异大"的意思，可单独成条放在该段末尾。
+1. 数字一律逐字保留原样；无权威出处的精确数字、明显不严谨的口头数字（如"千万分之一"），将其所在句子整条删除；
+2. 精确百分比不做具象化翻译，定性表达建议写入合规处理清单供人工参考，不进主体。
 
 # 四、合规红线（违反任何一条即视为错误输出）
-1. 禁用绝对化用语：肯定、一定、100%、根治、最好、没坏处、不用担心，及其同义表达；
-2. 不承诺疗效、不制造恐慌、不推荐具体药品或产品；原稿提到的具体药名改为"医生会根据情况选合适的药"类表述；
-3. 个体化诊疗建议必须体现"需结合检查结果面诊、遵医嘱"，不得写成人人适用的通用结论；
-4. 不得新增原稿中没有的医学结论、数据、病例或建议，只能在原意基础上规范化和通俗化；
-5. 患者信息脱敏：姓名、住址、"年龄+病种"等可识别组合删除或泛化为"这位患者"。
+1. 含绝对化用语（肯定、一定、100%、根治、最好、没坏处、不用担心及其同义表达）的句子：整条删除，不得改写软化；
+2. 含疗效承诺、恐慌制造、具体药品或产品推荐的句子：整条删除；涉及用药的句子保留原话，不得改写药名；
+3. 个体化诊疗表述保留原话，不得改写成普遍结论；
+4. 不得新增原稿中没有的医学结论、数据、病例或建议（包括解释、补充、因人而异提示），只能在删除和去语气词范围内整理；
+5. 含患者姓名、住址、"年龄+病种"等可识别组合的句子：整条删除，不做句内泛化。
 
 # 五、输出结构（依次输出四部分）
 ## 1. 精修 SRT
-按上述规则改写后的主体。
+按上述规则整理后的主体。
 ## 2. 待核对清单
 原音存疑处逐条列出：时间码 + 原文 + 存疑原因（识别错误/听不清/术语不确定），不要自行猜测补全。
 ## 3. 合规处理清单
-逐条列出软化处理：时间码 + 原文 → 改后 + 依据规则；保留的数字也注明保留理由。
+逐条列出：删除的句子（时间码 + 原文 + 删除原因）；未删除但建议人工考虑软化/具象化/补"因人而异"提示的句子（时间码 + 原文 + 建议 + 依据规则）。建议只进清单，不进主体。
 ## 4. 结尾文字卡建议
 给出 2~3 版"面诊遵医嘱"结尾卡文案，每版不超过 30 字，供人工挑选。
 
 # 输出前自检
+- 主体每个字都来自原稿：只发生过整句删除和语气词删除两种操作；无解释、无建议、无新增提示，这些只出现在清单。
 - 时间码无重叠、无缺口，合计等于切片时长；
 - 每条 ≤15 字（标点除外），角色标注齐全；
-- 全文无绝对化用语、无新增医学信息、无未脱敏隐私；
-- 保留的关键数字 ≤1，概率/效果处已补"因人而异"。"""
+- 全文无绝对化用语、无新增医学信息、无未脱敏隐私。"""
 
-REFINE_PROMPT_VERSION = "clip-refine-prompt/2026-11-05-b1"
+REFINE_PROMPT_VERSION = "clip-refine-prompt/2026-11-08-b2"
 REFINE_SCHEMA_VERSION = "clip-refinement/v1"
-REFINE_ADAPTER_VERSION = "clip-refinement-adapter/v1"
+REFINE_ADAPTER_VERSION = "clip-refinement-adapter/v2"
 
 # 提示词B自检规则「单句不超过 15 个字（标点不计）」：程序侧只记 warning 不改写。
 REFINE_MAX_CUE_CHARS = 15
 # 说话人标签（提示词B固定两类；模型按上下文推断，无 diarization）。
 REFINE_SPEAKERS = ("医生", "家属")
+# 语气词清单（与提示词B「啊、呃、嗯、那个、就是、然后呢等」同源）：只删不改
+# 校验器对精修侧与转写基准侧同表清理后再比对——模型保留语气词也合法（两侧同删）。
+REFINE_FILLER_WORDS = ("然后呢", "那个", "就是", "啊", "呃", "嗯")
+# 只删不改句切分：句终止符（含省略号与半角），与用户口径（。？！）一致。
+_REFINE_SENT_SPLIT_RE = re.compile(r"[。！？…!?]+")
 
 _SECTION_TITLES = (
     ("srt", re.compile(r"^#{0,6}\s*1[\.、）\)]?\s*精修\s*SRT\s*$")),
@@ -348,6 +351,58 @@ def align_cues_to_segments(cues: list[dict[str, Any]], window_segments: list[dic
     return segments
 
 
+# ---------------------------------------------------------------- 只删不改执法
+def _normalize_for_delete_only(text: str) -> str:
+    """只删不改比对归一：去标点空白 + 两侧同表去语气词（保留语气词也合法）。"""
+    value = _PUNCT_RE.sub("", str(text or ""))
+    for _ in range(3):
+        before = value
+        for word in REFINE_FILLER_WORDS:
+            value = value.replace(word, "")
+        if value == before:
+            break
+    return value
+
+
+def enforce_delete_only(aligned_segments: list[dict[str, Any]],
+                        window_segments: list[dict[str, Any]],
+                        warnings: list[str]) -> tuple[list[dict[str, Any]], list[str]]:
+    """「只删不改」执法（2026-11-08 用户规则，提示词B b2）。
+
+    判断进提示词、执法进代码：把切片窗口纠错转写去标点/语气词清理为基准后，
+    aligned_segments 里每一段的精修句（按句终止符切分）必须是基准的**顺序保持
+    子串**——整句删除合法、语气词删/留合法；改写、润色、换词、新增即违规。
+    违规段整段回退原纠错转写（speaker 一并清空，如实留痕），不冒充精修。
+    返回 (segments, reverted_segment_ids)。
+    """
+    source_by_id = {str(seg.get("segment_id") or ""):
+                    str(seg.get("corrected_text") or seg.get("text") or "").strip()
+                    for seg in window_segments}
+    baseline = _normalize_for_delete_only("".join(source_by_id.values()))
+    if not baseline:
+        return aligned_segments, []
+    pointer = 0
+    reverted: list[str] = []
+    for seg in aligned_segments:
+        violations: list[str] = []
+        for chunk in _REFINE_SENT_SPLIT_RE.split(str(seg.get("refined_text") or "")):
+            needle = _normalize_for_delete_only(chunk)
+            if not needle:
+                continue
+            pos = baseline.find(needle, pointer)
+            if pos < 0:
+                violations.append(needle[:30])
+            else:
+                pointer = pos + len(needle)
+        if violations:
+            seg["refined_text"] = source_by_id.get(str(seg.get("segment_id") or ""), "")
+            seg["speaker"] = ""
+            reverted.append(str(seg.get("segment_id") or ""))
+            warnings.append(f"只删不改校验：{seg['segment_id']} 含非原话内容"
+                            f"（{'；'.join(violations)}），该段已回退原纠错转写")
+    return aligned_segments, reverted
+
+
 # ---------------------------------------------------------------- LLM 调用
 # 测试桩注入口：None = 生产默认（真实文本 LLM，llm_budget 记账）。
 _REFINE_LLM_FN = None
@@ -456,7 +511,13 @@ def refine_clips(plan_record: dict[str, Any], corrected_segments: list[dict[str,
             segments = align_cues_to_segments(parsed["cues"], window, clip_start, clip_end, warnings)
             if not segments:
                 raise ValueError("精修 cue 全部无法对齐到纠错分段")
-            results[clip_id] = {
+            segments, reverted_ids = enforce_delete_only(segments, window, warnings)
+            if len(reverted_ids) >= len(segments) and reverted_ids:
+                warnings.append("全部分段未通过只删不改校验，整片回退原始纠错转写")
+                results[clip_id] = _fallback_entry(clip, window, warnings,
+                                                   reason="delete_only_violation")
+                continue
+            entry = {
                 "segments": segments,
                 "cues": parsed["cues"],
                 "srt": parsed["srt"],
@@ -471,6 +532,9 @@ def refine_clips(plan_record: dict[str, Any], corrected_segments: list[dict[str,
                 "theme": str(clip.get("topic") or ""),
                 "hook_first_line": str(clip.get("hook_first_line") or ""),
             }
+            if reverted_ids:
+                entry["reverted_segments"] = reverted_ids   # 句级执法留痕（部分回退）
+            results[clip_id] = entry
         except Exception as exc:  # noqa: BLE001 — 兜底契约：按切片粒度回退
             warnings.append(f"精修失败，回退原始纠错转写：{type(exc).__name__}: {str(exc)[:200]}")
             results[clip_id] = _fallback_entry(clip, window, warnings, reason="refine_failed")

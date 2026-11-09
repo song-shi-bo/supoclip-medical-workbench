@@ -663,8 +663,18 @@ def _analysis_context_lines(analysis: dict[str, Any], max_clips: int) -> list[st
         lines.append("【主题块】")
         for unit in units[:12]:
             ids = unit.get("segment_ids") or []
-            lines.append(f"  {unit.get('title', '')}: {ids[0] if ids else '-'}..{ids[-1] if ids else '-'}"
-                         f" ({len(ids)}段)")
+            head = (f"  {unit.get('title', '')}: {ids[0] if ids else '-'}..{ids[-1] if ids else '-'}"
+                    f" ({len(ids)}段")
+            if unit.get("info_seconds"):
+                head += f"，信息约{int(unit['info_seconds'])}秒"
+            if unit.get("mechanism"):
+                head += f"，机制：{unit['mechanism']}"
+            lines.append(head + ")")
+            # 簇级钩子句/收尾句（阶段1逐字校验通过的引用）——提示词A原文不动，背景走拼装层。
+            for key, label in (("hook_quote", "钩子句"), ("ending_quote", "收尾句")):
+                quote = str(unit.get(key) or "").strip()
+                if quote:
+                    lines.append(f"    {label}：{quote[:60]}")
     intervals = analysis.get("candidate_intervals") or []
     if intervals:
         lines.append("【候选区间】")

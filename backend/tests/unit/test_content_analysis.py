@@ -167,6 +167,79 @@ def test_model_settings_downgrade_remembers_unsupported_gateway(monkeypatch: pyt
 
 
 # ---------------------------------------------------------------------------
+# 主题簇字段（2026-11-08 组1）：机制/钩子句/收尾句逐字校验 + info_seconds 程序算
+# ---------------------------------------------------------------------------
+
+def _cluster_result(mechanism: str = "反常识", hook: str | None = None, ending: str | None = None):
+    return ca._AnalysisOut(
+        keywords=["高血压"], golden_quotes=[],
+        topic_units=[ca._TopicUnitOut(
+            title="高血压日常管理要点", segment_ids=["seg_0000", "seg_0001", "seg_0002", "seg_0003"],
+            reason="同一主题的完整展开。", mechanism=mechanism,
+            hook_quote=hook if hook is not None else "第一，按时服药不能随便停药。",
+            ending_quote=ending if ending is not None else "记住，血压平稳才能减少并发症。")],
+        candidate_intervals=[],
+    )
+
+
+def test_topic_unit_cluster_fields_surfaced_with_program_info_seconds(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(ca, "_model_ready", lambda: (True, "openai:test-model", ""))
+    monkeypatch.setattr(ca, "_run_analysis_agent", lambda model, prompt: _cluster_result())
+    record = ca.analyze_content(_segments(), transcript_version=1)
+    unit = record["topic_units"][0]
+    assert unit["mechanism"] == "反常识"                       # 合法机制原样透出
+    assert unit["hook_quote"] == "第一，按时服药不能随便停药。"    # 逐字引用保留
+    assert unit["ending_quote"] == "记住，血压平稳才能减少并发症。"
+    # 5200+5600+6000+5800 = 22600ms → 程序求和 23 秒（模型无权产生该字段）
+    assert unit["info_seconds"] == 23
+
+
+def test_topic_unit_non_verbatim_quote_cleared_with_note(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(ca, "_model_ready", lambda: (True, "openai:test-model", ""))
+    monkeypatch.setattr(ca, "_run_analysis_agent",
+                        lambda model, prompt: _cluster_result(hook="坚持规范用药才能健康长寿。"))
+    record = ca.analyze_content(_segments(), transcript_version=1)
+    unit = record["topic_units"][0]
+    assert unit["hook_quote"] == ""                           # 非该块逐字原话 → 清除
+    assert unit["ending_quote"] != ""                         # 合法引用不受牵连
+    assert any("钩子句被清除" in note for note in record["notes"])
+    assert unit["info_seconds"] == 23                         # 程序字段不受引用清除影响
+
+
+def test_topic_unit_invalid_mechanism_cleared_with_note(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(ca, "_model_ready", lambda: (True, "openai:test-model", ""))
+    monkeypatch.setattr(ca, "_run_analysis_agent",
+                        lambda model, prompt: _cluster_result(mechanism="健康科普"))
+    record = ca.analyze_content(_segments(), transcript_version=1)
+    unit = record["topic_units"][0]
+    assert unit["mechanism"] == ""                            # 词表外机制清空
+    assert any("机制非法已清空" in note for note in record["notes"])
+
+
+def test_fallback_topic_units_leave_cluster_fields_empty(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(ca, "_model_ready", lambda: (False, "", "LLM 未配置"))
+    record = ca.analyze_content(_segments(), transcript_version=1)
+    assert record["topic_units"]
+    for unit in record["topic_units"]:
+        assert unit["mechanism"] == "" and unit["hook_quote"] == "" and unit["ending_quote"] == ""
+        assert unit["info_seconds"] > 0                       # 时长仍是程序真值
+    assert any("本地回退：主题块机制/钩子句/收尾句留空" in note for note in record["notes"])
+
+
+def test_planning_context_lines_surface_cluster_fields():
+    analysis = {"keywords": [], "golden_quotes": [],
+                "topic_units": [{"title": "高血压日常管理要点", "segment_ids": ["seg_0000", "seg_0003"],
+                                 "mechanism": "反常识", "hook_quote": "第一，按时服药不能随便停药。",
+                                 "ending_quote": "记住，血压平稳才能减少并发症。", "info_seconds": 23}],
+                "candidate_intervals": []}
+    lines = cp._analysis_context_lines(analysis, max_clips=12)
+    text = "\n".join(lines)
+    assert "信息约23秒" in text and "机制：反常识" in text
+    assert "钩子句：第一，按时服药不能随便停药。" in text
+    assert "收尾句：记住，血压平稳才能减少并发症。" in text
+
+
+# ---------------------------------------------------------------------------
 # worker 集成：analysis_only 分支在渲染前停住
 # ---------------------------------------------------------------------------
 
@@ -206,8 +279,14 @@ def test_worker_analysis_only_never_reaches_render(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(ca, "analyze_content", fake_analyze)
     saved_paths: list[str] = []
-    monkeypatch.setattr(ca, "save_analysis_record",
-                        lambda job_id, record: saved_paths.append(job_id) or {"path": "/tmp/x.json", "size_bytes": 10})
+
+    def _fake_save_analysis(job_id, record, provenance=None):
+        target = tmp_path / "analysis_stub.json"      # worker 会 stat 该路径，桩需落真实文件
+        target.write_text("{}", encoding="utf-8")
+        saved_paths.append(job_id)
+        return {"path": str(target), "size_bytes": 2}
+
+    monkeypatch.setattr(ca, "save_analysis_record", _fake_save_analysis)
     artifact_posts: list[dict] = []
     monkeypatch.setattr(worker, "_http",
                         lambda method, url, payload=None, timeout=60: artifact_posts.append(payload) or {})
@@ -259,14 +338,26 @@ def test_worker_formal_chain_runs_analysis_plan_render(monkeypatch: pytest.Monke
                 "topic_units": [], "candidate_intervals": [],
                 "analysis_artifact_path": str(tmp_path / "a.json")}
     monkeypatch.setattr(ca, "analyze_content", fake_analyze)
-    monkeypatch.setattr(ca, "save_analysis_record", lambda job_id, record: {"path": "/tmp/a.json", "size_bytes": 1})
+
+    def _fake_save_analysis(job_id, record, provenance=None):
+        target = tmp_path / "analysis_stub.json"
+        target.write_text("{}", encoding="utf-8")
+        return {"path": str(target), "size_bytes": 2}
+
+    monkeypatch.setattr(ca, "save_analysis_record", _fake_save_analysis)
 
     def fake_plan(segments, analysis, **kwargs):
         calls.append("plan")
         return {"plan_source": "llm", "clips": [], "discarded": [], "notes": [],
                 "rule_snapshot_id": "2026-10-13.10"}
     monkeypatch.setattr(cp, "plan_clips", fake_plan)
-    monkeypatch.setattr(cp, "save_plan_record", lambda job_id, record: {"path": "/tmp/p.json", "size_bytes": 1})
+
+    def _fake_save_plan(job_id, record, provenance=None):
+        target = tmp_path / "plan_stub.json"          # worker 会 stat 该路径，桩需落真实文件
+        target.write_text("{}", encoding="utf-8")
+        return {"path": str(target), "size_bytes": 2}
+
+    monkeypatch.setattr(cp, "save_plan_record", _fake_save_plan)
 
     def fake_render(plan, **kwargs):
         calls.append("render")

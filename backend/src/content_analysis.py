@@ -11,6 +11,9 @@ candidate_intervals，结果落盘即停（本阶段不进入时间线工程与�
 * 所有时间戳（start_ms/end_ms）由被引用分段的原始数据重算，**模型无权产生时间戳**；
 * topic_units 不依赖任何预设词表（不出现「健康科普」式固定标签）——标题由模型
   从内容归纳；本地回退按停顿边界切分、用位置命名；
+* 主题块机制字段限定钩子四机制词表（冲突/反常识/具体疑问/身份共鸣）；钩子句/
+  收尾句必须逐字出自该块自身分段（程序校验，违者清除留痕）；info_seconds 一律
+  程序按分段原始时长求和，模型无权产生时长字段；
 * 模型失败/超时/输出不合法/配额不足 → 自动本地回退（plan_source=
   heuristic_fallback），**不等待人工确认、不让任务失败**；
 * 优先单次调用；仅当分段数超过 CONTEXT_SEG_LIMIT 才分批并合并（当前阈值下
@@ -65,9 +68,15 @@ _GOLDEN_SYSTEM_PROMPT = (
     "只见文本，无视频、不联网。只输出严格 JSON，不写任何解释。"
     "字段：keywords（3-10个，原文用词）；golden_quotes（≤12条，逐字复制原文，"
     "给 segment_ids 与 reason，禁止改写润色、禁止发明原文没有的观点）；"
-    "topic_units（≤10个不同的完整主题，标题从内容归纳、禁用固定词表标签，给 segment_ids 与 reason）；"
+    "topic_units（≤10个不同的完整主题，标题从内容归纳、禁用固定词表标签，给 segment_ids 与 reason；"
+    "每块另给 mechanism（该主题最适合的钩子机制，只能取：冲突/反常识/具体疑问/身份共鸣，都不适合则留空）、"
+    "hook_quote（该块内可当钩子的原话一句，逐字复制，没有则留空）、"
+    "ending_quote（该块内可当天然收尾的原话一句，逐字复制，没有则留空）；"
+    "引用句禁止改写润色；info_seconds 由系统按分段时长计算，模型不得输出该字段）；"
     "candidate_intervals（≤12个，start_ms/end_ms 落在转写范围内且 end>start，给 topic_title 与 reason）。"
     "不改诊断/药名/剂量；跳过隐私片段。")
+# 主题簇机制字段：与规划提示词A 规划原则4 的钩子机制同一套分类（冲突/反常识/具体疑问/身份共鸣）。
+MECHANISM_OPTIONS = ("冲突", "反常识", "具体疑问", "身份共鸣")
 # 各字段产出上限（约束输出 token，也防止模型刷量）
 MAX_KEYWORDS = 10
 MAX_GOLDEN_QUOTES = 12
@@ -84,6 +93,9 @@ class _TopicUnitOut(BaseModel):
     title: str = Field(min_length=1, max_length=60)
     segment_ids: list[str] = Field(default_factory=list, max_length=5000)
     reason: str = Field(default="", max_length=300)
+    mechanism: str = Field(default="", max_length=12)
+    hook_quote: str = Field(default="", max_length=400)
+    ending_quote: str = Field(default="", max_length=400)
 
 
 class _CandidateIntervalOut(BaseModel):
@@ -290,6 +302,11 @@ def _heuristic_topic_units(index: _SegIndex) -> list[dict[str, Any]]:
             "start_ms": unit[0]["start_ms"],
             "end_ms": unit[-1]["end_ms"],
             "reason": "本地回退：按转写停顿边界切分（>1.5s 空隙），无词表依赖。",
+            # 本地回退无模型判断：机制/钩子句/收尾句留空；info_seconds 程序可算。
+            "mechanism": "",
+            "hook_quote": "",
+            "ending_quote": "",
+            "info_seconds": round(sum(e["end_ms"] - e["start_ms"] for e in unit) / 1000),
         })
     return result
 
@@ -322,6 +339,7 @@ def _heuristic_fallback(index: _SegIndex, llm_error: str, *, llm_requested: bool
             "reason": str(sentence.get("reason", "")) or "本地规则候选，请人工确认。",
         })
     topic_units = _heuristic_topic_units(index)
+    notes.append("本地回退：主题块机制/钩子句/收尾句留空（无模型判断）")
     candidate_intervals = [
         {"start_ms": unit["start_ms"], "end_ms": unit["end_ms"],
          "topic_title": unit["title"], "reason": unit["reason"]}
@@ -393,6 +411,17 @@ def _merge_llm_result(result: _AnalysisOut, index: _SegIndex, notes: list[str],
             "start_ms": start_ms, "end_ms": end_ms,
             "reason": str(quote.reason or "").strip(),
         })
+    def _cluster_verbatim(picked: list[dict[str, Any]], text: Any, label: str, title: str) -> str:
+        """簇内逐字校验：主题块引用句必须逐字出自该块自身分段（空白归一），违者清除留痕。"""
+        quote = str(text or "").strip()
+        if not quote:
+            return ""
+        joined = "".join(e["_norm"] for e in picked)
+        if _norm(quote) and _norm(quote) in joined:
+            return quote
+        notes.append(f"主题块{label}被清除（非该块逐字原话）：{title} / {quote[:30]}")
+        return ""
+
     seen_titles: set[str] = set()
     for unit in result.topic_units:
         picked = index.resolve(unit.segment_ids)
@@ -405,11 +434,21 @@ def _merge_llm_result(result: _AnalysisOut, index: _SegIndex, notes: list[str],
             continue
         seen_titles.add(key)
         start_ms, end_ms = index.span_of(picked)
+        mechanism = str(unit.mechanism or "").strip()
+        if mechanism and mechanism not in MECHANISM_OPTIONS:
+            notes.append(f"主题块机制非法已清空（{mechanism}）：{title}")
+            mechanism = ""
+        # info_seconds 一律程序按分段原始时长求和（模型无权产生时长字段）。
+        info_seconds = round(sum(e["end_ms"] - e["start_ms"] for e in picked) / 1000)
         topics.append({
             "title": title,
             "segment_ids": [e["segment_id"] for e in picked],
             "start_ms": start_ms, "end_ms": end_ms,
             "reason": str(unit.reason or "").strip(),
+            "mechanism": mechanism,
+            "hook_quote": _cluster_verbatim(picked, unit.hook_quote, "钩子句", title),
+            "ending_quote": _cluster_verbatim(picked, unit.ending_quote, "收尾句", title),
+            "info_seconds": info_seconds,
         })
     for interval in result.candidate_intervals:
         lo, hi = index.bounds
@@ -589,9 +628,9 @@ def load_analysis_record(job_id: str, *, expected_provenance: dict[str, Any] | N
     return record
 
 
-ANALYSIS_SCHEMA_VERSION = "analysis/v2"
-ANALYSIS_PROMPT_VERSION = "analysis-prompt/2026-10-17"
-ANALYSIS_HELPER_VERSION = "analysis-helper/v2"
+ANALYSIS_SCHEMA_VERSION = "analysis/v3"
+ANALYSIS_PROMPT_VERSION = "analysis-prompt/2026-11-08"
+ANALYSIS_HELPER_VERSION = "analysis-helper/v3"
 
 
 def _digest(value: Any) -> str:

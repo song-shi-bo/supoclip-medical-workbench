@@ -78,9 +78,9 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 | # | 阶段 | 实现 | 工具 | 产物 |
 |---|---|---|---|---|
 | 0 | retrieving_rules | 记 `rule_snapshot_id`（剪辑规则只读留痕，QC 永不拦截） | — | rule snapshot |
-| 1 | 内容分析 extracting_highlights | 模型全篇分析（主题/关键词/金句候选） | LLM 网关 | `tasks/analysis/<job>.json` |
-| 2 | 切片规划 planning（提示词A） | 连续时间区间切片、动态条数、硬性校验（时间不越界/文本忠于转写/禁词表） | `clip_planning.py` + LLM | `tasks/plans/<job>/clip_plan.json` |
-| 3 | 切片精修 refining（提示词B） | 逐切片精修字幕文本 + **逐段说话人（医生/患者/家属）**，失败粒度回退不阻断 | `clip_refinement.py` + LLM | `tasks/plans/<job>/clip_refinement.json`（`clips[clip_id].segments`：`segment_id/start_ms/end_ms/refined_text/speaker`） |
+| 1 | 内容分析 extracting_highlights | 模型全篇分析（主题/关键词/金句候选）；主题簇带 **mechanism/hook_quote/ending_quote**（机制限钩子四机制词表、引用句逐字校验违者清除留痕）+ **info_seconds**（程序按分段时长求和，模型无权产生）；heuristic 回退三字段留空 | `content_analysis.py`（analysis/v3 + analysis-prompt/2026-11-08） + LLM 网关 | `tasks/analysis/<job>.json` |
+| 2 | 切片规划 planning（提示词A） | 连续时间区间切片、动态条数、硬性校验（时间不越界/文本忠于转写/禁词表）；拼装层背景透出主题簇四字段（提示词A 原文不动，slice-a3） | `clip_planning.py` + LLM | `tasks/plans/<job>/clip_plan.json` |
+| 3 | 切片精修 refining（提示词B b2） | 逐切片精修字幕文本 + **逐段说话人（医生/患者/家属）**，失败粒度回退不阻断；**只删不改执法（2026-11-08）**：精修句必须是语气词清理后转写的顺序保持子串，违规段整段回退原纠错转写（`reverted_segments` 留痕；全违规→整片 fallback `delete_only_violation`） | `clip_refinement.py`（clip-refine-prompt/2026-11-08-b2） + LLM | `tasks/plans/<job>/clip_refinement.json`（`clips[clip_id].segments`：`segment_id/start_ms/end_ms/refined_text/speaker`） |
 | 4 | 封面 cover | realframe_v2：真实视频帧+文字叠加（纯本地，无 AI 生图）；`clip_final` 前 0.8s 替换为封面片头（时长不变契约）；失败只 warning | `cover_realframe_v2.py`、`cover_replace.splice_intro`、ffmpeg | 切片目录四产物 + `cover_revision` |
 | 5 | 渲染 rendering | clip_plan 的 `start_ms/end_ms` + 指定版本纠错转写 → **本地 FFmpeg 逐条渲染**：横转竖居中裁切（608×1080→1080×1920）、H.264+AAC、SRT 时间平移、**字幕同遍烧录**（2026-10-29 固化）；源片本地硬链接不重传 | `clip_render.py`、ffmpeg（`CONTENT_RENDER_FFMPEG`） | `tasks/output/<job>/clips/<clip_id>/clip_final.mp4` + cover.jpg + ASS/SRT + warnings.json |
 | 6 | 回传/登记 | 渲染同一遍产出的字幕/封面四产物登记 artifact；卡片/台账构建 | `store.register_clips`（generation 锁，幂等） | 项目 `tasks/projects/<id>/clips.json` |
@@ -182,7 +182,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 ## 附录 · 代码事实快照（自动生成）
 
-- 生成时间：2026-11-09 02:51 UTC · 代码版本：`e4fa700` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
+- 生成时间：2026-11-09 04:02 UTC · 代码版本：`dff5d96` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
 
 ### HTTP 端点（backend/src/api/routes）
 

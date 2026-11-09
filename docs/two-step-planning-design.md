@@ -114,6 +114,40 @@ plan_ready（诊断停点后移到两步都完成之后）
 - 弃用类型约定：提示词A弃用段程序记录 type=弃用；与已选切片重叠的矛盾弃用被剔除；缺口补齐 type=未覆盖（全覆盖契约）。
 - 旧分层窗口机制（hierarchical_planning 拆窗、mixed 来源、_PlanOut schema）已随第一步退役；hierarchical_planning.py 模块文件保留未动（hp.HELPER_VERSION 仍进 provenance）。
 
+## 2026-11-08 修订：主题簇 schema（组1）+ 只删不改执法（组3）
+
+用户四组规则的落点决策（判断进提示词、执法进代码）：**组2（完整性三问/时长预算/
+机制配额/素材复用标注）与组4（钩子落位/封面兜底标记）经确认整体撤销——提示词A
+一字不动（仍 slice-a3）**；实际落地为组1与组3：
+
+### 组1：主题簇 schema（阶段1 content_analysis，提示词A 只是消费方）
+- `topic_units` 每块新增：`mechanism`（限钩子四机制：冲突/反常识/具体疑问/身份共鸣，
+  与提示词A 规划原则4 同套；词表外清空留痕）、`hook_quote`/`ending_quote`（**簇内
+  逐字校验**，空白归一后必须逐字出自该块自身分段，违者清除留痕）、`info_seconds`
+  （**程序按分段原始时长求和**，模型无权产生）。
+- heuristic 回退路径：机制/钩子句/收尾句留空 + notes 留痕；info_seconds 仍程序算。
+- 拼装层 `_analysis_context_lines` 透出四字段（提示词A 原文不动，背景走拼装层）。
+- 升版：`analysis/v3` + `analysis-prompt/2026-11-08` + `analysis-helper/v3`。
+
+### 组3：只删不改（判断进提示词B b2，执法进 clip_refinement 校验器）
+- 用户口径：只允许**删除无用完整句**与**删除句子中的语气词**两种操作；有用句光删
+  语气词不删句；除此之外不得改写/润色/增删字词或调整语序。
+- 提示词B b1→b2（`clip-refine-prompt/2026-11-08-b2`，归档件含修订记录；AI 起草、
+  用户逐字审定）：改写类条款全部退出主体（数字翻译/软化/换常用词/术语解释/补
+  "因人而异"/句内脱敏泛化），改写建议只进「合规处理清单」；四个输出段标题不变
+  （解析器零改动）。
+- 执法 `enforce_delete_only`：切片窗口纠错转写去标点/语气词清理为基准，精修句
+  （按。？！…切分）必须是基准的顺序保持子串——整句删除合法、语气词删/留合法
+  （两侧同表清理）；违规段整段回退原纠错转写（speaker 清空，`reverted_segments`
+  留痕）；全部分段违规 → 整片 fallback `reason=delete_only_violation`。
+- 升版：`clip-refinement-adapter/v2`；`REFINE_FILLER_WORDS` 语气词常量与提示词B
+  同源（啊/呃/嗯/那个/就是/然后呢）。
+
+### 同轮顺手修复
+- `test_content_analysis.py` 三处陈年桩（worker 731/791 行向 `save_analysis_record`
+  / `save_plan_record` 传 `provenance=` 且会 stat 返回路径；11-05 同款问题），
+  基线失败清单 -3。
+
 ## 关联文档
 
 - docs/subtitle-burn-convention.md（烧录契约——本方案不动烧录字幕）

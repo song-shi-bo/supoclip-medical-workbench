@@ -223,6 +223,107 @@ def test_align_records_out_of_window_and_overlong_cues():
 
 
 # =====================================================================
+# 只删不改执法（2026-11-08 用户规则，b2）：判断进提示词、执法进代码
+# =====================================================================
+
+def test_delete_only_allows_sentence_deletion_and_filler_freedom():
+    """整句删除合法；语气词删除或保留都合法（两侧同表清理）。"""
+    warnings: list[str] = []
+    aligned = [
+        {"segment_id": "seg_0001", "start_ms": 6500, "end_ms": 12000,
+         "refined_text": "确诊高血压就要规范治疗", "speaker": "医生"},      # 语气词已删
+        {"segment_id": "seg_0002", "start_ms": 12000, "end_ms": 19500,
+         "refined_text": "那个目标是保护器官，不是降数字", "speaker": ""},   # 语气词保留
+    ]
+    segments, reverted = cr.enforce_delete_only(aligned, _segments(), warnings)
+    assert reverted == [] and warnings == []
+    assert [s["refined_text"] for s in segments] == [
+        "确诊高血压就要规范治疗", "那个目标是保护器官，不是降数字"]
+
+
+def test_delete_only_allows_whole_sentence_deletion():
+    """前一整句被删 → 剩余句仍是顺序保持子序列，合法。"""
+    warnings: list[str] = []
+    aligned = [{"segment_id": "seg_0002", "start_ms": 12000, "end_ms": 19500,
+                "refined_text": "目标是保护器官不是降数字。", "speaker": ""}]
+    _, reverted = cr.enforce_delete_only(aligned, _segments(), warnings)
+    assert reverted == [] and warnings == []
+
+
+def test_delete_only_reverts_rewritten_segment_and_keeps_others():
+    """改词润色的段整段回退原纠错转写并留痕；合规段不受牵连。"""
+    warnings: list[str] = []
+    aligned = [
+        {"segment_id": "seg_0001", "start_ms": 6500, "end_ms": 12000,
+         "refined_text": "确诊高血压就要规范治疗", "speaker": "医生"},
+        {"segment_id": "seg_0002", "start_ms": 12000, "end_ms": 19500,
+         "refined_text": "目标是保护器官而并非单纯降低数字", "speaker": "家属"},  # 润色改词
+    ]
+    segments, reverted = cr.enforce_delete_only(aligned, _segments(), warnings)
+    assert reverted == ["seg_0002"]
+    assert segments[0]["refined_text"] == "确诊高血压就要规范治疗"
+    assert segments[1]["refined_text"] == "那个目标是保护器官，不是降数字。"   # 回退原文
+    assert segments[1]["speaker"] == ""                                    # 回退段清空说话人
+    assert any("只删不改校验" in w and "seg_0002" in w for w in warnings)
+
+
+def test_delete_only_rejects_new_content_and_reorder():
+    """语序颠倒 = 顺序保持破坏 → 违规回退。"""
+    warnings: list[str] = []
+    aligned = [{"segment_id": "seg_0001", "start_ms": 6500, "end_ms": 12000,
+                "refined_text": "目标是保护器官不是降数字。确诊高血压就要规范治疗。",
+                "speaker": ""}]
+    _, reverted = cr.enforce_delete_only(aligned, _segments(), warnings)
+    assert reverted == ["seg_0001"]
+    assert any("只删不改校验" in w for w in warnings)
+
+
+def _rewritten_output() -> str:
+    """seg_0001 润色违规、seg_0002 合规的精修输出（部分违规夹具）。"""
+    return """## 1. 精修 SRT
+1
+00:00:06,000 --> 00:00:12,000
+（医生）确诊了高血压就必须马上开始规范化治疗
+2
+00:00:12,000 --> 00:00:19,500
+目标是保护器官不是降数字
+
+## 2. 待核对清单
+- 无
+## 3. 合规处理清单
+- 无
+## 4. 结尾文字卡建议
+- 具体用药请面诊遵医嘱
+"""
+
+
+def test_refine_clips_partial_violation_reverts_single_segment(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(cr, "_model_ready", lambda: (True, "fixture-model", ""))
+    monkeypatch.setattr(cr, "_REFINE_LLM_FN", lambda prompt: _rewritten_output())
+    record = cr.refine_clips(_plan_record(), _segments(), job_id="job-do1")
+    entry = record["clips"]["clip-abc1234567"]
+    assert entry["source"] == "llm"
+    assert entry["reverted_segments"] == ["seg_0001"]
+    assert entry["segments"][0]["refined_text"] == "啊，确诊高血压就要规范治疗。"
+    assert entry["segments"][1]["refined_text"] == "目标是保护器官不是降数字"
+    assert any("只删不改校验" in w for w in entry["warnings"])
+
+
+def test_refine_clips_full_violation_falls_back(monkeypatch: pytest.MonkeyPatch):
+    """全部分段违规 → 整片按兜底契约回退（reason=delete_only_violation）。"""
+    monkeypatch.setattr(cr, "_model_ready", lambda: (True, "fixture-model", ""))
+    fully_rewritten = _rewritten_output().replace(
+        "目标是保护器官不是降数字", "目标是保器官而非降数字")
+    monkeypatch.setattr(cr, "_REFINE_LLM_FN", lambda prompt: fully_rewritten)
+    record = cr.refine_clips(_plan_record(), _segments(), job_id="job-do2")
+    entry = record["clips"]["clip-abc1234567"]
+    assert entry["source"] == "fallback"
+    assert entry["fallback_reason"] == "delete_only_violation"
+    assert any("整片回退" in w for w in entry["warnings"])
+    assert record["fallback_count"] == 1
+
+
+# =====================================================================
 # refine_clips：llm / 失败回退 / 全量不可用
 # =====================================================================
 
@@ -236,9 +337,13 @@ def _plan_record() -> dict:
 
 
 def _segments() -> list[dict]:
+    # 夹具即「只删不改」活的契约示例：原文带语气词，精修侧（_refined_output）
+    # 只发生语气词删除——可全部通过 enforce_delete_only 校验。
     return [
-        {"segment_id": "seg_0001", "start_ms": 6500, "end_ms": 12000, "corrected_text": "原文一"},
-        {"segment_id": "seg_0002", "start_ms": 12000, "end_ms": 19500, "corrected_text": "原文二"},
+        {"segment_id": "seg_0001", "start_ms": 6500, "end_ms": 12000,
+         "corrected_text": "啊，确诊高血压就要规范治疗。"},
+        {"segment_id": "seg_0002", "start_ms": 12000, "end_ms": 19500,
+         "corrected_text": "那个目标是保护器官，不是降数字。"},
     ]
 
 
@@ -278,7 +383,8 @@ def test_refine_clips_fallback_on_llm_error(monkeypatch: pytest.MonkeyPatch):
     entry = record["clips"]["clip-abc1234567"]
     assert entry["source"] == "fallback"
     assert entry["fallback_reason"] == "refine_failed"
-    assert [s["refined_text"] for s in entry["segments"]] == ["原文一", "原文二"]
+    assert [s["refined_text"] for s in entry["segments"]] == [
+        "啊，确诊高血压就要规范治疗。", "那个目标是保护器官，不是降数字。"]
     assert any("回退原始纠错转写" in w for w in entry["warnings"])
     assert any("1/1 条切片精修回退" in w for w in record["warnings"])
 
@@ -289,7 +395,8 @@ def test_refine_clips_all_fallback_when_llm_unavailable(monkeypatch: pytest.Monk
     entry = record["clips"]["clip-abc1234567"]
     assert entry["source"] == "fallback"
     assert record["llm_requested"] is False and record["llm_error"] == "LLM 未配置"
-    assert [s["refined_text"] for s in entry["segments"]] == ["原文一", "原文二"]
+    assert [s["refined_text"] for s in entry["segments"]] == [
+        "啊，确诊高血压就要规范治疗。", "那个目标是保护器官，不是降数字。"]
 
 
 def test_refinement_save_load_roundtrip_and_fingerprint(tmp_path, monkeypatch: pytest.MonkeyPatch):
