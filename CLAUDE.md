@@ -244,3 +244,7 @@ the app via `APP_STORE_ID`/`APP_STORE_URL` in `frontend/src/lib/site.ts`
 - **Tools:** create/list/get/wait/cancel/resume/delete tasks, list/download/
   export clips, and public discovery (templates, transitions, fonts, B-roll).
 - Run with `cd mcp && uv run supoclip-mcp`. Details in `mcp/README.md`.
+
+## Documentation Maintenance — docs/AUTOEDIT_WORKBENCH.md
+
+工作台功能/流程改动必须同步更新 `docs/AUTOEDIT_WORKBENCH.md`：改叙述章节 + 跑 `python3 docs/generate_workbench_doc.py` 刷新快照 + 同 commit 提交。收到「更新工作台文档」类任务时，先对比快照里的代码版本与 `git log <版本>..HEAD` 的差异再改写（新会话无上下文也能完成）。快照区块勿手改。详见 AGENTS.md 同名章节。
