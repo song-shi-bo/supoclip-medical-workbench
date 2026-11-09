@@ -7,11 +7,14 @@
 * FFmpeg 重编码 H.264 + AAC（保留自然音频，+faststart，偶数像素）；
 * 字幕：复用「纠错转写 + 时间平移」的确定性流程——文字来自指定版本的
   corrected transcript，时间减去 clip 的 start_ms，绝不使用其他切片的文字、
-  绝不让模型重写。**底片不烧录字幕**，只产 sidecar ``subtitles.srt``；
-  烧录由 ``studio_transform_export`` 在 transform 之后的 1080x1920 画布上
-  合成（字幕属于画布叠加层，zoom/pan 不再影响字幕大小与位置）；
+  绝不让模型重写。**渲染即烧录**（2026-10-29 固化，``SUBTITLE_HARDBURN=true``
+  默认）：同一遍 ffmpeg 在 scale 之后追加固化样式 ASS（白字/纯黑 2px 描边/
+  ``Shadow=0``），成片产出即 ``subtitle_mode=burned``，并同产 sidecar
+  ``subtitles.srt/.ass`` 供审计；burned 底片导出跳过二次烧录。
+  ``SUBTITLE_HARDBURN=false`` 为紧急停机开关：有 cue 的切片硬失败
+  （2026-11-04 契约：切片预览必须显示字幕）；详见 docs/subtitle-burn-convention.md；
 * 产物：``tasks/output/<job_id>/clips/{clip_id}/
-  {clip_final.mp4, subtitles.srt, warnings.json, clip_plan.json}``；
+  {clip_final.mp4, subtitles.srt, subtitles.ass, warnings.json, clip_plan.json}``；
   本轮**不生成 cover.jpg**（缺封面不是错误）；
 * **没有任何质量拦截**：时长/completeness/评分/字幕一般问题全部只进 warnings；
   只有真实技术故障（FFmpeg 失败、产物不可解码）才算 technical_error；
