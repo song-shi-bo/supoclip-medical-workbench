@@ -418,3 +418,181 @@ def test_invalid_clip_path_rejected_before_any_output(tmp_path, subtitle_mock_ru
         cr.render_one({"clip_id":"../outside","end_ms":1000},source=source,out_dir=out,
                       corrected_segments=[],transcript_ref={},rule_snapshot_id=None)
     assert not out.exists()
+
+
+# ---------------------------------------------------------------- 烧录精修稿
+# 2026-11-09 用户拍板：烧录改用精修稿（source=llm 替换文本，缺失/fallback 如实
+# 回退纠错转写；指纹含精修身份，旧「纠错转写烧录」缓存经版本串 refined-burn/1
+# 全量失效）。
+
+
+def test_apply_refined_segments_llm_replaces_and_fallback_keeps_original():
+    segs = [
+        {"segment_id": "seg-a", "start_ms": 0, "end_ms": 1500, "text": "就是那个结节啊。",
+         "corrected_text": "就是那个结节啊。"},
+        {"segment_id": "seg-b", "start_ms": 1500, "end_ms": 3000, "text": "建议手术。",
+         "corrected_text": "建议手术。"},
+    ]
+    llm_entry = {"source": "llm", "segments": [
+        {"segment_id": "seg-a", "refined_text": "结节。", "speaker": "医生"},
+        {"segment_id": "seg-b", "refined_text": "", "speaker": "医生"},   # 整句删除
+    ]}
+    out, replaced = cr._apply_refined_segments(segs, llm_entry)
+    assert replaced == 1
+    assert out[0]["text"] == "结节。" and out[0]["corrected_text"] == "结节。"
+    assert out[1]["text"] == ""                          # 删除句保持空文本（cue 层跳过）
+    assert segs[0]["text"] == "就是那个结节啊。"          # 只动副本，不改本体
+    # fallback / None / 非 llm source：一律原样返回
+    for entry in (None, {"source": "fallback", "segments": []},
+                  {"source": "other", "segments": []}):
+        out2, replaced2 = cr._apply_refined_segments(segs, entry)
+        assert out2 is segs and replaced2 == 0
+    # 空 segment_id 回退 start_ms 精确匹配
+    no_id_entry = {"source": "llm", "segments": [{"segment_id": "", "start_ms": 1500,
+                                                  "refined_text": "建议手术。"}]}
+    out3, replaced3 = cr._apply_refined_segments(segs, no_id_entry)
+    assert replaced3 == 1 and out3[1]["text"] == "建议手术。" and out3[0]["text"] == "就是那个结节啊。"
+
+
+def test_render_one_burns_refined_text_provenance_and_fingerprint(tmp_path, monkeypatch, subtitle_mock_runtime):
+    source, calls = subtitle_mock_runtime
+    out = tmp_path / "out"
+    clip = {"clip_id": "refined-burn", "start_ms": 0, "end_ms": 3000}
+    segs = [
+        {"segment_id": "seg-a", "start_ms": 0, "end_ms": 1500, "text": "就是那个结节啊。"},
+        {"segment_id": "seg-b", "start_ms": 1500, "end_ms": 3000, "text": "建议手术。"},
+    ]
+    tref = {"transcript_id": "synthetic-tr", "transcript_version": 5}
+    refined = {"source": "llm", "segments": [
+        {"segment_id": "seg-a", "refined_text": "结节。", "speaker": "医生"},
+        {"segment_id": "seg-b", "refined_text": "建议手术。", "speaker": "医生"},
+    ]}
+    opts = dict(source=source, out_dir=out, corrected_segments=segs,
+                transcript_ref=tref, rule_snapshot_id=None)
+    rendered = cr.render_one(clip, refined_entry=refined, **opts)
+    assert rendered["subtitle_mode"] == "burned"
+    srt = (out / "subtitles.srt").read_text()
+    assert "结节" in srt and "建议手术" in srt          # 标点省略样式（SUBTITLE_PUNCT_STYLE=omit）
+    assert "就是那个结节啊" not in srt                    # 语气词版本不得烧入
+    provenance = json.loads((out / "warnings.json").read_text())["subtitle_provenance"]
+    assert provenance["subtitle_source"] == "clip_refinement"
+    assert provenance["refined_segment_count"] == 2
+    # 同精修身份 → 缓存命中；精修内容变化 → 指纹失效重渲
+    assert cr.render_one(clip, refined_entry=refined, **opts)["status"] == "skipped_playable"
+    assert len(calls) == 1
+    changed = {"source": "llm", "segments": [
+        {"segment_id": "seg-a", "refined_text": "磨玻璃结节。", "speaker": "医生"},
+        {"segment_id": "seg-b", "refined_text": "建议手术。", "speaker": "医生"}]}
+    again = cr.render_one(clip, refined_entry=changed, **opts)
+    assert again["status"] == "rendered" and len(calls) == 2
+    assert "磨玻璃结节" in (out / "subtitles.srt").read_text()
+
+
+def test_render_one_falls_back_to_corrected_transcript_without_llm_refinement(
+        tmp_path, subtitle_mock_runtime):
+    source, calls = subtitle_mock_runtime
+    out = tmp_path / "out"
+    clip = {"clip_id": "refined-fallback", "start_ms": 0, "end_ms": 1500}
+    segs = [{"segment_id": "seg-a", "start_ms": 0, "end_ms": 1500, "text": "就是那个结节啊。"}]
+    opts = dict(source=source, out_dir=out, corrected_segments=segs,
+                transcript_ref={"transcript_version": 1}, rule_snapshot_id=None)
+    fb = cr.render_one(clip, refined_entry={"source": "fallback", "segments": []}, **opts)
+    srt = (out / "subtitles.srt").read_text()
+    assert "就是那个结节啊" in srt                         # fallback 如实回退纠错转写
+    prov = json.loads((out / "warnings.json").read_text())["subtitle_provenance"]
+    assert prov["subtitle_source"] == "corrected_transcript" and prov["refined_segment_count"] == 0
+    out2 = tmp_path / "out2"
+    opts2 = dict(opts, out_dir=out2)
+    cr.render_one(clip, **opts2)                          # 完全没有精修条目也照常渲染
+    assert (out2 / "subtitles.srt").is_file()
+    prov2 = json.loads((out2 / "warnings.json").read_text())["subtitle_provenance"]
+    assert prov2["subtitle_source"] == "corrected_transcript"
+
+
+def test_render_plan_threads_refinement_per_clip(tmp_path, subtitle_mock_runtime):
+    source, _calls = subtitle_mock_runtime
+    root = tmp_path / "output" / "run-refined"
+    plan = {"clips": [
+        {"clip_id": "clip-1", "start_ms": 0, "end_ms": 1500},
+        {"clip_id": "clip-2", "start_ms": 2000, "end_ms": 3500},
+    ]}
+    segs = [
+        {"segment_id": "s1", "start_ms": 0, "end_ms": 1500, "text": "就是那个结节啊。"},
+        {"segment_id": "s2", "start_ms": 2000, "end_ms": 3500, "text": "建议复查。"},
+    ]
+    refinement = {"clips": {"clip-1": {"source": "llm", "segments": [
+        {"segment_id": "s1", "refined_text": "结节。"}]}}}   # clip-2 无精修条目
+    result = cr.render_plan(plan, source=source, out_root=root,
+                            corrected_segments=segs,
+                            transcript_ref={"transcript_version": 1},
+                            refinement=refinement)
+    assert result["job_status"] in {"completed", "completed_with_warnings"}
+    srt1 = (root / "clips" / "clip-1" / "subtitles.srt").read_text()
+    srt2 = (root / "clips" / "clip-2" / "subtitles.srt").read_text()
+    assert "结节" in srt1 and "就是那个结节啊" not in srt1
+    assert "建议复查" in srt2
+    prov1 = json.loads((root / "clips" / "clip-1" / "warnings.json").read_text())["subtitle_provenance"]
+    prov2 = json.loads((root / "clips" / "clip-2" / "warnings.json").read_text())["subtitle_provenance"]
+    assert prov1["subtitle_source"] == "clip_refinement"
+    assert prov2["subtitle_source"] == "corrected_transcript"
+
+
+def test_refined_identity_participates_in_fingerprint(tmp_path, subtitle_mock_runtime):
+    source, _calls = subtitle_mock_runtime
+    clip = {"clip_id": "fp", "start_ms": 0, "end_ms": 1000}
+    segs = [{"segment_id": "s", "start_ms": 0, "end_ms": 1000, "text": "文本。"}]
+    base = cr._render_fingerprint(clip, source, segs, {}, None)
+    llm = cr._render_fingerprint(clip, source, segs, {}, None,
+                                 refined_entry={"source": "llm", "segments": [
+                                     {"segment_id": "s", "refined_text": "精修。"}]})
+    fb = cr._render_fingerprint(clip, source, segs, {}, None,
+                                refined_entry={"source": "fallback", "segments": []})
+    assert base != llm          # 精修身份参与指纹
+    assert base == fb           # fallback 不参与（与无精修同缓存基）
+    assert llm != cr._render_fingerprint(clip, source, segs, {}, None,
+                                         refined_entry={"source": "llm", "segments": [
+                                             {"segment_id": "s", "refined_text": "另一版。"}]})
+
+
+def test_worker_render_stage_loads_refinement_record(monkeypatch, tmp_path, subtitle_mock_runtime):
+    from src import studio_job_worker as worker, clip_refinement, studio_project_store as store
+    source, _calls = subtitle_mock_runtime
+    root = tmp_path / "tasks"
+    monkeypatch.setenv("STUDIO_TASKS_ROOT", str(root))
+    monkeypatch.setattr(store, "TASKS_ROOT", root)
+    monkeypatch.setattr(worker, "_materialise_source_for_job", lambda *a: source)
+    monkeypatch.setattr(worker, "_rule_snapshot_id", lambda: "synthetic")
+    monkeypatch.setattr(worker, "_state", lambda *a, **k: None)
+    posts: list[dict] = []
+    monkeypatch.setattr(worker, "_http", lambda method, url, payload=None, timeout=60:
+                        {"artifacts": []} if method == "GET" else
+                        ({"accepted": True} if url.endswith("/activate") else
+                         posts.append(payload) or {}))
+    monkeypatch.setattr("src.r2.upload_file", lambda path, key: {"object_key": key, "size": 1})
+    seen: list[dict | None] = []
+    real_render_plan = cr.render_plan
+
+    def spy_render_plan(plan, **kwargs):
+        seen.append(kwargs.get("refinement"))
+        return real_render_plan(plan, **kwargs)
+
+    monkeypatch.setattr(cr, "render_plan", spy_render_plan)
+    plan = {"plan_source": "llm", "rule_snapshot_id": "synthetic",
+            "clips": [{"clip_id": "clip-w", "start_ms": 0, "end_ms": 1000}]}
+    fingerprint = clip_refinement.plan_fingerprint(plan)
+    record = {"clips": {"clip-w": {"source": "llm", "segments": [
+        {"segment_id": "s", "refined_text": "精修稿。"}]}}, "plan_fingerprint": fingerprint}
+    clip_refinement.save_refinement_record("autoedit_refined", record)
+    worker._run_clip_render_stage(
+        {"job_id": "autoedit_refined", "object_key": "synthetic", "project_id": "timeline_rw"},
+        "autoedit_refined", {"asr_segments": [
+            {"segment_id": "s", "start_ms": 0, "end_ms": 1000, "text": "原始。"}]}, plan)
+    assert seen and seen[-1] is not None and seen[-1]["clips"]["clip-w"]["source"] == "llm"
+    srt = (root / "output" / worker._job_run_id({"job_id": "autoedit_refined"}, "autoedit_refined")
+           / "clips" / "clip-w" / "subtitles.srt").read_text()
+    assert "精修稿" in srt and "原始" not in srt
+    # 无精修记录 → None（渲染如实回退纠错转写，不阻断）
+    worker._run_clip_render_stage(
+        {"job_id": "autoedit_norefine", "object_key": "synthetic", "project_id": "timeline_rw"},
+        "autoedit_norefine", {"asr_segments": []}, plan)
+    assert seen[-1] is None

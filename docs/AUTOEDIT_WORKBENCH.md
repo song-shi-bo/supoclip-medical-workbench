@@ -53,7 +53,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 | 时间线编辑 | 多轨 EDL、轨道增删、undo/redo/revision 历史、音频资产+波形 peaks、画面变换（transform） | `studio-timeline-editor.tsx`、`timeline-tracks.tsx`、`transform-panel.tsx`；`/studio/timeline/{id}/*` 路由组 |
 | Inspector 三标签 | **转写**（三态稿+修订+说话人标注）、**封面**（版本/模板/历史/回收站）、**效果**（音量/BGM/静音/字幕样式预览） | `inspector/inspector-pane.tsx`（`INSPECTOR_TABS`） |
 | AI 剪辑助手 | 自然语言下达剪辑指令（copilot），动作结果回执 | `POST /studio/copilot`、`timeline_copilot.py`、`studio_copilot.py` |
-| 精修转写面板 | 切片精修（提示词B 产物）的只读消费视图 + refined-copy.md | `refined-transcript-panel.tsx`、`GET .../refined-transcript` |
+| 精修转写面板 | 切片精修（提示词B 产物）的只读消费视图（四列：#/时间码/角色/上屏字幕，医生/患者/家属标注）+ refined-copy.md；**2026-11-09 起切片视图只保留此面板**（下方重复的转写分段列表已按用户指令删除） | `refined-transcript-panel.tsx`、`GET .../refined-transcript` |
 | 成片投递 | 发送到抖音收件箱（95 中转 → 本地拉取 → 私密上传 → 手机复核） | media.py「成片投递」路由组（2026-10-28） |
 | 管理面 | admin/feedback/计费/API Keys/知识库入库 | `admin.py`、`billing.py`、`api_keys.py`、`feedback.py`、`ingest_kb.py` |
 
@@ -82,14 +82,14 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 | 2 | 切片规划 planning（提示词A） | 连续时间区间切片、动态条数、硬性校验（时间不越界/文本忠于转写/禁词表）；拼装层背景透出主题簇四字段（提示词A 原文不动，slice-a3） | `clip_planning.py` + LLM | `tasks/plans/<job>/clip_plan.json` |
 | 3 | 切片精修 refining（提示词B b2） | 逐切片精修字幕文本 + **逐段说话人（医生/患者/家属）**，失败粒度回退不阻断；**只删不改执法（2026-11-08）**：精修句必须是语气词清理后转写的顺序保持子串，违规段整段回退原纠错转写（`reverted_segments` 留痕；全违规→整片 fallback `delete_only_violation`） | `clip_refinement.py`（clip-refine-prompt/2026-11-08-b2） + LLM | `tasks/plans/<job>/clip_refinement.json`（`clips[clip_id].segments`：`segment_id/start_ms/end_ms/refined_text/speaker`） |
 | 4 | 封面 cover | realframe_v2：真实视频帧+文字叠加（纯本地，无 AI 生图）；**黄色大字版型 v4**（#FFDD00/纯黑描边 8+6px/hook 110/0.44，注册表 2026-11-09.2）+ **角标层**（左下 48px 白字黑边 42px，文案=任务 config `cover_badge_text`，空不绘制）+ **缩略图可读线校验**（最终字号 ≥96px@1080，不过→纯色兜底底图，`cover_layout.json.readability` 留痕）；`clip_final` 前 0.8s 替换为封面片头（时长不变契约）；失败只 warning。规范全文见 `docs/cover-generation-convention.md` | `cover_realframe_v2.py`、`cover_templates.py`、`cover_replace.splice_intro`、ffmpeg | 切片目录四产物 + `cover_revision` |
-| 5 | 渲染 rendering | clip_plan 的 `start_ms/end_ms` + 指定版本纠错转写 → **本地 FFmpeg 逐条渲染**：横转竖居中裁切（608×1080→1080×1920）、H.264+AAC、SRT 时间平移、**字幕同遍烧录**（2026-10-29 固化）；源片本地硬链接不重传 | `clip_render.py`、ffmpeg（`CONTENT_RENDER_FFMPEG`） | `tasks/output/<job>/clips/<clip_id>/clip_final.mp4` + cover.jpg + ASS/SRT + warnings.json |
+| 5 | 渲染 rendering | clip_plan 的 `start_ms/end_ms` + 指定版本纠错转写 → **本地 FFmpeg 逐条渲染**：横转竖居中裁切（608×1080→1080×1920）、H.264+AAC、SRT 时间平移、**字幕同遍烧录**（2026-10-29 固化）；**烧录源=精修稿优先（2026-11-09 用户拍板）**：`source=llm` 切片按 segment_id 把烧录文本替换为 `refined_text`（语气词/无价值句已删，`clip_render._apply_refined_segments`），精修缺失/fallback 如实回退纠错转写，`warnings.json.subtitle_provenance.subtitle_source`（`clip_refinement`/`corrected_transcript`）+ `refined_segment_count` 留痕；渲染指纹含精修身份、版本 `refined-burn/1`（旧「纠错转写烧录」缓存全量失效，重新剪辑后成片字幕自动切精修稿）；源片本地硬链接不重传 | `clip_render.py`、ffmpeg（`CONTENT_RENDER_FFMPEG`） | `tasks/output/<job>/clips/<clip_id>/clip_final.mp4` + cover.jpg + ASS/SRT + warnings.json |
 | 6 | 回传/登记 | 渲染同一遍产出的字幕/封面四产物登记 artifact；卡片/台账构建 | `store.register_clips`（generation 锁，幂等） | 项目 `tasks/projects/<id>/clips.json` |
 
 **隔离与恢复**：单切片技术故障记 `technical_error` 继续其余；已存在且可解码的 `clip_final.mp4` 直接跳过（worker 重启恢复）；终态 `completed / completed_with_warnings / partial_succeeded / technical_failed`。**全程无质量拦截**（只有 warning）。
 
 ### 3.3 重新剪辑（re-edit 两阶段替换）
 
-`POST /api/jobs/re-edit` → 复用源片+已纠错转写 → 独立 staging 渲染 → **≥1 条可解码才激活** → 按激活前清单清除旧切片（两阶段回收站，`reedit_replace.py`）→ 素材区只剩新切片。注意：re-edit 渲染**没有自己的 clip_refinement**，其切片转写 seed 走纠错审计窗口裁剪兜底（见 §4.2）。
+`POST /api/jobs/re-edit` → 复用源片+已纠错转写 → 独立 staging 渲染 → **≥1 条可解码才激活** → 按激活前清单清除旧切片（两阶段回收站，`reedit_replace.py`）→ 素材区只剩新切片。re-edit 链同样**先精修再渲染**（2026-11-05 起，`clip_refinement.json` 随新 run 落盘），渲染消费精修稿契约与 §3.2 第 5 步一致（2026-11-09 起烧录源=精修稿优先）。旧切片转写 seed 走纠错审计窗口裁剪兜底（见 §4.2 第 3 级）。
 
 ### 3.4 legacy video-brain 桥（仅存量任务）
 
@@ -116,6 +116,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
   seed 时 `annotate_clip_segments` 按时间窗把 overlay 回填进未标注空位——**新项目零操作即得医患标注**（2026-11-08 起）。
 
 ### 4.3 字幕版本与烧录
+- **烧录文本来源（2026-11-09 固化）**：成片硬字幕=精修稿优先（§3.2 第 5 步）——`source=llm` 切片烧精修稿（无语气词），缺失/fallback 如实回退纠错转写；`warnings.json.subtitle_provenance.subtitle_source` 可审计。字幕编辑器人工修订（rev-NNN ASS）只对 sidecar 底片生效，burned 底片以画面为准；要换字幕文本需重新剪辑（渲染指纹 `refined-burn/1` 识别精修/转写变化）。
 - `POST /studio/clips/{p}/{c}/subtitles`：cues→overrides、`clip_config.update_config`（真变化才 bump `render_revision`，`task_history` 记 `UPDATE_SUBTITLE`），生成 `subtitles/rev-00N/{clip}.ass|.srt`。
 - `GET` 返回 cues+config+overrides+版本列表 + **`subtitles_burned_in`**（读成片 `warnings.json`：`subtitle_mode=burned`）——前端据此**关闭播放器实时叠加层防重影**（2026-11-08 修复）；叠加层只服务未烧录（Phase 2 导出）场景。时间线字幕轨不受影响。
 - 字幕合成公式与后端 ASS 生成器一致（`subtitle_compose.py`、`caption_templates.py`、`emoji_captions.py`；默认 44px 金黄 #FFD700、y_pct 78.125）。
@@ -182,7 +183,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 ## 附录 · 代码事实快照（自动生成）
 
-- 生成时间：2026-11-09 08:06 UTC · 代码版本：`a726b59` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
+- 生成时间：2026-11-09 09:40 UTC · 代码版本：`9d6193d` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
 
 ### HTTP 端点（backend/src/api/routes）
 

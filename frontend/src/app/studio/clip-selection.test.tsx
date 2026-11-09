@@ -3,7 +3,8 @@
  *
  * 用**真实页面**走完整链路（?source_id= 打开项目 → GET 台账 → 素材卡），锁四条验收：
  *   ① 每张素材卡的缩略图 = 切片视频真实第一帧（first-frame.jpg），cover 存在也不用它冒充；
- *   ② 点击哪张就播哪张：PUT active-clip（唯一 active_clip_id）+ 播放器/转写/选中态一次切换；
+ *   ② 点击哪张就播哪张：PUT active-clip（唯一 active_clip_id）+ 播放器/精修转写面板/选中态一次切换；
+ *      切片视图只保留精修文案面板，不再渲染下方转写分段列表（2026-11-09 用户指令）；
  *   ③ 切换失败（PUT 非 2xx）回滚保留原切片（播放器与转写跟着回到原切片）；
  *   ④ 刷新后恢复：台账载荷 active_clip_id 命中已有卡片时自动恢复，且不再回写 PUT；
  *      台账已不含该切片（悬空指针）时不恢复、不回写。
@@ -142,8 +143,8 @@ describe("素材卡缩略图 = 切片视频真实第一帧", () => {
   });
 });
 
-describe("点击卡片：唯一 active_clip_id + 播放器/转写一次切换", () => {
-  it("点哪张播哪张：PUT active-clip、播放器 src、转写文本与选中态一致", async () => {
+describe("点击卡片：唯一 active_clip_id + 播放器/精修转写一次切换", () => {
+  it("点哪张播哪张：PUT active-clip、播放器 src、精修面板与选中态一致", async () => {
     const { container } = mountPage();
     await waitCards(container);
     // 2026-10-29：打开项目 = 原片视图，等原片载入完成（素材区出现原始素材（1））再交互。
@@ -157,15 +158,18 @@ describe("点击卡片：唯一 active_clip_id + 播放器/转写一次切换", 
     await waitFor(() => expect(playerVideo(container)?.getAttribute("src")).toBe(playerSrc(CLIP_A)));
     expect(container.querySelectorAll(".asset-card.rendered-card.active")).toHaveLength(1);
     expect(cardOf(container, CLIP_A).classList.contains("active")).toBe(true);
-    await waitFor(() => expect(container.querySelector(".transcript-text")?.textContent).toContain("甲切片专属转写句子"));
+    // 2026-11-09 契约：切片视图只保留「切片精修文案」面板（医生/患者标注），
+    // 不再渲染下方转写分段列表（重复板块，用户指令删除）。
+    await waitFor(() => expect(container.querySelector(".refined-transcript-panel")).toBeTruthy());
+    expect(container.querySelector(".transcript-text")).toBeNull();
 
     fireEvent.click(cardOf(container, CLIP_B));
     await waitFor(() => expect(activeClipPuts).toEqual([{ clip_id: null }, { clip_id: CLIP_A }, { clip_id: CLIP_B }]));
     await waitFor(() => expect(playerVideo(container)?.getAttribute("src")).toBe(playerSrc(CLIP_B)));
     expect(cardOf(container, CLIP_B).classList.contains("active")).toBe(true);
     expect(container.querySelectorAll(".asset-card.rendered-card.active")).toHaveLength(1);
-    await waitFor(() => expect(container.querySelector(".transcript-text")?.textContent).toContain("乙切片专属转写句子"));
-    expect(container.querySelector(".transcript-text")?.textContent).not.toContain("甲切片专属转写句子");
+    expect(container.querySelector(".refined-transcript-panel")).toBeTruthy();
+    expect(container.querySelector(".transcript-text")).toBeNull();
   });
 
   it("切换失败（PUT 非 2xx）回滚保留原切片：播放器与转写回到原切片", async () => {
@@ -178,12 +182,12 @@ describe("点击卡片：唯一 active_clip_id + 播放器/转写一次切换", 
 
     activeClipStatus = 500;
     fireEvent.click(cardOf(container, CLIP_B));
-    // B 被回滚：A 仍是唯一选中切片，播放器与转写都回到 A。
+    // B 被回滚：A 仍是唯一选中切片，播放器回到 A（切片视图无分段转写列表）。
     await waitFor(() => expect(cardOf(container, CLIP_A).classList.contains("active")).toBe(true));
     expect(cardOf(container, CLIP_B).classList.contains("active")).toBe(false);
     expect(container.querySelectorAll(".asset-card.rendered-card.active")).toHaveLength(1);
     await waitFor(() => expect(playerVideo(container)?.getAttribute("src")).toBe(playerSrc(CLIP_A)));
-    expect(container.querySelector(".transcript-text")?.textContent).toContain("甲切片专属转写句子");
+    expect(container.querySelector(".transcript-text")).toBeNull();
     // 回滚是本地恢复，不再产生第二次回写（服务端仍是 A）。
     expect(activeClipPuts).toEqual([{ clip_id: null }, { clip_id: CLIP_A }, { clip_id: CLIP_B }]);
   });

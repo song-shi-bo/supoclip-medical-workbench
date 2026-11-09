@@ -16,8 +16,11 @@ SRT + 该切片规划信息（主题/钩子）→ 提示词B → 四段结构化
 
 兜底契约（2026-11-04 用户拍板）：精修失败按**切片粒度**回退原始纠错转写 +
 记 warning（source=fallback 如实标注，绝不冒充），不阻断任务。
-消费侧：成片烧录字幕**不动**（仍用原纠错转写）；本产物只供右侧面板展示与
-文案导出精修版。
+消费侧（2026-11-09 用户拍板升级）：成片烧录字幕**改用精修稿**——source=llm
+的切片，渲染层按 segment_id 把纠错分段文本替换为 refined_text 后走既有 cue
+合成层烧录（clip_render._apply_refined_segments）；精修缺失/fallback 如实回退
+纠错转写（subtitle_provenance.subtitle_source 记录实际来源）。右侧面板展示与
+文案导出精修版不变。
 """
 from __future__ import annotations
 

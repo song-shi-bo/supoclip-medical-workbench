@@ -1091,6 +1091,21 @@ def _bind_clip_covers(job: dict, job_id: str, cover_results: dict[str, dict],
             _log(f"job {job_id}（auto_edit/cover）{clip_id} 卡片绑定失败: {exc}")
 
 
+def _load_refinement_for_render(job_id: str, plan_record: dict) -> dict | None:
+    """渲染前加载精修记录（2026-11-09 烧录精修稿契约：烧录改用精修稿）。
+
+    指纹与当前计划一致才消费（计划变 → 精修必重跑，旧精修绝不入烧录）；
+    缺失/指纹不符 → None，渲染层按纠错转写如实回退（subtitle_source=
+    corrected_transcript），不阻断渲染、不冒充精修。
+    """
+    from src import clip_refinement
+    record = clip_refinement.load_refinement_record(
+        job_id, expected_fingerprint=clip_refinement.plan_fingerprint(plan_record))
+    if record is None:
+        _log(f"job {job_id} 无可用精修记录（缺失或指纹不符），烧录按纠错转写回退")
+    return record
+
+
 def _run_clip_render_stage(job: dict, job_id: str, transcript: dict,
                            plan_record: dict) -> None:
     """第五步（2026-10-14）：clip_plan → 本地 FFmpeg 渲染，生成多个视频成品。
@@ -1099,6 +1114,8 @@ def _run_clip_render_stage(job: dict, job_id: str, transcript: dict,
       指定版本纠错转写 + rule_snapshot_id；源片本地硬链接（不重新上传/下载）；
     * 每条切片独立渲染、独立隔离：真实技术故障记 technical_error 并继续其余；
     * 幂等：已存在且可解码的 clip_final.mp4 直接跳过（worker 重启恢复）；
+    * 烧录源（2026-11-09 用户拍板）：该切片精修 source=llm 时烧录精修稿
+      （已删语气词/无价值句），缺失/fallback 如实回退纠错转写；
     * 封面固化（2026-10-18）：每条切片发布前自动生成 realframe_v2 封面
       （真实视频帧+文字叠加，无 AI 图片生成）并把 clip_final 前 0.8s 替换为
       封面片头；四产物随切片登记 artifact、卡片 cover 字段绑定；封面失败
@@ -1126,6 +1143,7 @@ def _run_clip_render_stage(job: dict, job_id: str, transcript: dict,
                         "transcript_version": transcript.get("transcript_version")},
         rule_snapshot_id=plan_record.get("rule_snapshot_id") or _rule_snapshot_id(),
         progress=_progress,
+        refinement=_load_refinement_for_render(job_id, plan_record),
     )
 
     # 封面固化（2026-10-18）：每条切片发布前自动生成 realframe_v2 封面并替换片头，
@@ -1231,6 +1249,7 @@ def _run_reedit_replace(job: dict, job_id: str, transcript: dict) -> None:
         plan_record = _run_clip_planning_stage(job, job_id, transcript, analysis_record)
 
     # 两步制（2026-11-05）：重新剪辑同样先精修再渲染（产物随新计划落盘）。
+    # 烧录源（2026-11-09）：渲染同样消费精修稿，缺失/fallback 如实回退。
     _run_clip_refinement_stage(job, job_id, transcript, plan_record)
 
     _persist_workflow_snapshot(job,plan_record)
@@ -1242,6 +1261,7 @@ def _run_reedit_replace(job: dict, job_id: str, transcript: dict) -> None:
         transcript_ref={"transcript_id": transcript.get("transcript_id"),
                         "transcript_version": transcript.get("transcript_version")},
         rule_snapshot_id=plan_record.get("rule_snapshot_id") or _rule_snapshot_id(),
+        refinement=_load_refinement_for_render(job_id, plan_record),
         progress=lambda message: _state(job_id, "rendering", message, 0.6),
     )
 

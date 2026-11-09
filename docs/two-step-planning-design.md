@@ -12,7 +12,7 @@
 
 | 决策点 | 结论 |
 |---|---|
-| 精修产物用途 | **右侧展示 + 文案导出**；成片烧录字幕暂不动（仍用原纠错转写） |
+| 精修产物用途 | **烧录字幕（2026-11-09 升级：精修稿优先）+ 右侧展示 + 文案导出**（初版「烧录不动」已被用户 2026-11-09 拍板推翻） |
 | 精修执行时机 | **规划完成后立即逐条精修**，产物随规划一起落盘，一次任务内完成 |
 | 精修失败兜底 | **回退原始纠错转写 + 记 warning**，不阻断任务（与现有规划哲学一致） |
 | 第一步定位 | **完全替换现有 `_PLAN_SYSTEM_PROMPT`**，旧提示词退役 |
@@ -36,11 +36,17 @@
     ↓
 plan_ready（诊断停点后移到两步都完成之后）
     ↓
-渲染 clip_render                              ← 不动（烧录字幕仍用原纠错转写）
+渲染 clip_render                              ← 2026-11-09 起消费精修稿：
+  source=llm 切片按 segment_id 把烧录文本替换为 refined_text
+  （clip_render._apply_refined_segments），缺失/fallback 如实回退纠错转写
 ```
 
 消费侧：
-- 工作台切片预览右侧面板显示精修转写（前端改造，读新 artifact 的 API）
+- **成片烧录字幕（2026-11-09 用户拍板）**：精修稿优先烧录——成片字幕无语气词；
+  回退时 subtitle_provenance.subtitle_source=corrected_transcript 如实标注；
+  渲染指纹含精修身份（版本 refined-burn/1），重新剪辑后旧字幕自动重渲
+- 工作台切片预览右侧面板显示精修转写（前端改造，读新 artifact 的 API）；
+  2026-11-09 起切片视图只保留该面板，下方重复的转写分段列表已按用户指令删除
 - 文案导出（如 切片01_文案.md）出精修版
 
 ## 防混机制（硬要求）
@@ -110,7 +116,7 @@ plan_ready（诊断停点后移到两步都完成之后）
 ### 实施注意（给后续窗口）
 
 - ~~A 原文「约 29 分钟」未泛化~~ 已泛化（2026-11-05 用户确认是示例）：归档件与 `_PLAN_SYSTEM_PROMPT` 同步改为「视频实际时长以输入说明为准」；拼装层用户提示继续给出实际时长（`视频实际时长 HH:MM:SS（约 N 分钟）`）。
-- 第二步**不参与**烧录字幕：render 仍用原纠错转写（subtitle-burn-convention 不受影响）；精修产物仅供右侧面板（待实施）与文案导出消费。
+- ~~第二步不参与烧录字幕~~ **已推翻（2026-11-09 用户拍板）**：render 消费精修稿——source=llm 切片按 segment_id 替换烧录文本，缺失/fallback 如实回退纠错转写并经 subtitle_provenance.subtitle_source 如实标注；见 docs/subtitle-burn-convention.md §0。
 - 弃用类型约定：提示词A弃用段程序记录 type=弃用；与已选切片重叠的矛盾弃用被剔除；缺口补齐 type=未覆盖（全覆盖契约）。
 - 旧分层窗口机制（hierarchical_planning 拆窗、mixed 来源、_PlanOut schema）已随第一步退役；hierarchical_planning.py 模块文件保留未动（hp.HELPER_VERSION 仍进 provenance）。
 
