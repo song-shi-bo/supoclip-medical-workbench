@@ -130,12 +130,17 @@ def update_doc(check: bool = False) -> int:
         new_text = pre + snapshot + post
     else:
         new_text = text.rstrip() + "\n\n" + snapshot + "\n"
-    if _normalize(new_text) == _normalize(text):
-        print("doc snapshot up-to-date")
-        return 0
     if check:
+        # 漂移检测：归一化易变字段（生成时间/HEAD）后比较——CI 与本机环境无关
+        if _normalize(new_text) == _normalize(text):
+            print("doc snapshot up-to-date")
+            return 0
         print("doc snapshot STALE — 运行 python3 docs/generate_workbench_doc.py 更新", file=sys.stderr)
         return 1
+    # 就地更新：按原文精确比较，连「代码版本」哈希/时间戳也保持新鲜
+    if new_text == text:
+        print("doc snapshot up-to-date")
+        return 0
     DOC.write_text(new_text, encoding="utf-8")
     print(f"doc snapshot updated: {DOC}")
     return 0
