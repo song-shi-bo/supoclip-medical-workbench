@@ -173,6 +173,8 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 - **事实快照自动生成**：文末「附录 · 代码事实快照」由 `docs/generate_workbench_doc.py` 扫描代码生成（端点、worker 阶段、服务、Inspector 标签、git 版本），手写内容永不改动。
 - **推送即刷新**：本仓库启用了 `core.hooksPath=.githooks`，`git push` 前 pre-push 钩子自动重新生成快照，有变化就先提交再推——远端文档永远与代码一致。
 - **漂移检测**：`backend/tests/unit/test_doc_workbench_snapshot.py` 在跑后端测试时校验快照是否过期，过期即红，提示执行 `python3 docs/generate_workbench_doc.py`。
+- **CI 服务端校验（2026-11-08 起）**：`.github/workflows/doc-snapshot-check.yml` 在每次 push(main)/PR 时跑 `--check`，过期即红；GitHub Actions 页手动触发可勾选 autofix 自动修正并提交回分支。配合分支保护规则可作合并硬门禁。
+- **跨窗口维护约定（2026-11-08 起）**：本快照记录「代码版本」；新窗口/新会话执行 `git log <该版本>..HEAD --oneline` 即可列出未覆盖的改动，据此更新叙述章节（维护规则已写入 AGENTS.md / CLAUDE.md）。
 - **手动更新**：改完代码跑一次 `python3 docs/generate_workbench_doc.py` 即可。
 - 叙述性内容（流程讲解/原因）仍建议在改动较大时让 DSH 助手按 diff 重写对应章节。
 
