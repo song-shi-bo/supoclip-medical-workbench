@@ -165,3 +165,57 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 - `docs/clear-project-data.md` — 项目数据清理
 - `CLAUDE.md` / `AGENTS.md` — 仓库级开发约定（注意：其「video-brain 是唯一管线」的描述已被 staged 本地链取代，以本文与代码为准）
 - `DSH_STARTUP.md` — 本容器端口/工具/截图目录等运行事实
+
+---
+
+## 7. 本文档的维护方式（自动更新）
+
+- **事实快照自动生成**：文末「附录 · 代码事实快照」由 `docs/generate_workbench_doc.py` 扫描代码生成（端点、worker 阶段、服务、Inspector 标签、video-brain 模块、git 版本），手写内容永不改动。
+- **推送即刷新**：本仓库启用了 `core.hooksPath=.githooks`，`git push` 前 pre-push 钩子自动重新生成快照，有变化就先提交再推——远端文档永远与代码一致。
+- **漂移检测**：`backend/tests/unit/test_doc_workbench_snapshot.py` 在跑后端测试时校验快照是否过期，过期即红，提示执行 `python3 docs/generate_workbench_doc.py`。
+- **手动更新**：改完代码跑一次 `python3 docs/generate_workbench_doc.py` 即可。
+- 叙述性内容（流程讲解/原因）仍建议在改动较大时让 DSH 助手按 diff 重写对应章节。
+
+<!-- BEGIN:AUTO-SNAPSHOT（本区块由 docs/generate_workbench_doc.py 生成，勿手改） -->
+
+## 附录 · 代码事实快照（自动生成）
+
+- 生成时间：2026-11-09 01:13 UTC · 代码版本：`a4aaa64` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
+
+### HTTP 端点（backend/src/api/routes）
+
+- `admin.py`（2）：`GET /health`、`GET /runtime-settings`
+- `api_keys.py`（3）：`GET /`、`POST /`、`DELETE /{key_id}`
+- `billing.py`（1）：`POST /subscription-email`
+- `feedback.py`（1）：`POST /feedback`
+- `ingest_kb.py`（4）：`POST /ingest/hot-topics`、`POST /ingest/scripts`、`GET /kb/search`、`POST /kb/scripts/{script_id}/confirm`
+- `jobs.py`（16）：`GET /uploads/capabilities`、`POST /uploads`、`POST /uploads/{session_id}/complete`、`POST /jobs/transcribe`、`POST /jobs/auto-edit`、`POST /jobs/re-edit`、`GET /jobs/{job_id}`、`POST /jobs/{job_id}/retry`、`POST /jobs/{job_id}/cancel`、`GET /jobs/{job_id}/artifacts/{artifact_id}/file`、`POST /internal/heartbeat`、`POST /internal/jobs/claim`、`POST /internal/jobs/{job_id}/state`、`POST /internal/jobs/{job_id}/artifacts`、`GET /internal/jobs/{job_id}/artifacts`、`POST /internal/jobs/{job_id}/activate`
+- `media.py`（99）：`GET /fonts`、`GET /fonts/{font_name}`、`POST /fonts/upload`、`DELETE /fonts/{font_name}`、`GET /transitions`、`GET /caption-templates`、`GET /broll/status`、`POST /studio/transcribe`、`POST /studio/transcribe/start`、`GET /studio/transcribe/chunks/{upload_id}`、`POST /studio/transcribe/chunk`、`POST /studio/transcribe/assemble`、`GET /studio/transcribe/jobs/{job_id}`、`POST /studio/insights`、`POST /studio/auto-edit`、`GET /studio/auto-edit/{task_id}`、`POST /studio/auto-edit/{task_id}/rerender`、`GET /studio/auto-edit/{task_id}/artifact`、`POST /studio/auto-edit/{task_id}/clips/{clip_id}/cover`、`POST /studio/auto-edit/{task_id}/clips/{clip_id}/cover-template/apply`、`POST /studio/auto-edit/{task_id}/clips/{clip_id}/cover-template/delete`、`POST /studio/auto-edit/{task_id}/clips/{clip_id}/cover/adopt`、`POST /studio/auto-edit/{task_id}/clips/{clip_id}/cover/restore`、`GET /studio/auto-edit/{task_id}/clips/{clip_id}/cover`、`GET /studio/auto-edit/{task_id}/covers`、`PUT /studio/auto-edit/{task_id}/clips/{clip_id}/transform`、`GET /studio/auto-edit/{task_id}/clips/{clip_id}/refined-transcript`、`GET /studio/auto-edit/{task_id}/clips/{clip_id}/refined-copy.md`、`GET /studio/auto-edit/{task_id}/clips/{clip_id}/export-transformed`、`GET /studio/timeline/{project_id}`、`PUT /studio/timeline/{project_id}`、`GET /studio/timeline/{project_id}/preview`、`POST /studio/timeline/{project_id}/preview`、`GET /studio/timeline/{project_id}/source`、`GET /studio/timeline/{project_id}/view`、`PUT /studio/timeline/{project_id}/view`、`GET /studio/timeline/{project_id}/history`、`POST /studio/timeline/{project_id}/undo`、`POST /studio/timeline/{project_id}/redo`、`POST /studio/timeline/{project_id}/revision`、`POST /studio/timeline/{project_id}/tracks`、`DELETE /studio/timeline/{project_id}/tracks/{track_id}`、`GET /studio/timeline/{project_id}/assets/peaks`、`POST /studio/timeline/{project_id}/assets/audio`、`POST /studio/copilot`、`GET /studio/copilot/history`、`POST /studio/copilot/action-result`、`GET /studio/projects/{project_id}/clips`、`POST /studio/projects/{project_id}/sync`、`GET /studio/projects/{project_id}/data`、`POST /studio/projects/{project_id}/data/clear`、`POST /studio/projects/{project_id}/clips/{clip_id}/tasks`、`GET /studio/tasks/{task_id}`、`GET /studio/projects/{project_id}/tasks`、`GET /studio/projects/{project_id}/clips/{clip_id}/cover-history`、`POST /studio/projects/{project_id}/clips/{clip_id}/cover/undo`、`POST /studio/projects/{project_id}/clips/{clip_id}/cover/activate`、`DELETE /studio/projects/{project_id}/clips/{clip_id}/cover/revisions/{revision}`、`GET /studio/workflow`、`GET /studio/workflow/{task_id}/snapshot`、`POST /studio/workflow/skills/{skill_id}/toggle`、`POST /studio/workflow/regenerate/{project_id}/{clip_id}`、`GET /studio/clips/{project_id}/{clip_id}/config`、`PUT /studio/clips/{project_id}/{clip_id}/config`、`GET /studio/clips/{project_id}/{clip_id}/transcript/revisions`、`POST /studio/clips/{project_id}/{clip_id}/transcript/revisions`、`POST /studio/clips/{project_id}/{clip_id}/transcript/rollback`、`GET /studio/clips/{project_id}/{clip_id}/subtitles`、`POST /studio/clips/{project_id}/{clip_id}/subtitles`、`POST /studio/clips/{project_id}/{clip_id}/audio/bgm`、`DELETE /studio/clips/{project_id}/{clip_id}/audio/bgm/{asset_id}`、`GET /studio/clips/{project_id}/{clip_id}/render-config`、`POST /studio/projects/{project_id}/reedit/{run_id}/retry-cleanup`、`GET /studio/projects/{project_id}/transcript-ref`、`PUT /studio/projects/{project_id}/clips/{clip_id}/timeline-image`、`DELETE /studio/projects/{project_id}/clips/{clip_id}/timeline-image`、`GET /studio/tasks/{task_id}/project`、`GET /studio/projects`、`GET /studio/projects/list`、`GET /studio/projects/{project_id}/thumbnail.jpg`、`GET /studio/projects/{project_id}/clips/{clip_id}/first-frame.jpg`、`POST /studio/projects/{project_id}/archive`、`POST /studio/projects/{project_id}/restore`、`GET /studio/projects/{project_id}/delete/preview`、`POST /studio/projects/{project_id}/delete`、`GET /studio/projects/{project_id}/name`、`PUT /studio/projects/{project_id}/active-clip`、`GET /studio/cover-templates`、`GET /studio/cover-templates/{template_id}/example.svg`、`PUT /studio/projects/{project_id}/clips/{clip_id}/cover-template`、`POST /studio/cover-templates/{template_id}/mock-result`、`GET /studio/projects/{project_id}/cover-assets`、`GET /studio/projects/{project_id}/delete/status`、`POST /studio/projects/{project_id}/delete/retry`、`GET /studio/projects/{project_id}/exports`、`POST /studio/projects/{project_id}/clips/{clip_id}/deliver`、`POST /studio/projects/{project_id}/clips/deliver-batch`、`GET /studio/projects/{project_id}/glossary`、`PUT /studio/projects/{project_id}/glossary`
+
+### worker 任务阶段（studio_job_worker.py）
+
+- `run_transcribe_only`——TRANSCRIBE_ONLY：提取音轨 → 转写 → 纠错 → transcript_ready（终态）
+- `_run_id`——
+- `_run_content_analysis_stage`——第三步（2026-10-14）：AUTO_EDIT 的模型内容分析阶段
+- `_run_clip_planning_stage`——第四步（2026-10-14）：完整内容切片规划——产出 clip_plan.json
+- `_run_clip_refinement_stage`——第四步半（2026-11-05 两步制）：切片精修——clip_refinement.json
+- `_run_clip_cover_stage`——每条切片发布前的固化封面步骤（realframe_v2：真实帧+文字叠加，纯本地）
+- `_run_clip_render_stage`——第五步（2026-10-14）：clip_plan → 本地 FFmpeg 渲染，生成多个视频成品
+- `_run_reedit_replace`——重新剪辑并替换旧切片（2026-10-15，replacement_mode=delete_old_after_succ
+- `run_auto_edit_only`——AUTO_EDIT：读取既有纠错转写 → 分析 → 规划 → 渲染（第五步正式链）
+- `run_legacy_full`——legacy 全链（config 无 job_kind 的存量/重试任务）：行为与拆分前完全一致
+- `run_isolated_job`——
+
+### supervisor 托管服务
+
+`postgres`、`redis`、`frontend`、`backend`、`autoedit`、`worker`
+
+### Inspector 标签
+
+转写(transcript)、封面(cover)、效果(effects)
+
+### video-brain 模块（legacy 桥）
+
+`asr`、`correct`、`cover`、`cover_layout`、`doctor_profiles`、`kb_context`、`knowledge`、`llm`、`main`、`media`、`medical_terms`、`member_rules`、`pipeline`、`planner`、`planning_prompt`、`preflight`、`qc`、`reframe`、`render`、`rules`、`schemas`、`store`、`subtitles`、`tasks`
+
+<!-- END:AUTO-SNAPSHOT -->
