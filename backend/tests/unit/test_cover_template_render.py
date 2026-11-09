@@ -39,7 +39,7 @@ TEMPLATE_IDS = ["cute", "cool", "anime_layout", "yellow_bold"]
 # ---------------------------------------------------------------------------
 
 def test_layout_contract_present_for_all_templates():
-    assert registry.REGISTRY_VERSION == "2026-10-22.1"
+    assert registry.REGISTRY_VERSION == "2026-11-09.2"
     for template_id in TEMPLATE_IDS:
         spec = registry.template_render_spec(template_id)
         assert spec["template_id"] == template_id

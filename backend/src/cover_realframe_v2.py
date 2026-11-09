@@ -828,11 +828,14 @@ def _template_text_block_rect(layout: dict[str, Any]) -> list[int]:
 
 
 def _draw_template_decor(image: "Image.Image", layout: dict[str, Any]) -> "Image.Image":
-    """模板装饰（确定性、无模型）：暗幕 → 气泡 → 文字块面板 → 强调条（RGBA 合成）。"""
+    """模板装饰（确定性、无模型）：暗幕 → 气泡 → 文字块面板 → 强调条 → 角标（RGBA 合成）。"""
     from PIL import Image, ImageDraw, ImageFont
 
     decor = ((layout.get("template") or {}).get("decor")) or {}
-    if not any(decor.get(key) for key in {"scrim", "bubbles", "panel", "accent_bar"}):
+    badge_text = str(layout.get("corner_badge_text") or "").strip()
+    badge_style = decor.get("corner_badge") if badge_text else None
+    if not any(decor.get(key) for key in {"scrim", "bubbles", "panel", "accent_bar"}) \
+            and not badge_style:
         return image
     width, height = image.size
     font_path = str(layout["font"]["path"])
@@ -881,6 +884,17 @@ def _draw_template_decor(image: "Image.Image", layout: dict[str, Any]) -> "Image
         color = tuple(int(c) for c in (bar.get("color") or [220, 38, 38])) + (255,)
         draw.rectangle([center_x - bar_width // 2, block[3] + 12,
                         center_x + bar_width // 2, block[3] + 12 + bar_height], fill=color)
+
+    # 角标（封面生成规范 §5）：左下角，margin 内白字黑边，账号名/系列标签位。
+    if badge_style and badge_text:
+        size = max(12, int(badge_style.get("font_size") or 42))
+        margin = max(8, int(badge_style.get("margin") or 48))
+        badge_font = ImageFont.truetype(font_path, size)
+        draw.text((margin, height - margin), badge_text, font=badge_font,
+                  fill=str(badge_style.get("color") or "#FFFFFF"),
+                  stroke_width=max(0, int(badge_style.get("stroke_width") or 3)),
+                  stroke_fill=str(badge_style.get("stroke_color") or "#000000"),
+                  anchor="ls")
 
     return Image.alpha_composite(image.convert("RGBA"), overlay).convert("RGB")
 
@@ -1210,7 +1224,8 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
                 llm_fn: CopyLlmFn | None = None,
                 copy_override: dict[str, Any] | None = None,
                 force: bool = False,
-                template: dict[str, Any] | None = None) -> dict[str, Any]:
+                template: dict[str, Any] | None = None,
+                corner_badge_text: str | None = None) -> dict[str, Any]:
     """生成 realframe_v2 封面四产物；同键幂等返回缓存，重制 = revision+1。
 
     ``copy_override``：显式文案（重新制作封面/改标题场景），形如
@@ -1313,6 +1328,29 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
                                "verified_chars": font_report["verified_chars"]})
         if template:
             apply_template_layout(layout, template)
+        # 角标文案（封面生成规范 §5）：任务 config / 重制请求传入，空则角标不绘制。
+        layout["corner_badge_text"] = str(corner_badge_text or "").strip()
+
+        # 缩略图可读线（封面生成规范 §6-2，2026-11-09 首期校准）：规范初值
+        # 34px@375 等价于 1080 宽画布 ≥98px，与字号规范下限 96~110px 的 96 档
+        # 自相矛盾（96px=33.3px@375，差 0.7px，实测正常排版即触发兜底）。校准为
+        # **与字号下限对齐**：最终字号 ≥96px@1080（=33.3px@375）即达标；不过 →
+        # 纯色兜底底图（深墨）重写 cover-base，排版/角标照常，记 warning 不拦截
+        # 主链（失败只 warning 哲学）。
+        cover_warnings: list[str] = []
+        final_font_1080 = int(layout["hook"]["font_size"])
+        effective_375 = final_font_1080 * 375.0 / float(COVER_WIDTH)
+        readability_ok = final_font_1080 >= 96
+        layout["readability"] = {"final_font_1080_px": final_font_1080,
+                                 "effective_375_px": round(effective_375, 1),
+                                 "min_font_1080_px": 96, "ok": readability_ok}
+        if not readability_ok:
+            from PIL import Image as _PILImage
+            _PILImage.new("RGB", (COVER_WIDTH, COVER_HEIGHT),
+                          (17, 24, 39)).save(str(cover_base))
+            cover_warnings.append(
+                f"缩略图可读性不足（最终字号 {final_font_1080}px < 96px@1080，"
+                f"合 {effective_375:.1f}px@375），封面底图走纯色兜底模板")
 
         # 产物先落在**与目标同盘**的临时目录（系统 tmp 与 tasks 常跨设备，
         # os.replace 会 EXDEV），全部成功后才发布（失败保旧）；候选帧仍走系统 tmp。
@@ -1375,6 +1413,7 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
         "copy_source": copy_meta.get("source"),
         "retired_previous": retirement,
         "intro_clip_final_sha256": None,
+        "warnings": cover_warnings,
     }
     ledger["current_revision"] = revision
     ledger.setdefault("entries", {})[str(revision)] = entry
@@ -1402,6 +1441,7 @@ def _result_from_entry(out_dir: Path, entry: dict[str, Any], *, cached: bool,
                             "bytes": (products.get(name) or {}).get("bytes")}
                      for name in PRODUCT_NAMES},
         "cover_copy": entry.get("final_copy") or {},
+        "warnings": list(entry.get("warnings") or []),
         "frame_time_rel_s": entry.get("frame_time_rel_s"),
         "no_face": entry.get("no_face"),
         "copy_source": entry.get("copy_source"),

@@ -1014,7 +1014,8 @@ def _run_clip_cover_stage(job: dict, job_id: str, plan_record: dict, transcript:
                                                start_ms, end_ms),
                 out_dir=base, analysis_keywords=keywords,
                 topic_hint=str(clip.get("topic") or "") or None, job_id=job_id,
-                llm_fn=llm_fn)
+                llm_fn=llm_fn,
+                corner_badge_text=str((job.get("config") or {}).get("cover_badge_text") or "") or None)
         except Exception as exc:  # noqa: BLE001 — 封面失败不是切片失败
             aggregate.setdefault("warnings", []).append(
                 f"封面生成失败（{clip_id}，切片照常发布）: {type(exc).__name__}: {exc}"[:200])

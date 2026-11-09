@@ -845,6 +845,7 @@ def _render_cover_realframe(task_id: str, clip_id: str, clip_dir: Path,
         clip_start_ms=0, clip_end_ms=max(1, duration_ms), segments=[],
         out_dir=clip_dir, analysis_keywords=keywords, topic_hint=topic_hint,
         copy_override=override, force=True,
+        corner_badge_text=str((cover_copy_override or {}).get("corner_badge_text") or "") or None,
     )
     layout_path = clip_dir / COVER_LAYOUT_FILENAME
     cover_copy = result.get("cover_copy") or {}
@@ -900,6 +901,7 @@ def _render_cover_template(task_id: str, clip_id: str, clip_dir: Path,
         clip_start_ms=0, clip_end_ms=max(1, duration_ms), segments=[],
         out_dir=clip_dir, analysis_keywords=keywords, topic_hint=topic_hint,
         copy_override=override, force=True, template=spec,
+        corner_badge_text=str((cover_copy_override or {}).get("corner_badge_text") or "") or None,
     )
     layout_path = clip_dir / COVER_LAYOUT_FILENAME
     cover_copy = result.get("cover_copy") or {}

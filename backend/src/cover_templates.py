@@ -40,7 +40,11 @@ TEMPLATE_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 #:     标签明显小于主标题（新增 hook.start_size）；可爱版标题改深棕配奶油卡片、标签
 #:     珊瑚粉；酷炫版收敛为「白 + 青」两种文字色；动漫版主标题改框内深色粗体；
 #:     人脸避让区扩到 0.72 覆盖嘴部（渲染层）。
-REGISTRY_VERSION = "2026-10-22.1"
+#: .2（2026-11-09）：封面生成规范固化为版型——黄色大字升 v4：核心识别色
+#:     #FDE047→#FFDD00、描边改纯黑（hook 10→8px、theme 4→6px，规范 6~8px 区间）、
+#:     主钩子起始档 112→110；新增角标层契约 corner_badge（左下 margin 48px、白字
+#:     黑边 42px，文案由 config cover_badge_text 传入，空则不绘制）。
+REGISTRY_VERSION = "2026-11-09.2"
 
 
 class CoverTemplateError(ValueError):
@@ -92,7 +96,7 @@ COVER_TEMPLATES: tuple[CoverTemplate, ...] = (
     CoverTemplate(
         template_id="yellow_bold",
         name="黄色大字",
-        version="3",
+        version="4",
         example_path="/studio/cover-templates/yellow_bold/example.svg",
         description="亮黄粗体大字压屏，信息一眼可读，适合知识点罗列。",
         sort=4,
@@ -148,14 +152,21 @@ _TEMPLATE_LAYOUTS: dict[str, dict[str, Any]] = {
                   "outline": {"color": [17, 24, 39], "width": 6}},
         "accent_bar": {"color": [220, 38, 38], "height": 12, "width_ratio": 0.40},
     },
-    # 黄色大字：局部半透明暗底只在文字背后（原中部整幅压暗取消）；主标题区下移到
-    # 中下部（0.44）、起始档 112 尽量吃满安全画幅 80%（自动缩宽兜底）；标签 54 明显小。
+    # 黄色大字 v4（2026-11-09 封面生成规范固化为版型常量）：局部半透明暗底只在
+    # 文字背后（保留，浅背景可读双保险）；主标题区中下部（0.44）；主钩子起始档
+    # 110 尽量吃满安全画幅 80%（自动缩宽兜底）、标签 54 明显小；核心识别色
+    # #FFDD00、描边改纯黑（主钩子 8px/标签 6px，规范 6~8px 区间）；角标层
+    # 左下角（margin 48px、白字黑边 42px），文案由任务/重制请求传入（config
+    # cover_badge_text），为空不绘制。
     "yellow_bold": {
-        "theme": {"color": "#FDE047", "stroke_color": "#111827", "stroke_width": 4,
+        "theme": {"color": "#FFDD00", "stroke_color": "#000000", "stroke_width": 6,
                   "start_size": 54, "top_ratio": 0.44},
-        "hook": {"color": "#FDE047", "stroke_color": "#111827", "stroke_width": 10,
-                 "start_size": 112},
+        "hook": {"color": "#FFDD00", "stroke_color": "#000000", "stroke_width": 8,
+                 "start_size": 110},
         "panel": {"fill": [17, 24, 39], "opacity": 150, "radius": 22, "pad": 36},
+        "corner_badge": {"anchor": "bottom_left", "margin": 48, "font_size": 42,
+                         "color": "#FFFFFF", "stroke_color": "#000000",
+                         "stroke_width": 3},
     },
 }
 
