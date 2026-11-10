@@ -122,6 +122,11 @@ COPY_FORBIDDEN_TERMS = ("健康科普", "专家提醒", "震惊", "必看", "转
 # 运动模糊降权阈值（Laplacian 方差经验值：低于它视为疑似运动模糊）
 MOTION_BLUR_VARIANCE = 60.0
 
+# 候选帧缩略图（2026-11-09 P3「换一帧」）：工作台候选条消费的侧目录产物。
+COVER_FRAMES_DIRNAME = "cover_frames"
+FRAME_THUMBNAIL_COUNT = 8
+FRAME_THUMBNAIL_WIDTH = 270
+
 # 选帧亮度/居中（2026-11-09 P1：偏暗开场帧常胜出、用户样张偏暗的事故修正项）
 BRIGHTNESS_OK_RANGE = (90.0, 200.0)        # 灰度均值落此区间 → 亮度满分 2.0
 BRIGHTNESS_PARTIAL_RANGE = (60.0, 230.0)   # 部分分区间（1.0），之外 0 分
@@ -422,6 +427,8 @@ def copy_system_prompt() -> str:
         "禁止虚构诊断、药物名称、具体数字、疗效承诺与恐吓表述。"
         "给出【本条切片主题】时，topic 与 hook 必须概括该主题（优先从主题词与钩子原话提炼），"
         "不得用全篇通用提醒或与主题无关的单句细节代替。"
+        "hook 不得复述 topic 的字面（topic 已表达的词组不要在 hook 里原样再说一遍），"
+        "要补充新信息、动作或悬念。"
     )
 
 
@@ -719,14 +726,20 @@ def select_copy_candidate(candidates: list[dict[str, Any]], segments: list[dict[
         evidence = sum(1 for sid in candidate.get("segment_ids") or [] if sid in segment_ids)
         grounded = 1 if text and all(char in text for char in combined if "\u4e00" <= char <= "\u9fff") else 0
         length_ok = 1 if 2 <= _cjk_len(str(candidate.get("topic"))) <= TOPIC_MAX_CHARS else 0
+        # 复述惩罚（2026-11-09 P2 真机实证「基因检测目的/做基因检测的目的」）：
+        # topic ≥3 字且被 hook 原样包含 → hook 在复述 topic，扣 2 分。
+        topic_cjk = "".join(ch for ch in str(candidate.get("topic") or "") if "\u4e00" <= ch <= "\u9fff")
+        hook_cjk = "".join(ch for ch in str(candidate.get("hook") or "") if "\u4e00" <= ch <= "\u9fff")
+        echo_penalty = 2.0 if len(topic_cjk) >= 3 and topic_cjk in hook_cjk else 0.0
         return (topic_overlap * 3.0 + hookquote_overlap * 2.0 + float(overlap) * 2.0
-                + grounded + evidence * 0.5 + length_ok, 0)
+                + grounded + evidence * 0.5 + length_ok - echo_penalty, 0)
 
     scored = [(score(candidate), index, candidate) for index, candidate in enumerate(candidates)]
     best_score, best_index, best = max(scored, key=lambda item: (item[0], -item[1]))
     report = {
         "rule": "主题title覆盖率×3 + 钩子原话命中×2 + 关键词重合×2 + 忠于转写"
-                "+ 证据可回放×0.5 + 长度合规；平局取第一组（2026-11-09 主题对齐版）",
+                "+ 证据可回放×0.5 + 长度合规 - hook复述topic×2；平局取第一组"
+                "（2026-11-09 主题对齐版）",
         "scores": [{"index": index, "topic": candidate.get("topic"),
                     "hook": candidate.get("hook"), "score": round(float(value[0]), 3)}
                    for value, index, candidate in scored],
@@ -823,13 +836,39 @@ def resolve_cjk_font(text: str) -> tuple[Any, dict[str, Any]]:
 
 
 def _wrap_hook_lines(hook: str, font: Any, max_width: int) -> list[str]:
-    """把钩子按像素宽度贪心换行（≤2 行；超宽自动缩字号由调用方循环控制）。
+    """把钩子换成 ≤2 行（超宽自动缩字号由调用方循环控制），**均衡断行**。
 
-    两行封顶时剩余文本**并入第二行**（宁可行宽超了让调用方缩字号，绝不静默截断——
-    旧实现把余量追加成第三行再切掉，钩子结尾会丢字，长文案实测丢「解读」二字）。
+    2026-11-09 P2（真机实证「做基因检测的目/的」孤字）：贪心断行会留下单字孤行。
+    新规则（确定性）：
+    1. 单行放得下 → 单行；
+    2. 钩子含空格/分隔标点且靠近中点（±3 字）→ 在分隔符处断（样张「血糖高 多吃
+       这几种食物」的两段式天然对应）；
+    3. 否则中点均衡断（k=ceil(n/2)）；
+    4. 均衡行仍超宽 → 贪心兜底（剩余并入第二行，宁超宽缩字号绝不丢字——旧行为）。
     """
     from PIL import ImageFont
 
+    hook = str(hook or "")
+    if not hook:
+        return []
+    if font.getlength(hook) <= max_width:
+        return [hook]
+    n = len(hook)
+    middle = (n + 1) // 2
+    separators = [index for index, char in enumerate(hook[1:], start=1)
+                  if char.isspace() or _is_punct(char)]
+    if separators:
+        near = min(separators, key=lambda index: abs(index - middle))
+        if abs(near - middle) <= 3:
+            first, second = hook[:near].strip(), hook[near:].strip()
+            if first and second and max(font.getlength(first), font.getlength(second)) <= max_width:
+                return [first, second]
+    k = middle
+    first, second = hook[:k], hook[k:]
+    if (len(second) >= 2 and font.getlength(first) <= max_width
+            and font.getlength(second) <= max_width):
+        return [first, second]
+    # 贪心兜底（旧行为）：两行上限，剩余原样并入第二行
     lines: list[str] = []
     current = ""
     for char in hook:
@@ -1388,6 +1427,53 @@ def intro_already_applied(out_dir: Path, clip_final: Path) -> bool:
 # 主入口
 # ---------------------------------------------------------------------------
 
+def publish_frame_thumbnails(out_dir: Path, scored: list[dict[str, Any]], chosen: dict[str, Any],
+                             timeline: str) -> dict[str, Any]:
+    """候选帧缩略图落盘到 ``out_dir/cover_frames/``（**侧目录**：非四产物、不进
+    回收站、不登记 artifact），供工作台「换一帧」候选条与 frame-candidates
+    接口消费；每次封面成功后整体重写。
+
+    ``timeline``：帧时刻的时间线语义——worker 链 = ``clip_window``（切片窗），
+    手动重制链 = ``clip_final``（成片含 0.8s 片头）。前端只消费一种时间线的
+    清单（cover_replace.read_frame_candidates 会对旧时间线清单懒重建）。
+    """
+    import shutil
+    import cv2
+
+    frames_dir = Path(out_dir) / COVER_FRAMES_DIRNAME
+    shutil.rmtree(frames_dir, ignore_errors=True)
+    frames_dir.mkdir(parents=True)
+    ranked = sorted(scored, key=lambda item: (-float(item["score"]), int(item["index"])))[:FRAME_THUMBNAIL_COUNT]
+    chosen_index = int(chosen.get("index"))
+    entries: list[dict[str, Any]] = []
+    for order, item in enumerate(ranked):
+        image = cv2.imread(str(item.get("path") or ""))
+        if image is None:                            # 解码失败的候选跳过（不中断）
+            continue
+        height = max(1, int(round(image.shape[0] * FRAME_THUMBNAIL_WIDTH / image.shape[1])))
+        thumb = cv2.resize(image, (FRAME_THUMBNAIL_WIDTH, height), interpolation=cv2.INTER_AREA)
+        name = f"frame-{order:02d}.jpg"
+        # imwrite 失败只返回 False（ENOSPC 静默）——显式检查，缺图少图不谎报
+        if not cv2.imwrite(str(frames_dir / name), thumb, [int(cv2.IMWRITE_JPEG_QUALITY), 80]):
+            continue
+        entries.append({
+            "file": name,
+            "time_rel_s": round(float(item["time_rel_s"]), 3),
+            "score": round(float(item["score"]), 3),
+            "face_count": int(item.get("face_count") or 0),
+            "brightness_mean": item.get("brightness_mean"),
+            "selected": int(item.get("index")) == chosen_index,
+        })
+    manifest = {
+        "timeline": str(timeline),
+        "generated_at": _now_iso(),
+        "selected_time_rel_s": round(float(chosen.get("time_rel_s") or 0.0), 3),
+        "frames": entries,
+    }
+    _atomic_json(frames_dir / "manifest.json", manifest)
+    return manifest
+
+
 def build_cover(video_path: Path, *, project_id: str, clip_id: str,
                 clip_start_ms: int, clip_end_ms: int,
                 segments: list[dict[str, Any]], out_dir: Path,
@@ -1402,7 +1488,9 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
                 template: dict[str, Any] | None = None,
                 corner_badge_text: str | None = None,
                 topic_unit: dict[str, Any] | None = None,
-                transcript_source: str | None = None) -> dict[str, Any]:
+                transcript_source: str | None = None,
+                frame_time_rel_s: float | None = None,
+                frame_timeline: str = "clip_window") -> dict[str, Any]:
     """生成 realframe_v2 封面四产物；同键幂等返回缓存，重制 = revision+1。
 
     ``copy_override``：显式文案（重新制作封面/改标题场景），形如
@@ -1412,6 +1500,10 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
     ``{"title","mechanism","hook_quote",...}``——文案主题对齐的锚点，缺省 None
     时退化为关键词评分。``transcript_source``：文案底料来源
     （"refined"|"corrected"），仅留痕。
+    ``frame_time_rel_s``（2026-11-09 P3）：人工指定封面帧（相对切片窗的秒），
+    给定时跳过自动选帧（裁剪/文案/排版/QC 全链照走），越界抛
+    ``E_COVER_BAD_REQUEST``；``frame_timeline``：帧时刻时间线语义
+    （"clip_window"|"clip_final"），只影响候选帧缩略图清单的标注。
     返回字典含每个产物的 ``path`` + ``sha256``、最终文案、选择依据、版本号与
     ``cached`` 标记；任何一步失败抛 ``CoverReplaceError``（接线层捕获后只警告
     不拦截切片发布）。
@@ -1459,8 +1551,39 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
             raise CoverReplaceError(E_COVER_FRAME_EXTRACT_FAILED,
                                     "候选帧全部无法解码，无法选帧")
         ranked = rank_frames(scored)
-        chosen = ranked[0]
-        chosen_source = extracted[chosen["index"]]
+        if frame_time_rel_s is not None:
+            # 人工指定帧（2026-11-09 P3）：命中已抽候选直接用，否则补抽该时刻；
+            # 越界显式报错（接线层映射 4xx）。
+            requested_rel = round(float(frame_time_rel_s), 3)
+            duration_s = (float(clip_end_ms) - float(clip_start_ms)) / 1000.0
+            if not (0.0 <= requested_rel <= duration_s + 0.05):
+                raise CoverReplaceError(
+                    E_COVER_BAD_REQUEST,
+                    f"frame_time_rel_s={requested_rel}s 越界（切片窗 0~{duration_s:.3f}s）")
+            matched = next((item for item in extracted
+                            if abs(float(item["time_rel_s"]) - requested_rel) <= 0.05), None)
+            if matched is None:
+                extracted_manual = extract_candidate_frames(
+                    Path(video_path),
+                    [{"time_rel_s": requested_rel,
+                      "time_abs_s": round(float(clip_start_ms) / 1000.0 + requested_rel, 3),
+                      "clip_duration_s": round(duration_s, 3)}],
+                    workdir / "frames-manual")
+                matched = extracted_manual[0] if extracted_manual else None
+            if matched is None:
+                raise CoverReplaceError(E_COVER_FRAME_EXTRACT_FAILED,
+                                        f"人工指定帧抽帧失败: t={requested_rel}s")
+            manual_record = score_frame(cv2.imread(str(matched["path"])), cascade,
+                                        index=len(scored), time_rel_s=requested_rel,
+                                        path=matched["path"])
+            scored.append(manual_record)
+            chosen = manual_record
+            chosen_source = matched
+            selection_source = "manual"
+        else:
+            chosen = ranked[0]
+            chosen_source = extracted[chosen["index"]]
+            selection_source = "auto"
         chosen_image = cv2.imread(str(chosen["path"]))
         focus_x = (sum(x + w / 2 for x, _, w, _ in chosen["faces"]) / len(chosen["faces"])
                    if chosen["faces"] else None)
@@ -1536,6 +1659,17 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
 
         # 字体与版面（缺字换字体；全缺 → 显式报错，绝不出豆腐块）
         font, font_report = resolve_cjk_font(topic + hook)
+        # 默认版型（2026-11-09 P2）：未显式指定时套用注册表默认版型
+        # （yellow_bold_v5：两行同级黄字锚定胸腹区）。此前 worker 路径
+        # template=None 走白字默认排版（顶部 0.08 起 + 人脸避让下移），是与
+        # 参考样张视觉差距的根源；注册表异常按无版型兜底（不阻断封面）。
+        if template is None:
+            from . import cover_templates as _cover_templates
+            try:
+                template = _cover_templates.template_render_spec(
+                    _cover_templates.DEFAULT_TEMPLATE_ID)
+            except Exception:  # noqa: BLE001 — 版型库异常不阻断封面生成
+                template = None
         template_theme = (template or {}).get("layout", {}).get("theme") or {}
         template_hook = (template or {}).get("layout", {}).get("hook") or {}
         layout = compute_text_layout(COVER_WIDTH, COVER_HEIGHT, topic, hook,
@@ -1605,7 +1739,9 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
                 "frame": {"planned_times": planned_times,
                           "selected_time_rel_s": chosen["time_rel_s"],
                           "selected_time_abs_s": chosen_source["time_abs_s"],
-                          "no_face": chosen["no_face"]},
+                          "no_face": chosen["no_face"],
+                          "selection_source": selection_source,
+                          "frame_timeline": frame_timeline},
                 "crop": crop,
                 "frame_scores": [{key: value for key, value in item.items() if key != "path"}
                                  for item in scored],
@@ -1624,6 +1760,11 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
                 os.replace(source, target)
                 products[name] = {"path": str(target), "sha256": _sha256(target),
                                   "bytes": target.stat().st_size}
+            # 候选帧缩略图（侧目录，2026-11-09 P3）：手动重制链（clip_final 时间线）
+            # 每次成功后刷新；worker 链（clip_window 时间线）不写——清单由
+            # read_frame_candidates 按需从成片懒建，避免两种时间线混用。
+            if frame_timeline == "clip_final":
+                publish_frame_thumbnails(Path(out_dir), scored, chosen, frame_timeline)
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 

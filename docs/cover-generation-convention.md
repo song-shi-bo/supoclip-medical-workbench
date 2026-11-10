@@ -159,3 +159,26 @@ cover_title 生成规则（写进提示词 A 的字段指令）：
      regeneration_count / prompt_version(2026-11-09.2) / transcript_source`。
    - 真机终验（clip-c4b8f0a328）：最终文案「基因检测目的 / 做基因检测的目的」
      （source=llm，校验通过、零重生成、零 warning）。
+7. **版型 v5 + 封面微调落地（2026-11-09 P2/P3）**：
+   - **默认版型 yellow_bold_v5（注册表 2026-11-09.3）**：两行同级黄字
+     （theme 88≈hook 110×0.8，同色同描边）锚定胸腹区（top_ratio 0.56），
+     `build_cover(template=None)` 自动套用——**此前 worker 路径 template=None
+     走白字默认排版（顶部 0.08 起 + 人脸避让下移），是与参考样张视觉差距的
+     根源**；v4 保留可回退。
+   - **均衡断行**：优先空格/分隔符断行（±3 字近中点），否则中点均衡
+     （k=ceil(n/2)），杜绝「做基因检测的目/的」式单字孤行；真机复现并修复。
+   - **复述治理**：提示词禁 hook 复述 topic 字面 + 评分惩罚（topic ≥3 字被
+     hook 全包含 → −2；真机实证「基因检测目的/做基因检测的目的」8.1→6.1 被
+     「基因检测解读/查看基因检测结果」反超）。
+   - **人工换帧（P3）**：`POST .../cover` 增 `frame_time_rel_s`（成片时间线秒，
+     绕过同风格 noop 短路）；候选帧条 `GET .../cover/frame-candidates`（懒建，
+     **避开 0.8s 片头区**——真机实证 t=0.5s 抽到「封面里的封面」）+ 缩略图
+     `cover_frames/` 侧目录；候选文案 `GET .../cover/copy-candidates`；
+     `_override_to_topic_hook` 支持 `topic` 键原样保留（此前只认 UPDATE_TITLE
+     键，候选 topic 被丢弃变成 hook 截断、重新引入复述——真机实证修复）。
+   - **前端**：Inspector「效果」页 `cover-tune-panel.tsx`（候选帧条 + 候选文案
+     点选，点选即重制 revision+1 可回滚）。
+   - 真机终验（clip-c4b8f0a328，临时副本）：v5 + 人工帧 4.9s（直视镜头）+
+     候选文案「基因检测解读/查看基因检测结果」→ 主题贴合、无孤字、无复述、
+     文字锚定胸腹区；已知情残留：成片帧自带烧录字幕，暗底面板下缘与字幕带
+     轻微相邻（字幕带干净度评分需 OCR，暂不做）。

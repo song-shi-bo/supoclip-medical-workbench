@@ -100,6 +100,9 @@ export type InspectorPaneProps = {
   onPreviewInPlayer?: () => void;
   artifactUrlFor?: (taskId: string, path: string, download?: boolean) => string;
   coverCacheVersion?: number;
+  /** 封面微调（2026-11-09 P3）：候选帧/候选文案点选重制，透传给 CoverPictureTab。 */
+  coverTaskId?: string | null;
+  onCoverReplaced?: (revision: number | null, note: string) => void;
   /** 封面图片区（2026-10-21 精简版）：上方封面 + 点击展开应用/删除。 */
   coverWorkflow?: {
     hasCover: boolean | null;
@@ -184,6 +187,7 @@ export function InspectorPane(props: InspectorPaneProps) {
     coverHistory, coverHistoryVisible, coverHistoryLoading, adoptOptions, adoptSource, onAdoptSourceChange,
     coverTaskFailure, onRegenerateWithInstruction, onRetryCoverTask,
     onActivateRevision, onDeleteRevision, onPreviewInPlayer, artifactUrlFor, coverCacheVersion,
+    coverTaskId, onCoverReplaced,
     coverWorkflow, coverTemplates,
     transform, transformSelectionKey, onAppliedTransformLoaded, transformLocked, transformBackground, ratioLock, viewerZoom, viewerAspect,
     onTransformDraftChange, onTransformBackgroundChange, onRatioLockChange, onViewerZoomChange,
@@ -568,6 +572,8 @@ export function InspectorPane(props: InspectorPaneProps) {
         onPreviewInPlayer={() => onPreviewInPlayer?.()}
         artifactUrlFor={artifactUrlFor ?? (() => "")}
         coverCacheVersion={coverCacheVersion ?? 0}
+        coverTaskId={coverTaskId ?? null}
+        onCoverReplaced={onCoverReplaced}
         onEditTitle={onEditTitle}
         onShowCoverHistory={onShowCoverHistory}
         onAdoptCover={onAdoptCover}

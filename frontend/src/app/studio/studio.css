@@ -4524,3 +4524,48 @@ button {
 }
 .refined-fold .refined-warnings { border-color: #4b3524; }
 .refined-fold .refined-warnings li { color: #e8b98f; }
+
+/* 封面微调（2026-11-09 P3）：候选帧条 + 候选文案点选 */
+.cover-tune-frames {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-end;
+}
+.cover-tune-frame {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid #24383c;
+  border-radius: 6px;
+  background: #14242a;
+  cursor: pointer;
+}
+.cover-tune-frame img {
+  width: 54px;
+  height: auto;
+  border-radius: 4px;
+  display: block;
+}
+.cover-tune-frame small {
+  color: #aac0c3;
+  font-size: 10px;
+  line-height: 1.2;
+}
+.cover-tune-frame.active {
+  border-color: #3fa7a0;
+}
+.cover-tune-frame.active small {
+  color: #7fd8d0;
+}
+.cover-tune-frame:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.cover-tune-copies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

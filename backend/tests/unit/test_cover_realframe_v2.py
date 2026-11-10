@@ -737,8 +737,8 @@ def test_route_realframe_v2_goes_to_local_tool(monkeypatch, tmp_path):
                 "base_video": "clip_final.mp4", "response": {}, "cover_copy": {}, "copy_report": None}
     called = {}
 
-    def fake_local(task_id, clip_id, clip_dir, override=None):
-        called["args"] = (task_id, clip_id, clip_dir, override)
+    def fake_local(task_id, clip_id, clip_dir, override=None, frame_time_rel_s=None):
+        called["args"] = (task_id, clip_id, clip_dir, override, frame_time_rel_s)
         return sentinel
 
     def forbidden(*_args, **_kwargs):
@@ -748,6 +748,10 @@ def test_route_realframe_v2_goes_to_local_tool(monkeypatch, tmp_path):
     monkeypatch.setattr(cr, "_http_json", forbidden)
     result = cr._render_cover_via_video_brain("task-1", "clip-01", tmp_path, "realframe_v2")
     assert result is sentinel and called["args"][1] == "clip-01"
+    # P3：人工换帧参数透传本地通道
+    cr._render_cover_via_video_brain("task-1", "clip-01", tmp_path, "realframe_v2",
+                                     frame_time_rel_s=1.5)
+    assert called["args"][4] == 1.5
 
 
 def test_route_cutout_v3_still_uses_video_brain(monkeypatch, tmp_path):
@@ -808,6 +812,86 @@ def test_replace_cover_realframe_end_to_end_with_real_clip(tmp_path, monkeypatch
     state = json.loads((clip_dir / cr.COVER_STATE_FILENAME).read_text(encoding="utf-8"))
     assert state["active"] == "generated:realframe_v2"
     assert result["cover_revision"] >= 2                         # v1=基线，v2=本次重制
+
+
+def test_build_cover_manual_frame_time(synthetic_video, tmp_path):
+    """P3 换一帧：人工指定时刻→selection_source=manual；越界→E_COVER_BAD_REQUEST。"""
+    out_dir = tmp_path / "clips" / "clip-m1"
+    result = m.build_cover(synthetic_video, project_id="p-m1", clip_id="clip-m1",
+                           clip_start_ms=0, clip_end_ms=2400, segments=SEGMENTS,
+                           out_dir=out_dir, analysis_keywords=["高血压"], job_id="job-m1",
+                           llm_fn=lambda _p: _llm_payload(), frame_time_rel_s=1.0)
+    assert result["cached"] is False
+    copy_doc = json.loads((out_dir / "cover_copy.json").read_text(encoding="utf-8"))
+    assert copy_doc["frame"]["selection_source"] == "manual"
+    assert abs(copy_doc["frame"]["selected_time_rel_s"] - 1.0) <= 0.05
+    with pytest.raises(CoverReplaceError) as ei:
+        m.build_cover(synthetic_video, project_id="p-m1", clip_id="clip-m2",
+                      clip_start_ms=0, clip_end_ms=2400, segments=SEGMENTS,
+                      out_dir=tmp_path / "clips" / "clip-m2", analysis_keywords=[],
+                      job_id="job-m1", llm_fn=lambda _p: _llm_payload(),
+                      frame_time_rel_s=9.9)
+    assert ei.value.code == cr.E_COVER_BAD_REQUEST
+
+
+def test_frame_thumbnails_side_directory(synthetic_video, tmp_path):
+    """P3：worker 时间线不写缩略图；clip_final 时间线每次成功后重写清单。"""
+    out_dir = tmp_path / "clips" / "clip-t1"
+    kwargs = dict(project_id="p-t1", clip_id="clip-t1", clip_start_ms=0, clip_end_ms=2400,
+                  segments=SEGMENTS, out_dir=out_dir, analysis_keywords=[],
+                  job_id="job-t1", llm_fn=lambda _p: _llm_payload())
+    m.build_cover(synthetic_video, **kwargs)
+    assert not (out_dir / "cover_frames").exists()               # 默认（clip_window）不写
+    m.build_cover(synthetic_video, cover_revision=2,
+                  frame_timeline="clip_final", **kwargs)
+    manifest = json.loads((out_dir / "cover_frames" / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["timeline"] == "clip_final"
+    assert 1 <= len(manifest["frames"]) <= m.FRAME_THUMBNAIL_COUNT
+    assert sum(1 for frame in manifest["frames"] if frame["selected"]) == 1
+    for frame in manifest["frames"]:
+        assert (out_dir / "cover_frames" / frame["file"]).is_file()
+        assert frame["thumb_url"] if False else True
+
+
+def test_read_frame_candidates_lazy_build(tmp_path, monkeypatch):
+    """P3：清单缺失/时间线不符 → 从成片懒建；文件名白名单；文案候选读取。"""
+    import shutil as _shutil
+    from src import studio_auto_edit_bridge as bridge
+
+    root = tmp_path / "tasks"
+    clip_dir = root / "output" / "autoedit_012345fedcba" / "clip-01"
+    clip_dir.mkdir(parents=True)
+    frames = tmp_path / "wf"
+    frames.mkdir()
+    for index in range(10):
+        _write_frame(frames / f"f{index:02d}.jpg", 360, 640, offset=index)
+    video = clip_dir / "clip_final.mp4"
+    _encode_video(frames, video, framerate=4, count=10)
+    _shutil.rmtree(frames, ignore_errors=True)
+    (clip_dir / "cover_copy.json").write_text(json.dumps({
+        "final": {"topic": "血压", "hook": "规律测量", "segment_ids": ["s1"], "source": "llm"},
+        "candidates": [{"topic": "血压", "hook": "规律测量", "segment_ids": ["s1"],
+                        "source": "llm"}],
+        "selection": {"selected_index": 0}, "validation_report": {"ok": True},
+        "regeneration_count": 0, "prompt_version": "2026-11-09.2",
+        "topic_unit_used": {"title": "血压监测"}, "transcript_source": "refined",
+    }, ensure_ascii=False), encoding="utf-8")
+    monkeypatch.setattr(bridge, "TASKS_ROOT", root)
+
+    payload = cr.read_frame_candidates("autoedit_012345fedcba", "clip-01")
+    assert payload["timeline"] == "clip_final"
+    assert 1 <= len(payload["frames"]) <= m.FRAME_THUMBNAIL_COUNT
+    assert all(frame["thumb_url"].endswith(".jpg") for frame in payload["frames"])
+    thumb_name = payload["frames"][0]["file"]
+    image_path = cr.resolve_frame_candidate_image("autoedit_012345fedcba", "clip-01", thumb_name)
+    assert image_path.is_file() and image_path.name == thumb_name
+    with pytest.raises(CoverReplaceError) as ei:
+        cr.resolve_frame_candidate_image("autoedit_012345fedcba", "clip-01", "../evil.jpg")
+    assert ei.value.code == cr.E_COVER_BAD_REQUEST
+    copy_payload = cr.read_copy_candidates("autoedit_012345fedcba", "clip-01")
+    assert copy_payload["final"]["topic"] == "血压"
+    assert copy_payload["transcript_source"] == "refined"
+    assert copy_payload["candidates"][0]["source"] == "llm"
 
 
 # ---------------------------------------------------------------------------

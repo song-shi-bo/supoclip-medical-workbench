@@ -31,7 +31,7 @@ from src.api.routes import media
 PID = "timeline_coverlib01"
 TASK = "autoedit_aaaabbbbcccc"
 CLIP = "clip-aaaaaaaaaa"
-TEMPLATE_IDS = ["cute", "cool", "anime_layout", "yellow_bold"]
+TEMPLATE_IDS = ["cute", "cool", "anime_layout", "yellow_bold", "yellow_bold_v5"]
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ TEMPLATE_IDS = ["cute", "cool", "anime_layout", "yellow_bold"]
 # ---------------------------------------------------------------------------
 
 def test_layout_contract_present_for_all_templates():
-    assert registry.REGISTRY_VERSION == "2026-11-09.2"
+    assert registry.REGISTRY_VERSION == "2026-11-09.3"
     for template_id in TEMPLATE_IDS:
         spec = registry.template_render_spec(template_id)
         assert spec["template_id"] == template_id
@@ -54,6 +54,22 @@ def test_layout_contract_present_for_all_templates():
         assert isinstance(layout, dict)
         # 每个版型至少声明一种装饰或压屏方案（scrim/panel/accent_bar/bubbles 任意组合）
         assert any(key in layout for key in ("scrim", "panel", "accent_bar", "bubbles"))
+
+
+def test_yellow_bold_v5_contract_and_default():
+    """2026-11-09 P2：v5 = 两行同级黄字（theme 88≈hook 110×0.8）锚定胸腹区 0.56，
+    且是 build_cover 的默认版型（DEFAULT_TEMPLATE_ID）。"""
+    layout = registry.template_render_spec("yellow_bold_v5")["layout"]
+    theme, hook = layout["theme"], layout["hook"]
+    assert theme["color"] == hook["color"] == "#FFDD00"
+    assert theme["stroke_color"] == hook["stroke_color"] == "#000000"
+    assert hook["start_size"] >= theme["start_size"] >= 88      # 同级大字、主钩子仍最大
+    assert theme["top_ratio"] == 0.56                            # 胸腹区锚点
+    assert layout.get("corner_badge")                            # 角标层沿 v4
+    assert registry.DEFAULT_TEMPLATE_ID == "yellow_bold_v5"
+    # v4 保留可回退
+    v4 = registry.template_render_spec("yellow_bold")["layout"]
+    assert v4["theme"]["start_size"] == 54 and v4["theme"]["top_ratio"] == 0.44
 
 
 def test_template_render_spec_unknown():

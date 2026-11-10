@@ -12,6 +12,7 @@ import { VIEWER_ASPECT_OPTIONS, type ViewerAspect } from "@/components/studio/vi
 import { MAX_VIEWER_ZOOM, MIN_VIEWER_ZOOM } from "@/components/studio/viewer-zoom";
 import type { BackgroundMode, ClipTransform } from "@/lib/clip-transform";
 
+import { CoverTunePanel } from "./cover-tune-panel";
 import { PHASE2_LABELS, type ClipCoverHistoryEntry } from "./types";
 
 export type CoverPictureTabProps = {
@@ -52,6 +53,12 @@ export type CoverPictureTabProps = {
   artifactUrlFor?: (taskId: string, path: string, download?: boolean) => string;
   coverCacheVersion?: number;
 
+  // ===== 封面微调（2026-11-09 P3：候选帧/候选文案点选重制）=====
+  /** 成片所属渲染任务 id；null = 面板不渲染。 */
+  coverTaskId?: string | null;
+  /** 重制成功（revision+1）：页面刷新封面版本与历史。 */
+  onCoverReplaced?: (revision: number | null, note: string) => void;
+
   // ===== 画面 =====
   transform: ClipTransform | null;
   transformLocked: boolean;
@@ -89,6 +96,7 @@ export function CoverPictureTab(props: CoverPictureTabProps) {
     coverTaskFailure, onRegenerateWithInstruction, onRetryCoverTask,
     onActivateRevision, onDeleteRevision, onPreviewInPlayer,
     artifactUrlFor, coverCacheVersion,
+    coverTaskId, onCoverReplaced,
     transform, transformLocked, background, ratioLock, viewerZoom, viewerAspect, dirty,
     onTransformChange, onBackgroundChange, onRatioLockChange, onViewerZoomChange, onFitView,
     onOriginalRatio, onCanvasMode, onResetTransform, onViewerAspectChange, onApply, onCancel,
@@ -113,7 +121,9 @@ export function CoverPictureTab(props: CoverPictureTabProps) {
   };
 
   return <div className="inspector-cover-picture" data-testid="inspector-cover-picture-tab">
-    
+
+    <CoverTunePanel taskId={coverTaskId ?? null} clipId={clipId} disabled={!active || busy}
+        onReplaced={onCoverReplaced} />
 
     <section className="inspector-block" aria-label="画面">
       <header><strong>画面</strong><span className="inspector-phase2" title={ASPECT_HINT} data-testid="inspector-aspect-tooltip">{ASPECT_HINT}</span></header>

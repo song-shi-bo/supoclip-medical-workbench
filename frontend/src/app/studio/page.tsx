@@ -4390,6 +4390,12 @@ export default function StudioPage() {
           onPreviewInPlayer={() => { if (activeRenderedClip) void playRenderedClip(activeRenderedClip); }}
           artifactUrlFor={artifactUrl}
           coverCacheVersion={coverVersion}
+          coverTaskId={activeRenderedClip?.task_id ?? null}
+          onCoverReplaced={(revision, note) => {
+            setCoverVersion((value) => value + 1);
+            if (activeRenderedClip) void refreshCoverHistory(activeRenderedClip);
+            setMessage(`封面已重制（${note}）· v${revision ?? "?"}，0.8s 片头已同步更新`);
+          }}
           onEditTitle={() => { if (!activeRenderedClip) return; const title = promptClipTitle(activeRenderedClip); if (title === null) return; void updateClipTitle(activeRenderedClip, title || null).catch((error) => setMessage(error instanceof Error ? error.message : "标题更新失败")); }}
           onShowCoverHistory={() => { if (activeRenderedClip) void toggleCoverHistory(activeRenderedClip); }}
           onAdoptCover={(sourceClipId) => { if (activeRenderedClip && sourceClipId) void adoptCover(activeRenderedClip, sourceClipId, false).catch((error) => setMessage(error instanceof Error ? error.message : "沿用封面失败")); }}

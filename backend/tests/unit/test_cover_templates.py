@@ -68,9 +68,10 @@ def test_registry_shape_four_templates():
     payload = registry.list_templates()
     assert payload["registry_version"] == registry.REGISTRY_VERSION
     templates = payload["templates"]
-    assert [t["name"] for t in templates] == ["可爱版", "酷炫版", "动漫排版", "黄色大字"]
+    assert [t["name"] for t in templates] == ["可爱版", "酷炫版", "动漫排版", "黄色大字", "黄色大字 v5"]
     ids = [t["template_id"] for t in templates]
-    assert len(ids) == len(set(ids)) == 4
+    assert len(ids) == len(set(ids)) == 5
+    assert ids[-1] == registry.DEFAULT_TEMPLATE_ID == "yellow_bold_v5"   # P2 默认版型
     assert [t["sort"] for t in templates] == sorted(t["sort"] for t in templates)
     for t in templates:
         assert t["template_id"] and t["version"] and t["description"]
@@ -178,7 +179,7 @@ def no_owner_check(monkeypatch):
 @pytest.mark.asyncio
 async def test_endpoints_list_and_put(env, no_owner_check):
     payload = await media.studio_cover_templates()
-    assert len(payload["templates"]) == 4
+    assert len(payload["templates"]) == 5                       # P2：新增 yellow_bold_v5
     save_ledger(env, [register_clip(CLIP_A)])
     response = await media.studio_clip_set_cover_template(
         PID, CLIP_A, None, media.CoverTemplateSelectRequest(template_id="cute"))

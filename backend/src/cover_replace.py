@@ -813,11 +813,14 @@ def _video_brain_task_id(task_id: str, clip_dir: Path) -> str:
 
 
 def _render_cover_realframe(task_id: str, clip_id: str, clip_dir: Path,
-                            cover_copy_override: dict[str, Any] | None = None) -> dict[str, Any]:
+                            cover_copy_override: dict[str, Any] | None = None,
+                            frame_time_rel_s: float | None = None) -> dict[str, Any]:
     """realframe_v2 专用本地渲染：真实帧 + 文字叠加（不调 video-brain）。
 
     - 帧源 = 该切片成片 ``clip_final.mp4`` 本身（观众看到的真实画面），切片窗 =
       整条成片 ``[0, duration]``；
+    - ``frame_time_rel_s``（2026-11-09 P3）：人工指定封面帧（成片时间线秒），
+      空则自动选帧；
     - 文案优先级：``cover_copy_override``（UPDATE_TITLE 显式改写）→ 本地
       ``cover_copy.json`` 既有最终文案 → ``clip_plan.json`` topic 的规则回退；
     - 幂等/版本由 :mod:`cover_realframe_v2` 台账承担，本通道的备份/回滚/revision
@@ -846,6 +849,7 @@ def _render_cover_realframe(task_id: str, clip_id: str, clip_dir: Path,
         out_dir=clip_dir, analysis_keywords=keywords, topic_hint=topic_hint,
         copy_override=override, force=True,
         corner_badge_text=str((cover_copy_override or {}).get("corner_badge_text") or "") or None,
+        frame_time_rel_s=frame_time_rel_s, frame_timeline="clip_final",
     )
     layout_path = clip_dir / COVER_LAYOUT_FILENAME
     cover_copy = result.get("cover_copy") or {}
@@ -869,13 +873,15 @@ def _render_cover_realframe(task_id: str, clip_id: str, clip_dir: Path,
 
 def _render_cover_template(task_id: str, clip_id: str, clip_dir: Path,
                            template_id: str,
-                           cover_copy_override: dict[str, Any] | None = None) -> dict[str, Any]:
+                           cover_copy_override: dict[str, Any] | None = None,
+                           frame_time_rel_s: float | None = None) -> dict[str, Any]:
     """封面版型本地渲染（2026-10-21 阶段）：真实帧 + 版面契约排版，**不调用模型**。
 
     - 版面契约来自版本化注册表（``cover_templates.template_render_spec``），
       未知版型 → ``E_TEMPLATE_UNKNOWN``；
     - 帧选择/裁切/人脸避让/文案回退链（copy_override → cover_copy.json →
-      clip_plan topic）与 realframe_v2 完全同源；
+      clip_plan topic）与 realframe_v2 完全同源；``frame_time_rel_s``（P3）
+      人工指定帧语义同 realframe 通道；
     - 产物（cover.jpg/cover_layout.json/…）与 revision 台账由 build_cover 统一管理。
     """
     from . import cover_realframe_v2, cover_templates
@@ -902,6 +908,7 @@ def _render_cover_template(task_id: str, clip_id: str, clip_dir: Path,
         out_dir=clip_dir, analysis_keywords=keywords, topic_hint=topic_hint,
         copy_override=override, force=True, template=spec,
         corner_badge_text=str((cover_copy_override or {}).get("corner_badge_text") or "") or None,
+        frame_time_rel_s=frame_time_rel_s, frame_timeline="clip_final",
     )
     layout_path = clip_dir / COVER_LAYOUT_FILENAME
     cover_copy = result.get("cover_copy") or {}
@@ -961,31 +968,43 @@ def _read_local_final_copy(clip_dir: Path) -> dict[str, Any] | None:
 
 
 def _override_to_topic_hook(override: dict[str, Any], topic_hint: str | None) -> dict[str, Any]:
-    """把 UPDATE_TITLE 的 ``headline_line_1/2`` 覆盖折算成本地管线的 ``topic/hook``。"""
+    """把封面文案覆盖折算成本地管线的 ``topic/hook``。
+
+    两种来源：UPDATE_TITLE 的 ``headline_line_1/2/top_theme``；以及 2026-11-09 P3
+    候选文案点选的 ``topic/hook/segment_ids``（**topic 必须原样保留**——此前只认
+    UPDATE_TITLE 键，候选的 topic 被丢弃变成 hook 截断，重新引入复述）。
+    """
     line_1 = str(override.get("headline_line_1") or "")
     line_2 = str(override.get("headline_line_2") or "")
-    hook = f"{line_1}{line_2}".strip() or str(override.get("hook") or "")
-    topic = str(override.get("top_theme") or topic_hint or hook[:6] or "")
+    hook = (f"{line_1}{line_2}".strip() or str(override.get("hook") or ""))
+    topic = (str(override.get("topic") or "").strip()
+             or str(override.get("top_theme") or "")
+             or topic_hint or hook[:6] or "")
     return {"topic": topic, "hook": hook, "segment_ids": []}
 
 
 def _render_cover_via_video_brain(task_id: str, clip_id: str, clip_dir: Path,
                                   style_id: str,
-                                  cover_copy_override: dict[str, Any] | None = None) -> dict[str, Any]:
+                                  cover_copy_override: dict[str, Any] | None = None,
+                                  frame_time_rel_s: float | None = None) -> dict[str, Any]:
     """按风格渲染封面（渲染缝；历史函数名保留，测试与调用方以本函数为替换点）。
 
     ``realframe_v2`` → 本地 :func:`_render_cover_realframe`（真实视频帧 + Pillow
     文字叠加，**不再路由 video-brain**）；其余风格（``cutout_v3``）照旧调
     video-brain ``/v1/tools/cover.render``。
     ``cover_copy_override``：本次要上封面的文案（UPDATE_TITLE / 用户改写主题时传入）。
+    ``frame_time_rel_s``（2026-11-09 P3）：人工指定封面帧（成片时间线秒，仅本地
+    通道消费；video-brain legacy 通道忽略）。
     video-brain 路径下无论文案来自哪里，都先过一遍 :func:`clamp_cover_copy`
     （固化规则：主钩子 ≤12 汉字、最多两行），并把压缩报告随结果带回。
     """
     if style_id == "realframe_v2":
-        return _render_cover_realframe(task_id, clip_id, clip_dir, cover_copy_override)
+        return _render_cover_realframe(task_id, clip_id, clip_dir, cover_copy_override,
+                                       frame_time_rel_s=frame_time_rel_s)
     if isinstance(style_id, str) and style_id.startswith("template:"):
         return _render_cover_template(task_id, clip_id, clip_dir,
-                                      style_id.split(":", 1)[1], cover_copy_override)
+                                      style_id.split(":", 1)[1], cover_copy_override,
+                                      frame_time_rel_s=frame_time_rel_s)
     vb_task = _video_brain_task_id(task_id, clip_dir)
     vb_clip_dir = VIDEO_BRAIN_HOME / "data" / "tasks" / vb_task / "clips" / clip_id
     resolved_copy, frame_ts = _resolve_cover_copy(vb_task, clip_id, vb_clip_dir)
@@ -1628,7 +1647,8 @@ def apply_cover_duration_s() -> float:
 def replace_cover(task_id: str, clip_id: str, style_id: str | None,
                   *, replace_intro: bool = True,
                   cover_copy_override: dict[str, Any] | None = None,
-                  template_id: str | None = None) -> dict[str, Any]:
+                  template_id: str | None = None,
+                  frame_time_rel_s: float | None = None) -> dict[str, Any]:
     """按封面风格重制该成片的封面（图 + 0.8s 片头），可回滚。**不新建 clip、不重剪正片。**
 
     ``style_id``：``realframe_v2``（缺省）/ ``cutout_v3``；v3 权重缺失时显式失败
@@ -1636,6 +1656,8 @@ def replace_cover(task_id: str, clip_id: str, style_id: str | None,
     ``cover_copy_override``：本次要上封面的文案（UPDATE_TITLE / 用户改写主题时传入），
     一律经 :func:`clamp_cover_copy` 压到「主钩子 ≤12 汉字、最多两行」再出图。
     ``replace_intro=False``：只换封面图（片头不烧录封面的场景），成片画面逐帧不动。
+    ``frame_time_rel_s``（2026-11-09 P3）：人工指定封面帧（成片时间线秒）；给定时
+    绕过「同风格 noop」短路（换帧必须真的重制）。
     """
     if template_id is not None:
         if style_id and str(style_id).strip():
@@ -1655,8 +1677,9 @@ def replace_cover(task_id: str, clip_id: str, style_id: str | None,
     clip_dir = _clip_dir_or_raise(task_id, clip_id)
     state = _load_state(clip_dir)
     key = f"generated:{resolved_style}"
-    # 文案被显式改写时不能走「同风格即 noop」的幂等短路——否则改了标题却没有任何变化。
-    if not cover_copy_override:
+    # 文案被显式改写/人工换帧时不能走「同风格即 noop」的幂等短路——否则改了标题/
+    # 换了帧却没有任何变化。
+    if not cover_copy_override and frame_time_rel_s is None:
         cached = _is_noop(state, key, replace_intro, clip_dir)
         if cached:
             return _result(task_id, clip_id, clip_dir, kind="generated",
@@ -1669,7 +1692,8 @@ def replace_cover(task_id: str, clip_id: str, style_id: str | None,
 
     baseline = _ensure_baseline(clip_dir, state)
     rendered = _render_cover_via_video_brain(task_id, clip_id, clip_dir, resolved_style,
-                                             cover_copy_override)
+                                             cover_copy_override,
+                                             frame_time_rel_s=frame_time_rel_s)
     _atomic_copy(rendered["cover_path"], clip_dir / COVER_FILENAME)
     if rendered["layout_path"].is_file():
         _atomic_copy(rendered["layout_path"], clip_dir / COVER_LAYOUT_FILENAME)
@@ -1955,6 +1979,114 @@ def restore_cover(task_id: str, clip_id: str) -> dict[str, Any]:
                    idempotent=False, source=None,
                    extra={"restored_from": previous,
                           "baseline": state.get("baseline")})
+
+
+_FRAME_THUMB_NAME_RE = re.compile(r"^frame-\d{2}\.jpg$")
+
+
+def read_frame_candidates(task_id: str, clip_id: str) -> dict[str, Any]:
+    """候选帧清单（2026-11-09 P3「换一帧」）：``cover_frames/manifest.json`` 缺失
+    或时间线不是成片时间线（clip_final）时，从成片**懒建**（均匀抽帧 + 确定性
+    评分 + 缩略图落盘）。前端拿到的 time_rel_s 一律是成片时间线秒，与
+    ``POST .../cover`` 的 ``frame_time_rel_s`` 同一时间线。"""
+    from . import cover_realframe_v2
+
+    clip_dir = _clip_dir_or_raise(task_id, clip_id)
+    clip_final = clip_dir / CLIP_FILENAME
+    if not clip_final.is_file():
+        raise CoverReplaceError(E_COVER_CLIP_MISSING, f"成片不存在：{clip_final}")
+    manifest_path = clip_dir / cover_realframe_v2.COVER_FRAMES_DIRNAME / "manifest.json"
+    manifest: dict[str, Any] | None = None
+    if manifest_path.is_file():
+        try:
+            candidate = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if isinstance(candidate, dict) and candidate.get("timeline") == "clip_final":
+                manifest = candidate
+        except (OSError, ValueError):
+            manifest = None
+    if manifest is None:
+        manifest = _build_frame_candidates_from_clip(clip_final, clip_dir)
+    frames = manifest.get("frames") or []
+    for entry in frames:
+        entry["thumb_url"] = (f"/studio/auto-edit/{task_id}/clips/{clip_id}"
+                              f"/cover/frame-candidates/{entry.get('file')}")
+    return {"task_id": task_id, "clip_id": clip_id,
+            "timeline": manifest.get("timeline"),
+            "selected_time_rel_s": manifest.get("selected_time_rel_s"),
+            "frames": frames}
+
+
+def _build_frame_candidates_from_clip(clip_final: Path, clip_dir: Path) -> dict[str, Any]:
+    """从成片均匀抽帧评分并落缩略图（懒建；clip_final 时间线；失败抛错不静默）。"""
+    import tempfile
+    import cv2
+    from . import cover_realframe_v2
+
+    probe = probe_streams(clip_final)
+    duration_s = float(probe["duration_s"])
+    # 首帧避开 0.8s 封面片头区（2026-11-09 真机实证：t=0.5s 抽到的是「封面里的封面」）；
+    # 极短成片按比例退让，绝不为负。
+    first_offset = (0.9 if duration_s >= 1.6 else max(0.2, duration_s / 4))
+    planned = cover_realframe_v2.plan_frame_times(
+        0, max(1, int(round(duration_s * 1000))), first_offset_s=first_offset)
+    cascade = cv2.CascadeClassifier(str(cover_realframe_v2.haar_cascade_path()))
+    with tempfile.TemporaryDirectory(prefix="cover-frames-preview-",
+                                     dir=cover_realframe_v2.cover_frame_tmp_root()) as temp:
+        extracted = cover_realframe_v2.extract_candidate_frames(
+            clip_final, planned, Path(temp) / "frames")
+        scored = []
+        for index, item in enumerate(extracted):
+            image = cv2.imread(str(item["path"]))
+            if image is None:
+                continue
+            scored.append(cover_realframe_v2.score_frame(
+                image, cascade, index=index, time_rel_s=float(item["time_rel_s"]),
+                path=item["path"]))
+        if not scored:
+            raise CoverReplaceError(cover_realframe_v2.E_COVER_FRAME_EXTRACT_FAILED,
+                                    "候选帧全部无法解码，无法生成换帧候选")
+        chosen = sorted(scored, key=lambda item: (-float(item["score"]), int(item["index"])))[0]
+        # 必须在临时目录存续期内落缩略图（scored 的 path 指向临时 png）
+        return cover_realframe_v2.publish_frame_thumbnails(clip_dir, scored, chosen, "clip_final")
+
+
+def resolve_frame_candidate_image(task_id: str, clip_id: str, filename: str) -> Path:
+    """候选帧缩略图文件解析（文件名白名单，防目录穿越；缺失报错提示先懒建）。"""
+    name = str(filename or "").strip()
+    if not _FRAME_THUMB_NAME_RE.fullmatch(name):
+        raise CoverReplaceError(E_COVER_BAD_REQUEST, f"非法缩略图文件名: {filename!r}")
+    path = _clip_dir_or_raise(task_id, clip_id) / "cover_frames" / name
+    if not path.is_file():
+        raise CoverReplaceError(E_COVER_CLIP_MISSING,
+                                f"缩略图不存在: {name}（先 GET frame-candidates 懒建）")
+    return path
+
+
+def read_copy_candidates(task_id: str, clip_id: str) -> dict[str, Any]:
+    """封面文案候选（2026-11-09 P3）：cover_copy.json 的候选与评分报告子集，
+    供工作台文案选择器展示/点选（点选走 POST cover 的 copy_override）。"""
+    clip_dir = _clip_dir_or_raise(task_id, clip_id)
+    path = clip_dir / "cover_copy.json"
+    if not path.is_file():
+        raise CoverReplaceError(E_COVER_CLIP_MISSING,
+                                "封面文案产物不存在（该切片还没有封面）")
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise CoverReplaceError(E_COVER_CLIP_MISSING,
+                                f"cover_copy.json 读取失败: {exc}") from exc
+    return {
+        "task_id": task_id,
+        "clip_id": clip_id,
+        "final": document.get("final"),
+        "candidates": document.get("candidates") or [],
+        "selection": document.get("selection"),
+        "validation_report": document.get("validation_report"),
+        "regeneration_count": document.get("regeneration_count"),
+        "prompt_version": document.get("prompt_version"),
+        "topic_unit_used": document.get("topic_unit_used"),
+        "transcript_source": document.get("transcript_source"),
+    }
 
 
 def read_cover_state(task_id: str, clip_id: str) -> dict[str, Any]:

@@ -64,8 +64,11 @@ from ...cover_replace import (
     SUPPORTED_COVER_STYLES,
     adopt_cover,
     list_project_clips,
+    read_copy_candidates,
     read_cover_state,
+    read_frame_candidates,
     replace_cover,
+    resolve_frame_candidate_image,
     resolve_ffmpeg,
     restore_cover,
 )
@@ -1039,9 +1042,24 @@ async def studio_replace_clip_cover(task_id: str, clip_id: str, request: Request
     replace_intro = payload.get("replace_intro", True)
     if not isinstance(replace_intro, bool):
         raise HTTPException(status_code=422, detail="replace_intro 必须是布尔值")
+    # 人工换帧/换文案（2026-11-09 P3）：frame_time_rel_s = 成片时间线秒；
+    # copy_override = 候选文案点选（{topic, hook, segment_ids?}，语义同 UPDATE_TITLE）。
+    frame_time_rel_s = payload.get("frame_time_rel_s")
+    if frame_time_rel_s is not None:
+        if isinstance(frame_time_rel_s, bool) or not isinstance(frame_time_rel_s, (int, float)):
+            raise HTTPException(status_code=422,
+                                detail="frame_time_rel_s 必须是数字（秒）或 null")
+        frame_time_rel_s = float(frame_time_rel_s)
+        if frame_time_rel_s < 0:
+            raise HTTPException(status_code=422, detail="frame_time_rel_s 不能为负")
+    copy_override = payload.get("copy_override")
+    if copy_override is not None and not isinstance(copy_override, dict):
+        raise HTTPException(status_code=422, detail="copy_override 必须是对象")
     try:
         result = await run_in_threadpool(replace_cover, task_id, clip_id, style_id,
-                                         replace_intro=replace_intro, template_id=template_id)
+                                         replace_intro=replace_intro, template_id=template_id,
+                                         cover_copy_override=copy_override,
+                                         frame_time_rel_s=frame_time_rel_s)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1132,6 +1150,43 @@ async def studio_clip_cover_state(task_id: str, clip_id: str):
         raise
     except Exception as exc:
         logger.exception("读取封面台账失败")
+        raise _cover_error(exc) from exc
+
+
+@router.get("/studio/auto-edit/{task_id}/clips/{clip_id}/cover/frame-candidates")
+async def studio_cover_frame_candidates(task_id: str, clip_id: str):
+    """候选帧清单（2026-11-09 P3 换一帧）：缩略图+确定性评分，成片时间线。"""
+    try:
+        return await run_in_threadpool(read_frame_candidates, task_id, clip_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("读取候选帧清单失败")
+        raise _cover_error(exc) from exc
+
+
+@router.get("/studio/auto-edit/{task_id}/clips/{clip_id}/cover/frame-candidates/{filename}")
+async def studio_cover_frame_candidate_image(task_id: str, clip_id: str, filename: str):
+    """候选帧缩略图文件（白名单文件名；缺失 404 提示先懒建）。"""
+    try:
+        path = await run_in_threadpool(resolve_frame_candidate_image, task_id, clip_id, filename)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("读取候选帧缩略图失败")
+        raise _cover_error(exc) from exc
+    return FileResponse(path, media_type="image/jpeg", filename=path.name)
+
+
+@router.get("/studio/auto-edit/{task_id}/clips/{clip_id}/cover/copy-candidates")
+async def studio_cover_copy_candidates(task_id: str, clip_id: str):
+    """封面文案候选（2026-11-09 P3）：候选组+评分报告，供工作台点选重制。"""
+    try:
+        return await run_in_threadpool(read_copy_candidates, task_id, clip_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("读取封面文案候选失败")
         raise _cover_error(exc) from exc
 
 
