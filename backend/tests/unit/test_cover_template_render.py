@@ -31,7 +31,7 @@ from src.api.routes import media
 PID = "timeline_coverlib01"
 TASK = "autoedit_aaaabbbbcccc"
 CLIP = "clip-aaaaaaaaaa"
-TEMPLATE_IDS = ["cute", "cool", "anime_layout", "yellow_bold", "yellow_bold_v5"]
+TEMPLATE_IDS = ["cute", "cool", "anime_layout", "yellow_bold_v5"]
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ TEMPLATE_IDS = ["cute", "cool", "anime_layout", "yellow_bold", "yellow_bold_v5"]
 # ---------------------------------------------------------------------------
 
 def test_layout_contract_present_for_all_templates():
-    assert registry.REGISTRY_VERSION == "2026-11-09.3"
+    assert registry.REGISTRY_VERSION == "2026-11-09.4"
     for template_id in TEMPLATE_IDS:
         spec = registry.template_render_spec(template_id)
         assert spec["template_id"] == template_id
@@ -67,9 +67,10 @@ def test_yellow_bold_v5_contract_and_default():
     assert theme["top_ratio"] == 0.56                            # 胸腹区锚点
     assert layout.get("corner_badge")                            # 角标层沿 v4
     assert registry.DEFAULT_TEMPLATE_ID == "yellow_bold_v5"
-    # v4 保留可回退
-    v4 = registry.template_render_spec("yellow_bold")["layout"]
-    assert v4["theme"]["start_size"] == 54 and v4["theme"]["top_ratio"] == 0.44
+    # v4 已删除（2026-11-09 用户拍板）：未知版型显式报错，不静默回退
+    with pytest.raises(registry.CoverTemplateError) as ei:
+        registry.template_render_spec("yellow_bold")
+    assert ei.value.code == registry.E_TEMPLATE_UNKNOWN
 
 
 def test_template_render_spec_unknown():
@@ -218,8 +219,8 @@ def test_replace_cover_with_template_renders_and_snapshots(clip_env):
 def test_replace_cover_template_switch_changes_output(clip_env):
     replace_cover(TASK, CLIP, None, replace_intro=False, template_id="cute")
     first = (clip_env["clip_dir"] / "cover.jpg").read_bytes()
-    second = replace_cover(TASK, CLIP, None, replace_intro=False, template_id="yellow_bold")
-    assert second["style_id"] == "template:yellow_bold"
+    second = replace_cover(TASK, CLIP, None, replace_intro=False, template_id="yellow_bold_v5")
+    assert second["style_id"] == "template:yellow_bold_v5"
     assert (clip_env["clip_dir"] / "cover.jpg").read_bytes() != first
 
 

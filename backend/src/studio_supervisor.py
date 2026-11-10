@@ -84,7 +84,8 @@ def main():
     signal.signal(signal.SIGINT, shutdown)
     env = dict(os.environ, PYTHONUNBUFFERED='1',
                STUDIO_TASKS_ROOT=str(ROOT / 'tasks'), VIDEO_BRAIN_URL='http://127.0.0.1:8940',
-               STUDIO_ASR_LOCK=str(DOMAIN / '.studio-resources/asr.lock'))
+               STUDIO_ASR_LOCK=str(DOMAIN / '.studio-resources/asr.lock'),
+               STUDIO_AUTO_COVER='0')   # 2026-11-09 用户拍板：自动剪辑渲染链不制作封面
     services = [
         ('postgres', ROOT, [str(DOMAIN / '.tools/pg16/bin/postgres'), '-D', str(PGDATA), '-p', '5432', '-c', 'listen_addresses=127.0.0.1'], lambda: listening(5432)),
         ('redis', ROOT, [str(DOMAIN / '.tools/redis-src/src/redis-server'), '--bind', '127.0.0.1', '--port', '6379', '--save', '', '--appendonly', 'no'], lambda: listening(6379)),

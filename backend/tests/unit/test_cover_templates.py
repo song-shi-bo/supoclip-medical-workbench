@@ -68,9 +68,9 @@ def test_registry_shape_four_templates():
     payload = registry.list_templates()
     assert payload["registry_version"] == registry.REGISTRY_VERSION
     templates = payload["templates"]
-    assert [t["name"] for t in templates] == ["可爱版", "酷炫版", "动漫排版", "黄色大字", "黄色大字 v5"]
+    assert [t["name"] for t in templates] == ["可爱版", "酷炫版", "动漫排版", "黄色大字 v5"]
     ids = [t["template_id"] for t in templates]
-    assert len(ids) == len(set(ids)) == 5
+    assert len(ids) == len(set(ids)) == 4
     assert ids[-1] == registry.DEFAULT_TEMPLATE_ID == "yellow_bold_v5"   # P2 默认版型
     assert [t["sort"] for t in templates] == sorted(t["sort"] for t in templates)
     for t in templates:
@@ -110,10 +110,10 @@ def test_mock_result_deterministic_and_honest():
 def test_set_cover_template_per_clip_isolation(env):
     save_ledger(env, [register_clip(CLIP_A), register_clip(CLIP_B)])
     store.set_cover_template(PID, CLIP_A, "cute")
-    store.set_cover_template(PID, CLIP_B, "yellow_bold")
+    store.set_cover_template(PID, CLIP_B, "yellow_bold_v5")
     ledger = json.loads((env["tasks"] / "projects" / PID / "clips.json").read_text(encoding="utf-8"))
     assert ledger["clips"][CLIP_A]["cover_template"]["template_id"] == "cute"
-    assert ledger["clips"][CLIP_B]["cover_template"]["template_id"] == "yellow_bold"
+    assert ledger["clips"][CLIP_B]["cover_template"]["template_id"] == "yellow_bold_v5"
     # 再改 A：B 的选择一个字节都不能动（不串片）
     before_b = json.dumps(ledger["clips"][CLIP_B], sort_keys=True)
     store.set_cover_template(PID, CLIP_A, "cool")
@@ -123,7 +123,7 @@ def test_set_cover_template_per_clip_isolation(env):
     # 卡片透出：刷新恢复的事实源
     cards = {c["clip_id"]: c for c in store.list_cards(PID)}
     assert cards[CLIP_A]["cover_template"]["template_id"] == "cool"
-    assert cards[CLIP_B]["cover_template"]["template_id"] == "yellow_bold"
+    assert cards[CLIP_B]["cover_template"]["template_id"] == "yellow_bold_v5"
 
 
 def test_set_cover_template_switch_clear_idempotent(env):
@@ -179,7 +179,7 @@ def no_owner_check(monkeypatch):
 @pytest.mark.asyncio
 async def test_endpoints_list_and_put(env, no_owner_check):
     payload = await media.studio_cover_templates()
-    assert len(payload["templates"]) == 5                       # P2：新增 yellow_bold_v5
+    assert len(payload["templates"]) == 4                       # P2 新增 v5、P2/P3 删除 v4
     save_ledger(env, [register_clip(CLIP_A)])
     response = await media.studio_clip_set_cover_template(
         PID, CLIP_A, None, media.CoverTemplateSelectRequest(template_id="cute"))
@@ -207,8 +207,8 @@ async def test_endpoint_put_409_while_deleting(env, no_owner_check):
 
 @pytest.mark.asyncio
 async def test_endpoint_mock_result_and_unknown(env):
-    payload = await media.studio_cover_template_mock_result("yellow_bold")
-    assert payload["mock"] is True and payload["template_name"] == "黄色大字"
+    payload = await media.studio_cover_template_mock_result("yellow_bold_v5")
+    assert payload["mock"] is True and payload["template_name"] == "黄色大字 v5"
     with pytest.raises(HTTPException) as ei:
         await media.studio_cover_template_mock_result("nope")
     assert ei.value.status_code == 404 and ei.value.detail["code"] == "E_TEMPLATE_UNKNOWN"

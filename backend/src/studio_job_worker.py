@@ -1054,6 +1054,17 @@ def _cover_artifact_kinds(base: Path) -> list[tuple[str, str]]:
         if (base / filename).is_file()]
 
 
+def _auto_cover_enabled() -> bool:
+    """自动封面开关（2026-11-09 用户拍板：自动化剪辑渲染链默认不再制作封面）。
+
+    env ``STUDIO_AUTO_COVER``：缺省开启（兼容既有测试与调用方）；设为
+    0/false/off/no → 渲染链跳过封面固化（不生成封面四产物、不拼接 0.8s 片头）。
+    手动封面（路由直连 build_cover/replace_cover：重制封面、版型库、封面微调）
+    不受本开关影响。
+    """
+    return str(os.getenv("STUDIO_AUTO_COVER", "1")).strip().lower() not in {"0", "false", "off", "no"}
+
+
 def _run_clip_cover_stage(job: dict, job_id: str, plan_record: dict, transcript: dict,
                           aggregate: dict, source: Path, out_root: Path) -> dict[str, dict]:
     """每条切片发布前的固化封面步骤（realframe_v2：真实帧+文字叠加，纯本地）。
@@ -1072,6 +1083,10 @@ def _run_clip_cover_stage(job: dict, job_id: str, plan_record: dict, transcript:
     """
     from src import cover_realframe_v2, cover_replace
 
+    if not _auto_cover_enabled():
+        _log(f"job {job_id}（auto_edit/cover）STUDIO_AUTO_COVER 关闭：跳过自动封面固化"
+             f"（封面可手动制作：重制封面/版型库/封面微调）")
+        return {}
     keywords = _analysis_keywords_for_cover(plan_record)
     # 2026-11-09 封面升级：文案底料精修稿优先（与烧录契约一致）+ 主题块锚点。
     # 指纹不符/缺失 → None 如实回退纠错稿；绝不冒充精修。
@@ -1242,9 +1257,14 @@ def _run_clip_render_stage(job: dict, job_id: str, transcript: dict,
 
     # 封面固化（2026-10-18）：每条切片发布前自动生成 realframe_v2 封面并替换片头，
     # 失败只记 warning（aggregate.warnings），绝不拦截切片发布。
-    _state(job_id, "rendering", "生成固化封面（realframe_v2：真实帧+文字叠加）并替换片头", 0.85)
-    cover_results = _run_clip_cover_stage(job, job_id, plan_record, transcript,
-                                          aggregate, Path(source), out_root)
+    # 2026-11-09：STUDIO_AUTO_COVER 关闭时整步跳过（不生成封面/不拼片头）。
+    cover_results: dict[str, dict] = {}
+    if _auto_cover_enabled():
+        _state(job_id, "rendering", "生成固化封面（realframe_v2：真实帧+文字叠加）并替换片头", 0.85)
+        cover_results = _run_clip_cover_stage(job, job_id, plan_record, transcript,
+                                              aggregate, Path(source), out_root)
+    else:
+        _log(f"job {job_id}（auto_edit/render）STUDIO_AUTO_COVER 关闭：跳过自动封面固化")
 
     # 每条成片/警告登记 artifact（本地模式由后端回源文件，前端直接可播/可下载）
     published_clips=[]

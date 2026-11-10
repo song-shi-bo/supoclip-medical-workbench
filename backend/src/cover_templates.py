@@ -49,7 +49,9 @@ TEMPLATE_ID_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 #:     （top_ratio 0.56）；设为**默认版型**（DEFAULT_TEMPLATE_ID）——build_cover
 #:     无显式版型时自动套用（此前 worker 路径 template=None 走白字默认排版，
 #:     是与参考样张视觉差距的根源）。v4 保留可一键回退。
-REGISTRY_VERSION = "2026-11-09.3"
+#: .4（2026-11-09）：按用户拍板**删除 yellow_bold v4**（v5 完全覆盖其场景）；
+#:     存量台账选择 v4 的项目在应用/重制时报 E_TEMPLATE_UNKNOWN，请改选 v5。
+REGISTRY_VERSION = "2026-11-09.4"
 
 #: 默认版型：build_cover(template=None) 时的自动套用（2026-11-09 P2 起）。
 DEFAULT_TEMPLATE_ID = "yellow_bold_v5"
@@ -100,14 +102,6 @@ COVER_TEMPLATES: tuple[CoverTemplate, ...] = (
         example_path="/studio/cover-templates/anime_layout/example.svg",
         description="分格对话式排版与拟声词点缀，节奏感强，适合剧情化剪辑。",
         sort=3,
-    ),
-    CoverTemplate(
-        template_id="yellow_bold",
-        name="黄色大字",
-        version="4",
-        example_path="/studio/cover-templates/yellow_bold/example.svg",
-        description="亮黄粗体大字压屏，信息一眼可读，适合知识点罗列。",
-        sort=4,
     ),
     CoverTemplate(
         template_id="yellow_bold_v5",
@@ -168,27 +162,14 @@ _TEMPLATE_LAYOUTS: dict[str, dict[str, Any]] = {
                   "outline": {"color": [17, 24, 39], "width": 6}},
         "accent_bar": {"color": [220, 38, 38], "height": 12, "width_ratio": 0.40},
     },
-    # 黄色大字 v4（2026-11-09 封面生成规范固化为版型常量）：局部半透明暗底只在
-    # 文字背后（保留，浅背景可读双保险）；主标题区中下部（0.44）；主钩子起始档
-    # 110 尽量吃满安全画幅 80%（自动缩宽兜底）、标签 54 明显小；核心识别色
-    # #FFDD00、描边改纯黑（主钩子 8px/标签 6px，规范 6~8px 区间）；角标层
-    # 左下角（margin 48px、白字黑边 42px），文案由任务/重制请求传入（config
-    # cover_badge_text），为空不绘制。
-    "yellow_bold": {
-        "theme": {"color": "#FFDD00", "stroke_color": "#000000", "stroke_width": 6,
-                  "start_size": 54, "top_ratio": 0.44},
-        "hook": {"color": "#FFDD00", "stroke_color": "#000000", "stroke_width": 8,
-                 "start_size": 110},
-        "panel": {"fill": [17, 24, 39], "opacity": 150, "radius": 22, "pad": 36},
-        "corner_badge": {"anchor": "bottom_left", "margin": 48, "font_size": 42,
-                         "color": "#FFFFFF", "stroke_color": "#000000",
-                         "stroke_width": 3},
-    },
     # 黄色大字 v5（2026-11-09 P2，参考抖音医生博主样张，默认版型）：两行**同级**
     # 黄色大字（theme 88 ≈ hook 110×0.8，同色 #FFDD00、同黑描边规格），文字块
     # 锚定人物胸腹区（top_ratio 0.56——典型半身构图人脸下缘之下、底部安全区之上）；
     # 暗底面板与角标层沿 v4。人脸避让从锚点向下让位（既有不变量），底部 15%
     # 安全区与可读线（≥96px@1080）全部保持。
+    # 旧 yellow_bold v4（theme 54/top 0.44）已按用户拍板（2026-11-09）删除——
+    # v5 完全覆盖其场景；存量台账里选择 v4 的项目，应用/重制时会得到
+    # E_TEMPLATE_UNKNOWN 明确报错，请改选 v5。
     "yellow_bold_v5": {
         "theme": {"color": "#FFDD00", "stroke_color": "#000000", "stroke_width": 6,
                   "start_size": 88, "top_ratio": 0.56},

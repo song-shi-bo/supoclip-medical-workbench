@@ -998,6 +998,7 @@ def test_worker_cover_stage_uses_refined_and_topic_unit(tmp_path, monkeypatch, s
     from src import clip_refinement as refine_mod
     from src import cover_realframe_v2 as cover_mod
 
+    monkeypatch.setenv("STUDIO_AUTO_COVER", "1")                 # 测的就是封面阶段本身
     monkeypatch.setattr(w, "_log", lambda _message: None)
     monkeypatch.setattr(w, "_COVER_LLM_FN", lambda _prompt: json.dumps({"candidates": [
         {"topic": "血压", "hook": "规律测量血压", "segment_ids": ["s1"]}]},
@@ -1064,6 +1065,7 @@ def test_worker_cover_stage_and_card_binding_end_to_end(tmp_path, monkeypatch):
     from src import studio_project_store as store
     from src import cover_realframe_v2 as cover_mod
 
+    monkeypatch.setenv("STUDIO_AUTO_COVER", "1")                 # 测的就是封面阶段本身
     monkeypatch.setattr(w, "_log", lambda _message: None)
     monkeypatch.setattr(w, "_COVER_LLM_FN", lambda _prompt: json.dumps({"candidates": [
         {"topic": "高血压", "hook": "早上不要猛起床", "segment_ids": ["s1"]}]},
@@ -1136,10 +1138,43 @@ def test_worker_cover_stage_and_card_binding_end_to_end(tmp_path, monkeypatch):
     assert entry_again["cover"]["revision"] == 1 and len(entry_again["cover"]["history"]) == 1
 
 
+def test_auto_cover_disabled_skips_cover_stage(tmp_path, monkeypatch):
+    """2026-11-09 用户拍板：STUDIO_AUTO_COVER 关闭 → 封面阶段整体跳过（零产物零调用）。"""
+    import uuid
+
+    from src import studio_job_worker as w
+    from src import cover_realframe_v2 as cover_mod
+
+    monkeypatch.setenv("STUDIO_AUTO_COVER", "0")
+    monkeypatch.setattr(w, "_log", lambda _message: None)
+    called = {"llm": 0}
+
+    def _forbidden_llm(_prompt):
+        called["llm"] += 1
+        raise AssertionError("关闭状态下不允许调用封面文案 LLM")
+
+    run_id = uuid.uuid5(uuid.NAMESPACE_URL, "studio-render:job-nocover:0").hex
+    out_root = tmp_path / "tasks" / "output" / run_id
+    base = out_root / "clips" / "clip-01"
+    base.mkdir(parents=True)
+    (base / "clip_final.mp4").write_bytes(b"post-render")
+    plan_record = {"clips": [{"clip_id": "clip-01", "start_ms": 0, "end_ms": 1000}],
+                   "analysis_ref": {}}
+    aggregate = {"entries": [{"clip_id": "clip-01", "status": "rendered"}], "warnings": []}
+    monkeypatch.setattr(w, "_COVER_LLM_FN", _forbidden_llm)
+    results = w._run_clip_cover_stage({"project_id": "timeline_nocover1"}, "job-nocover",
+                                      plan_record, {"asr_segments": []}, aggregate,
+                                      base / "clip_final.mp4", out_root)
+    assert results == {}
+    assert not (base / "cover.jpg").exists() and not (base / "cover_copy.json").exists()
+    assert called["llm"] == 0
+
+
 def test_worker_cover_failure_only_warns(tmp_path, monkeypatch):
     """封面工具抛错 → 切片照常发布（返回空结果）+ warning 只记不抛。"""
     from src import studio_job_worker as w
 
+    monkeypatch.setenv("STUDIO_AUTO_COVER", "1")                 # 测的就是封面阶段本身
     monkeypatch.setattr(w, "_log", lambda _message: None)
     out_root = tmp_path / "output" / "run-x"
     base = out_root / "clips" / "clip-01"
