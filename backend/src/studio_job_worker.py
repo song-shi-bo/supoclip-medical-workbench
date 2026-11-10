@@ -969,6 +969,83 @@ def _analysis_keywords_for_cover(plan_record: dict) -> list[str]:
     return [str(k).strip() for k in keywords if str(k).strip()] if isinstance(keywords, list) else []
 
 
+def _cover_topic_unit_from_analysis(plan_record: dict, clip_start_ms: int,
+                                    clip_end_ms: int,
+                                    topic_hint: str | None = None) -> dict | None:
+    """按切片区间取内容分析的主题块（2026-11-09 封面文案主题对齐）。
+
+    选取规则：与切片区间重叠时长最大的 topic_units 项；**重叠并列（主题块边界
+    重合时常见，真机验证 clip-c4b8f0a328 实证）优先取标题与切片规划主题
+    （``topic_hint``）汉字相关者**，仍并列取先出现；分析产物缺失/无主题块/
+    读盘失败 → None（封面退化为关键词评分，行为与升级前一致）。
+    """
+    path = str((plan_record.get("analysis_ref") or {}).get("path") or "")
+    if not path:
+        return None
+    try:
+        document = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    units = document.get("topic_units")
+    if not isinstance(units, list):
+        return None
+    candidates: list[tuple[float, dict]] = []
+    for unit in units:
+        if not isinstance(unit, dict):
+            continue
+        title = str(unit.get("title") or "").strip()
+        if not title:
+            continue
+        start_ms = int(unit.get("start_ms") or 0)
+        end_ms = int(unit.get("end_ms") or 0)
+        overlap = min(clip_end_ms, end_ms) - max(clip_start_ms, start_ms)
+        if overlap > 0:
+            candidates.append((float(overlap), {
+                "title": title,
+                "mechanism": str(unit.get("mechanism") or "").strip(),
+                "hook_quote": str(unit.get("hook_quote") or "").strip(),
+                "ending_quote": str(unit.get("ending_quote") or "").strip(),
+                "start_ms": start_ms, "end_ms": end_ms}))
+    if not candidates:
+        return None
+    best_overlap = max(overlap for overlap, _ in candidates)
+    tied = [unit for overlap, unit in candidates if overlap >= best_overlap - 1.0]
+    hint = str(topic_hint or "").strip()
+    if hint and len(tied) > 1:
+        from src.cover_realframe_v2 import _longest_common_cjk_run
+        hint_cjk = "".join(ch for ch in hint if "\u4e00" <= ch <= "\u9fff")
+        tied.sort(key=lambda unit: -_longest_common_cjk_run(hint_cjk, str(unit["title"])))
+    return tied[0]
+
+
+def _refined_segments_for_cover(refinement: dict | None, clip_id: str,
+                                clip_start_ms: int, clip_end_ms: int) -> tuple[list[dict], str] | None:
+    """封面文案底料：精修稿优先（2026-11-09，与烧录字幕契约对齐）。
+
+    只有 ``source=llm`` 的切片条目才消费（fallback 条目的 refined_text 本就是
+    纠错转写，直接走纠错稿路径，来源标注才诚实）；按切片窗口过滤，空文本段跳过。
+    返回 ``(segments, "refined")`` 或 None（调用方回退 ``_clip_window_segments``）。
+    """
+    entry = ((refinement or {}).get("clips") or {}).get(clip_id) or {}
+    if str(entry.get("source") or "") != "llm":
+        return None
+    segments: list[dict] = []
+    for seg in entry.get("segments") or []:
+        if not isinstance(seg, dict):
+            continue
+        text = str(seg.get("refined_text") or "").strip()
+        if not text:
+            continue
+        start_ms = int(seg.get("start_ms") or 0)
+        end_ms = int(seg.get("end_ms") or 0)
+        if end_ms <= clip_start_ms or start_ms >= clip_end_ms:
+            continue
+        segments.append({"segment_id": str(seg.get("segment_id") or ""),
+                         "start_ms": start_ms, "end_ms": end_ms,
+                         "text": text, "speaker": str(seg.get("speaker") or "")})
+    return (segments, "refined") if segments else None
+
+
 def _cover_artifact_kinds(base: Path) -> list[tuple[str, str]]:
     """封面四产物的 artifact 登记项（文件存在才登记）。"""
     return [(kind, filename) for kind, filename in (
@@ -984,14 +1061,21 @@ def _run_clip_cover_stage(job: dict, job_id: str, plan_record: dict, transcript:
     * 成功：四产物落在切片目录，并把 ``clip_final`` 前 0.8s 替换为封面片头
       （复用 ``cover_replace.splice_intro`` 时长不变契约；重启恢复按台账 sha
       防二次拼接）；
+    * 文案底料（2026-11-09）：该切片精修稿优先（source=llm 才消费，与烧录契约
+      一致），缺失如实回退纠错转写；主题块（content_analysis topic_units 按切片
+      区间重叠选取）注入提示词并驱动主题校验/受控重生成（cover 模块内实现）；
     * 失败：该切片照常发布、无封面，只记 warning（只警告不拦截）；
     * 同 clip 已有封面且产物不完整/需要重制时，新工具内部 revision+1、旧封面
       转 ``.purge-trash`` 回收站。
-    返回 ``{clip_id: {sha256, bytes, topic, hook, cover_revision}}``（仅成功项）。
+    返回 ``{clip_id: {sha256, bytes, topic, hook, cover_revision, copy_source}}``
+    （仅成功项）。
     """
     from src import cover_realframe_v2, cover_replace
 
     keywords = _analysis_keywords_for_cover(plan_record)
+    # 2026-11-09 封面升级：文案底料精修稿优先（与烧录契约一致）+ 主题块锚点。
+    # 指纹不符/缺失 → None 如实回退纠错稿；绝不冒充精修。
+    refinement = _load_refinement_for_render(job_id, plan_record)
     plan_clips = {str(item.get("clip_id")): item for item in plan_record.get("clips") or []}
     llm_fn = _COVER_LLM_FN          # 测试桩注入口；None = 生产走真实文本 LLM（一次/切片）
     results: dict[str, dict] = {}
@@ -1006,16 +1090,26 @@ def _run_clip_cover_stage(job: dict, job_id: str, plan_record: dict, transcript:
             continue
         start_ms = int(clip.get("start_ms") or 0)
         end_ms = int(clip.get("end_ms") or 0)
+        refined_pair = _refined_segments_for_cover(refinement, clip_id, start_ms, end_ms)
+        if refined_pair is not None:
+            cover_segments, transcript_source = refined_pair
+        else:
+            cover_segments = _clip_window_segments(list(transcript.get("asr_segments") or []),
+                                                   start_ms, end_ms)
+            transcript_source = "corrected"
         try:
             produced = cover_realframe_v2.build_cover(
                 source, project_id=str(job["project_id"]), clip_id=clip_id,
                 clip_start_ms=start_ms, clip_end_ms=end_ms,
-                segments=_clip_window_segments(list(transcript.get("asr_segments") or []),
-                                               start_ms, end_ms),
+                segments=cover_segments,
                 out_dir=base, analysis_keywords=keywords,
                 topic_hint=str(clip.get("topic") or "") or None, job_id=job_id,
                 llm_fn=llm_fn,
-                corner_badge_text=str((job.get("config") or {}).get("cover_badge_text") or "") or None)
+                corner_badge_text=str((job.get("config") or {}).get("cover_badge_text") or "") or None,
+                topic_unit=_cover_topic_unit_from_analysis(
+                    plan_record, start_ms, end_ms,
+                    topic_hint=str(clip.get("topic") or "") or None),
+                transcript_source=transcript_source)
         except Exception as exc:  # noqa: BLE001 — 封面失败不是切片失败
             aggregate.setdefault("warnings", []).append(
                 f"封面生成失败（{clip_id}，切片照常发布）: {type(exc).__name__}: {exc}"[:200])

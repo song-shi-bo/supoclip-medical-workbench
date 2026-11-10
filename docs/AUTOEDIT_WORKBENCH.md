@@ -81,7 +81,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 | 1 | 内容分析 extracting_highlights | 模型全篇分析（主题/关键词/金句候选）；主题簇带 **mechanism/hook_quote/ending_quote**（机制限钩子四机制词表、引用句逐字校验违者清除留痕）+ **info_seconds**（程序按分段时长求和，模型无权产生）；heuristic 回退三字段留空 | `content_analysis.py`（analysis/v3 + analysis-prompt/2026-11-08） + LLM 网关 | `tasks/analysis/<job>.json` |
 | 2 | 切片规划 planning（提示词A） | 连续时间区间切片、动态条数、硬性校验（时间不越界/文本忠于转写/禁词表）；拼装层背景透出主题簇四字段（提示词A 原文不动，slice-a3） | `clip_planning.py` + LLM | `tasks/plans/<job>/clip_plan.json` |
 | 3 | 切片精修 refining（提示词B b2） | 逐切片精修字幕文本 + **逐段说话人（医生/患者/家属）**，失败粒度回退不阻断；**只删不改执法（2026-11-08）**：精修句必须是语气词清理后转写的顺序保持子串，违规段整段回退原纠错转写（`reverted_segments` 留痕；全违规→整片 fallback `delete_only_violation`） | `clip_refinement.py`（clip-refine-prompt/2026-11-08-b2） + LLM | `tasks/plans/<job>/clip_refinement.json`（`clips[clip_id].segments`：`segment_id/start_ms/end_ms/refined_text/speaker`） |
-| 4 | 封面 cover | realframe_v2：真实视频帧+文字叠加（纯本地，无 AI 生图）；**黄色大字版型 v4**（#FFDD00/纯黑描边 8+6px/hook 110/0.44，注册表 2026-11-09.2）+ **角标层**（左下 48px 白字黑边 42px，文案=任务 config `cover_badge_text`，空不绘制）+ **缩略图可读线校验**（最终字号 ≥96px@1080，不过→纯色兜底底图，`cover_layout.json.readability` 留痕）；`clip_final` 前 0.8s 替换为封面片头（时长不变契约）；失败只 warning。规范全文见 `docs/cover-generation-convention.md` | `cover_realframe_v2.py`、`cover_templates.py`、`cover_replace.splice_intro`、ffmpeg | 切片目录四产物 + `cover_revision` |
+| 4 | 封面 cover | realframe_v2：真实视频帧+文字叠加（纯本地，无 AI 生图）；**选帧**：切片内每 2s 抽候选（首帧自 +1.0s 起避开开场起手势帧，上限 40）→ 确定性评分＝人脸数（1 张最佳）+ 面积 + 清晰度 + **亮度项（灰度均值 [90,200] 满分，偏暗帧不再胜出）** + 单脸居中项，运动模糊 ×0.6；**文案主题对齐（2026-11-09 P1）**：主题块锚点＝content_analysis `topic_units` 按切片区间重叠最大选取（并列优先标题与切片规划主题相关者），底料**精修稿优先**（`source=llm` 才消费，回退纠错稿）；LLM 一次出 3 组候选 → 主题校验（title 覆盖率/钩子原话命中）→ 不合格带反馈**受控重生成一次**（每切片封面文案 LLM ≤2 次，`llm_budget` cover_copy 记账）→ 仍不合格走 hint 规则组/主题词直组句兜底（有主题块时 hint 不进初选池，防规划标题机械回声压过更优文案）；**黄色大字版型 v4**（#FFDD00/纯黑描边 8+6px/hook 110/0.44，注册表 2026-11-09.2）+ 角标层（任务 config `cover_badge_text`，空不绘制）+ 可读线校验（≥96px@1080，不过→纯色兜底底图）；`clip_final` 前 0.8s 替换为封面片头（时长不变契约）；失败只 warning。审计：`cover_copy.json` 的 `topic_unit_used/validation_report/regeneration_count/prompt_version(2026-11-09.2)/transcript_source`。规范全文见 `docs/cover-generation-convention.md` | `cover_realframe_v2.py`、`cover_templates.py`、`cover_replace.splice_intro`、ffmpeg | 切片目录四产物 + `cover_revision` |
 | 5 | 渲染 rendering | clip_plan 的 `start_ms/end_ms` + 指定版本纠错转写 → **本地 FFmpeg 逐条渲染**：横转竖居中裁切（608×1080→1080×1920）、H.264+AAC、SRT 时间平移、**字幕同遍烧录**（2026-10-29 固化）；**烧录源=精修稿优先（2026-11-09 用户拍板）**：`source=llm` 切片按 segment_id 把烧录文本替换为 `refined_text`（语气词/无价值句已删，`clip_render._apply_refined_segments`），精修缺失/fallback 如实回退纠错转写，`warnings.json.subtitle_provenance.subtitle_source`（`clip_refinement`/`corrected_transcript`）+ `refined_segment_count` 留痕；渲染指纹含精修身份、版本 `refined-burn/1`（旧「纠错转写烧录」缓存全量失效，重新剪辑后成片字幕自动切精修稿）；源片本地硬链接不重传 | `clip_render.py`、ffmpeg（`CONTENT_RENDER_FFMPEG`） | `tasks/output/<job>/clips/<clip_id>/clip_final.mp4` + cover.jpg + ASS/SRT + warnings.json |
 | 6 | 回传/登记 | 渲染同一遍产出的字幕/封面四产物登记 artifact；卡片/台账构建 | `store.register_clips`（generation 锁，幂等） | 项目 `tasks/projects/<id>/clips.json` |
 
@@ -123,6 +123,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 ### 4.4 封面体系
 - realframe_v2 固化封面（渲染时自动）；手动替换/模板应用/多版本历史/回收站/撤销激活：`cover_templates.py`、`cover_replace.py`、`bump_cover/set_cover_pointer/prune_cover_history`（`studio_project_store.py`，原子 rev+1）。
+- **文案主题对齐与选帧升级（2026-11-09 P1）**：见 §3.2 第 4 步——封面文字来源可用 `cover_copy.json` 审计（`final.source`: llm/rules/topic_fallback/user_override + `validation_report`）；封面/文案不合格时经「重新制作封面」（revision+1）生效，重制走生产同款取数（主题块+精修稿）。
 
 ### 4.5 效果与音频
 - 音量/静音/BGM 音轨：Inspector「效果」标签，预览即时生效；配置保存 bump `render_revision`；BGM 上传/管理走 media.py BGM 路由（波形 peaks）。
@@ -183,7 +184,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 ## 附录 · 代码事实快照（自动生成）
 
-- 生成时间：2026-11-09 09:40 UTC · 代码版本：`9d6193d` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
+- 生成时间：2026-11-10 02:26 UTC · 代码版本：`c0f8da8` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
 
 ### HTTP 端点（backend/src/api/routes）
 

@@ -19,19 +19,29 @@
 流程（与规格逐条对应）
 --------------------
 1. 抽帧：仅在 ``[clip_start_ms, clip_end_ms]`` 内每隔 ``FRAME_STEP_SECONDS``（~2s）
-   抽候选帧（``ffmpeg -ss`` 快 seek，候选上限 ``MAX_FRAME_CANDIDATES``；临时 png
-   放系统 temp，用完即清理）。
+   抽候选帧（首帧从切片起点 +``FRAME_FIRST_OFFSET_S``（2026-11-09 起 1.0s，避开
+   开场起手势帧）起；``ffmpeg -ss`` 快 seek，候选上限 ``MAX_FRAME_CANDIDATES``；
+   临时 png 放 tasks 同盘 temp，用完即清理）。
 2. 选帧：cv2 Haar 级联人脸检测（``cv2.data.haarcascades`` 自带，启动时验证存在）；
    确定性评分 = 人脸数（1 张最佳）+ 人脸面积占比 + 清晰度（Laplacian 方差，全帧 +
-   人脸区）；低方差按运动模糊降权；**无脸帧也可入选**（降权并标注 ``no_face``）。
-   「表情自然/闭眼」不做情绪判断，以清晰度方差作代理——此为文档明示的近似。
+   人脸区）+ **亮度项（灰度均值 [90,200] 满分，2026-11-09 新增，偏暗帧不再胜出）**
+   + **单脸居中项**；低方差按运动模糊降权；**无脸帧也可入选**（降权并标注
+   ``no_face``）。「表情自然/闭眼」不做情绪判断，以清晰度方差作代理——此为文档
+   明示的近似。
 3. 裁剪：裁剪窗宽 = 源高 × (1080/1920)，x 中心 = 人脸 x 中心（无脸 = 画面中心），
    越界钳制；等比缩放不拉伸（先等比放大到高 1920，再居中裁到宽 1080）。
 4. 文案：一次文本 LLM 调用产 3 组候选 ``{topic(2-6汉字), hook(≤12汉字),
    segment_ids(证据)}``，严格 JSON；约束写入 prompt（最多两行、必须由证据支持、
    禁通用词「健康科普」、禁虚构诊断/药物/数字/疗效/恐吓）。
-5. 自动选一组：确定性评分（topic/hook 与证据段关键词重合度 + 长度合规），平局取
-   第一组；选择依据写进 ``cover_copy.json``。
+   **主题对齐（2026-11-09 P1）**：prompt 注入内容分析中与切片重叠的主题块
+   （title/hook_quote），要求 topic/hook 必须概括切片主题；文案底料优先精修稿
+   （worker 传入，``transcript_source`` 留痕）。
+5. 自动选一组：确定性评分（**主题 title 覆盖率×3 + 钩子原话命中×2** + 关键词
+   重合×2 + 长度合规 + 证据可回放），平局取第一组；选择依据写进 ``cover_copy.json``。
+   选出后过**主题校验**（``validate_copy_against_topic``）：不 ok 且来源为 LLM →
+   带反馈受控重生成一次（每切片封面文案 LLM 调用 ≤``COPY_MAX_LLM_CALLS_PER_CLIP``）；
+   仍不 ok → 主题词直组句兜底（``source="topic_fallback"``）入池重选；全程留痕
+   （``validation_report``/``regeneration_count``），失败只 warning 不阻断。
 6. Pillow 绘制 1080x1920 ``cover.jpg``；CJK 字体沿字幕管线既有解析路径
    （``font_registry``：fonts/ 目录 + 系统 CJK 路径），绘制前用 ``getmask`` 逐字
    验证字形，缺字换下一个字体；全部缺失 → 报 ``E_COVER_CJK_FONT_MISSING`` 并列出
@@ -112,6 +122,18 @@ COPY_FORBIDDEN_TERMS = ("健康科普", "专家提醒", "震惊", "必看", "转
 # 运动模糊降权阈值（Laplacian 方差经验值：低于它视为疑似运动模糊）
 MOTION_BLUR_VARIANCE = 60.0
 
+# 选帧亮度/居中（2026-11-09 P1：偏暗开场帧常胜出、用户样张偏暗的事故修正项）
+BRIGHTNESS_OK_RANGE = (90.0, 200.0)        # 灰度均值落此区间 → 亮度满分 2.0
+BRIGHTNESS_PARTIAL_RANGE = (60.0, 230.0)   # 部分分区间（1.0），之外 0 分
+FACE_CENTER_TOLERANCE_RATIO = 0.15         # 单脸中心偏离画面宽 ≤15% → 居中满分 1.0
+FRAME_FIRST_OFFSET_S = float(os.getenv("COVER_FRAME_FIRST_OFFSET_S", "1.0"))
+
+# 文案主题对齐（2026-11-09 P1：封面文案必须概括切片主题，跑题受控重生成一次）
+COPY_PROMPT_VERSION = "2026-11-09.2"
+COPY_MAX_LLM_CALLS_PER_CLIP = 2            # 每切片封面文案 LLM 调用硬上限（含重生成）
+TOPIC_TITLE_COVER_RATIO_MIN = 0.34         # 候选对主题 title 的最低覆盖率（LCS/标题汉字数）
+HOOKQUOTE_MIN_COMMON_CJK = 4               # 命中 hook_quote 的最小连续汉字数
+
 LEDGER_FILENAME = "cover_realframe_v2.json"
 COVER_JPG_NAME = "cover.jpg"
 COVER_INTRO_NAME = "cover_intro.mp4"
@@ -156,10 +178,13 @@ def _now_iso() -> str:
 
 def plan_frame_times(clip_start_ms: int, clip_end_ms: int, *,
                      step_seconds: float = FRAME_STEP_SECONDS,
-                     max_candidates: int = MAX_FRAME_CANDIDATES) -> list[dict[str, float]]:
+                     max_candidates: int = MAX_FRAME_CANDIDATES,
+                     first_offset_s: float | None = None) -> list[dict[str, float]]:
     """切片内抽帧时刻表：相对时刻（封面语义用）+ 绝对时刻（源视频 seek 用）。
 
-    首帧固定取切片起点 +0.2s（避开首帧黑场/转场），之后每 ``step_seconds`` 一帧，
+    首帧固定取切片起点 + ``FRAME_FIRST_OFFSET_S``（2026-11-09 起 1.0s：开场 0.2s
+    的起手势/转场帧在人脸评分下几乎总胜出，让用户误以为封面永远取第一秒；env
+    ``COVER_FRAME_FIRST_OFFSET_S`` 可覆盖），之后每 ``step_seconds`` 一帧，
     终点前不少于 0.2s；候选数超过 ``max_candidates`` 时按均匀间隔抽样压缩。
     """
     start_s = max(0.0, float(clip_start_ms) / 1000.0)
@@ -173,8 +198,10 @@ def plan_frame_times(clip_start_ms: int, clip_end_ms: int, *,
                  "time_abs_s": round(start_s + duration_s / 2, 3),
                  "clip_duration_s": round(duration_s, 3)}]
     step = max(0.2, float(step_seconds))
+    first = max(0.2, float(first_offset_s if first_offset_s is not None
+                           else FRAME_FIRST_OFFSET_S))
     rel_times: list[float] = []
-    current = 0.2
+    current = first
     while current < max(0.2, duration_s - 0.2) and len(rel_times) < max_candidates * 4:
         rel_times.append(round(current, 3))
         current += step
@@ -264,6 +291,28 @@ def _laplacian_variance(image_bgr: Any, box: list[int] | None = None) -> float:
     return float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
 
+def _brightness_score(gray_mean: float) -> float:
+    """亮度项（0~2）：正常曝光满分，偏暗/偏亮部分分，极端 0 分（阈值模块常量可注入）。"""
+    lo_ok, hi_ok = BRIGHTNESS_OK_RANGE
+    lo_part, hi_part = BRIGHTNESS_PARTIAL_RANGE
+    if lo_ok <= gray_mean <= hi_ok:
+        return 2.0
+    if lo_part <= gray_mean < lo_ok or hi_ok < gray_mean <= hi_part:
+        return 1.0
+    return 0.0
+
+
+def _face_center_score(faces: list[list[int]], width: int) -> float:
+    """单脸居中项（0~1）：脸中心偏离画面中心 ≤15% 满分，线性衰减到偏移 50% 归零。"""
+    if len(faces) != 1 or width <= 0:
+        return 0.0
+    x, _, w, _ = faces[0]
+    offset = abs((x + w / 2.0) - width / 2.0) / float(width)
+    if offset <= FACE_CENTER_TOLERANCE_RATIO:
+        return 1.0
+    return max(0.0, 1.0 - (offset - FACE_CENTER_TOLERANCE_RATIO) / (0.5 - FACE_CENTER_TOLERANCE_RATIO))
+
+
 def score_frame(image_bgr: Any, cascade: Any, *, index: int, time_rel_s: float,
                 path: Path) -> dict[str, Any]:
     """单帧确定性评分（全记录，供 cover_copy.json / layout 审计）。
@@ -272,9 +321,14 @@ def score_frame(image_bgr: Any, cascade: Any, *, index: int, time_rel_s: float,
       3 张及以上 1.2；
     - 面积项：人脸面积占比 ×2（封顶 2.0）；
     - 清晰度项：``log1p(方差)`` 全帧与人脸区均值归一（0~3）；
+    - 亮度项（2026-11-09）：灰度均值 [90,200] 满分 2.0，[60,90)∪(200,230] 1.0，
+      其余 0（偏暗帧如用户样张不再胜出）；
+    - 单脸居中项（2026-11-09）：唯一人脸中心贴近画面轴线满分 1.0，线性衰减；
     - 运动模糊：全帧方差 < ``MOTION_BLUR_VARIANCE`` 时总分 ×0.6 并标记。
     表情自然/闭眼不做情绪判断，以清晰度方差作代理（文档明示的近似）。
     """
+    import cv2
+
     height, width = image_bgr.shape[:2]
     faces = detect_faces(image_bgr, cascade)
     face_area_ratio = min(1.0, sum(w * h for _, _, w, h in faces) / float(width * height))
@@ -285,7 +339,10 @@ def score_frame(image_bgr: Any, cascade: Any, *, index: int, time_rel_s: float,
     area_term = face_area_ratio * 2.0
     clarity = (math.log1p(sharpness_full) + math.log1p(sharpness_face or sharpness_full)) / 2
     clarity_term = min(3.0, clarity / math.log1p(1000.0) * 3.0)
-    score = face_term + area_term + clarity_term
+    gray_mean = float(cv2.mean(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY))[0])
+    brightness_term = _brightness_score(gray_mean)
+    face_center_term = _face_center_score(faces, width)
+    score = face_term + area_term + clarity_term + brightness_term + face_center_term
     motion_blur_suspect = sharpness_full < MOTION_BLUR_VARIANCE
     if motion_blur_suspect:
         score *= 0.6
@@ -300,6 +357,9 @@ def score_frame(image_bgr: Any, cascade: Any, *, index: int, time_rel_s: float,
         "face_area_ratio": round(face_area_ratio, 6),
         "sharpness_full": round(sharpness_full, 3),
         "sharpness_face": round(sharpness_face, 3) if sharpness_face is not None else None,
+        "brightness_mean": round(gray_mean, 2),
+        "brightness_term": round(brightness_term, 3),
+        "face_center_term": round(face_center_term, 3),
         "no_face": len(faces) == 0,
         "motion_blur_suspect": bool(motion_blur_suspect),
         "score": round(score, 4),
@@ -360,16 +420,41 @@ def copy_system_prompt() -> str:
         "\"segment_ids\":[\"证据分段id\"]}]}，恰好 3 组。"
         "约束：主题与钩子必须由证据分段支持；最多两行；禁用通用词（如“健康科普”）；"
         "禁止虚构诊断、药物名称、具体数字、疗效承诺与恐吓表述。"
+        "给出【本条切片主题】时，topic 与 hook 必须概括该主题（优先从主题词与钩子原话提炼），"
+        "不得用全篇通用提醒或与主题无关的单句细节代替。"
     )
 
 
-def copy_user_prompt(segments: list[dict[str, Any]], keywords: list[str]) -> str:
-    """一次文本 LLM 调用的用户提示词（分段带 id，便于模型给证据）。"""
-    lines = [f"[{item.get('segment_id')}] {str(item.get('text') or '').strip()}"
-             for item in segments if str(item.get("text") or "").strip()]
+def copy_user_prompt(segments: list[dict[str, Any]], keywords: list[str],
+                     topic_unit: dict[str, Any] | None = None,
+                     feedback: str | None = None) -> str:
+    """一次文本 LLM 调用的用户提示词（分段带 id，便于模型给证据）。
+
+    ``topic_unit``：内容分析里与切片重叠的主题块（title/hook_quote），注入为
+    「必须概括」的主题上下文（2026-11-09 P1 文案主题对齐）；``feedback``：重生成
+    时携带上一轮不合格原因（每切片最多重生成一次，调用总数受
+    ``COPY_MAX_LLM_CALLS_PER_CLIP`` 硬上限）。
+    """
+    body_lines = []
+    for item in segments:
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        speaker = str(item.get("speaker") or "").strip()
+        prefix = f"（{speaker}）" if speaker else ""
+        body_lines.append(f"[{item.get('segment_id')}] {prefix}{text}")
+    lines = body_lines[:120]
     if keywords:
         lines.append(f"【内容分析关键词，可优先参考】{'、'.join(str(k) for k in keywords[:10])}")
-    return "转写文本：\n" + "\n".join(lines[:120])
+    if topic_unit:
+        title = str(topic_unit.get("title") or "").strip()
+        hook_quote = str(topic_unit.get("hook_quote") or "").strip()
+        if title:
+            lines.append(f"【本条切片主题（topic/hook 必须概括它）】{title}")
+            lines.append(f"【主题区内可当钩子的原话（逐字，可作 hook 素材）】{hook_quote or '无'}")
+    if feedback:
+        lines.append(f"【上一轮输出不合格原因】{feedback} 请换角度重新概括切片主题。")
+    return "转写文本：\n" + "\n".join(lines)
 
 
 def request_copy_from_llm(prompt: str, *, job_id: str | None = None) -> str:
@@ -533,27 +618,115 @@ def _clamp_hook(sentence: str) -> str:
     return hook if hook else sentence[:HOOK_MAX_TOTAL_CHARS]
 
 
+def _longest_common_cjk_run(a: str, b: str) -> int:
+    """两串的最长连续公共汉字子串长度（确定性 DP；入参短，O(len_a×len_b) 足够）。"""
+    text_a = "".join(ch for ch in str(a) if "\u4e00" <= ch <= "\u9fff")
+    text_b = "".join(ch for ch in str(b) if "\u4e00" <= ch <= "\u9fff")
+    if not text_a or not text_b:
+        return 0
+    previous = [0] * (len(text_b) + 1)
+    best = 0
+    for i in range(1, len(text_a) + 1):
+        current = [0] * (len(text_b) + 1)
+        for j in range(1, len(text_b) + 1):
+            if text_a[i - 1] == text_b[j - 1]:
+                current[j] = previous[j - 1] + 1
+                if current[j] > best:
+                    best = current[j]
+        previous = current
+    return best
+
+
+def validate_copy_against_topic(selected: dict[str, Any],
+                                topic_unit: dict[str, Any] | None) -> dict[str, Any]:
+    """生成后主题校验（2026-11-09 P1）：候选必须能代表切片主题。
+
+    通过条件（任一满足）：候选与主题 title 的最长连续公共汉字覆盖率
+    ≥ ``TOPIC_TITLE_COVER_RATIO_MIN``；或与 hook_quote 连续公共汉字
+    ≥ ``HOOKQUOTE_MIN_COMMON_CJK``。无主题块（旧任务无分析产物）恒通过，
+    行为与升级前一致。
+    """
+    title = str((topic_unit or {}).get("title") or "").strip()
+    hook_quote = str((topic_unit or {}).get("hook_quote") or "").strip()
+    combined = f"{selected.get('topic') or ''}{selected.get('hook') or ''}"
+    coverage = (_longest_common_cjk_run(title, combined) / max(1, _cjk_len(title))
+                if title else 0.0)
+    common = _longest_common_cjk_run(hook_quote, combined) if hook_quote else 0
+    report: dict[str, Any] = {
+        "topic_title": title or None,
+        "topic_coverage": round(float(coverage), 3),
+        "hookquote_common_cjk": int(common),
+        "min_coverage": TOPIC_TITLE_COVER_RATIO_MIN,
+        "min_hookquote_common_cjk": HOOKQUOTE_MIN_COMMON_CJK,
+    }
+    if not title and not hook_quote:
+        report.update({"ok": True, "reason": "no_topic_unit"})
+        return report
+    if coverage >= TOPIC_TITLE_COVER_RATIO_MIN:
+        report.update({"ok": True, "reason": "topic_title_covered"})
+        return report
+    if common >= HOOKQUOTE_MIN_COMMON_CJK:
+        report.update({"ok": True, "reason": "hook_quote_matched"})
+        return report
+    report.update({"ok": False,
+                   "reason": f"与主题「{title}」相关度不足（覆盖率 {coverage:.2f}、"
+                             f"钩子原话最长连续 {common} 字）"})
+    return report
+
+
+def _topic_title_candidates(topic_unit: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """主题词直组句兜底（确定性，零 LLM）：title/hook_quote 截断合规化成一组候选。
+
+    只在校验不通过且重生成后仍不通过时入池（``source="topic_fallback"``），
+    让「封面至少说清楚这条切片讲什么主题」成为可保底的下限。
+    """
+    title = re.sub(r"\s+", "", str((topic_unit or {}).get("title") or ""))
+    if _cjk_len(title) < 2:
+        return []
+    hook_quote = re.sub(r"\s+", "", str((topic_unit or {}).get("hook_quote") or ""))
+    hook = (_clamp_hook(hook_quote) if _cjk_len(hook_quote) >= 2
+            else title[:HOOK_MAX_TOTAL_CHARS])
+    return [{"topic": title[:TOPIC_MAX_CHARS], "hook": hook,
+             "segment_ids": [], "source": "topic_fallback"}]
+
+
 def select_copy_candidate(candidates: list[dict[str, Any]], segments: list[dict[str, Any]],
-                          keywords: list[str] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
-    """确定性选一组：证据关键词重合度 + 长度合规 + 证据可回放，平局取第一组。"""
+                          keywords: list[str] | None = None,
+                          topic_unit: dict[str, Any] | None = None
+                          ) -> tuple[dict[str, Any], dict[str, Any]]:
+    """确定性选一组：主题重合为主、关键词重合为辅 + 长度合规 + 证据可回放，平局取第一组。
+
+    2026-11-09 P1 升级：keywords 是全文级信号（重合≠概括切片主题），主题块
+    title 覆盖率（×3）与 hook_quote 命中（×2）提为主要权重；无主题块时退化为
+    原关键词评分，行为不回退。
+    """
     if not candidates:
         raise CoverReplaceError(E_COVER_RENDER_FAILED, "没有可用的封面文案候选")
     text = clip_transcript_text(segments)
     keyword_list = [str(k) for k in (keywords or []) if str(k).strip()]
     segment_ids = {str(item.get("segment_id") or "") for item in segments}
+    topic_title = str((topic_unit or {}).get("title") or "").strip()
+    hook_quote = str((topic_unit or {}).get("hook_quote") or "").strip()
+    title_cjk_len = max(1, _cjk_len(topic_title))
 
     def score(candidate: dict[str, Any]) -> tuple[float, int]:
         combined = f"{candidate.get('topic')}{candidate.get('hook')}"
+        topic_overlap = (_longest_common_cjk_run(topic_title, combined) / title_cjk_len
+                         if topic_title else 0.0)
+        hookquote_overlap = (min(1.0, _longest_common_cjk_run(hook_quote, combined)
+                                 / float(HOOKQUOTE_MIN_COMMON_CJK)) if hook_quote else 0.0)
         overlap = sum(1 for keyword in keyword_list if keyword and keyword in combined)
         evidence = sum(1 for sid in candidate.get("segment_ids") or [] if sid in segment_ids)
         grounded = 1 if text and all(char in text for char in combined if "\u4e00" <= char <= "\u9fff") else 0
         length_ok = 1 if 2 <= _cjk_len(str(candidate.get("topic"))) <= TOPIC_MAX_CHARS else 0
-        return (float(overlap) * 2 + grounded + evidence * 0.5 + length_ok, 0)
+        return (topic_overlap * 3.0 + hookquote_overlap * 2.0 + float(overlap) * 2.0
+                + grounded + evidence * 0.5 + length_ok, 0)
 
     scored = [(score(candidate), index, candidate) for index, candidate in enumerate(candidates)]
     best_score, best_index, best = max(scored, key=lambda item: (item[0], -item[1]))
     report = {
-        "rule": "关键词重合度×2 + 证据可回放×0.5 + 忠于转写 + 长度合规；平局取第一组",
+        "rule": "主题title覆盖率×3 + 钩子原话命中×2 + 关键词重合×2 + 忠于转写"
+                "+ 证据可回放×0.5 + 长度合规；平局取第一组（2026-11-09 主题对齐版）",
         "scores": [{"index": index, "topic": candidate.get("topic"),
                     "hook": candidate.get("hook"), "score": round(float(value[0]), 3)}
                    for value, index, candidate in scored],
@@ -564,7 +737,9 @@ def select_copy_candidate(candidates: list[dict[str, Any]], segments: list[dict[
 
 def generate_copy_candidates(segments: list[dict[str, Any]], keywords: list[str] | None,
                              *, llm_fn: CopyLlmFn | None = None,
-                             job_id: str | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+                             job_id: str | None = None,
+                             topic_unit: dict[str, Any] | None = None
+                             ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """文案候选入口：LLM 一次 → 失败/超时/非法 → 规则回退（永不抛出、永不阻塞）。"""
     meta: dict[str, Any] = {"llm_attempted": False, "source": "rules", "degrade_reason": None}
     text = clip_transcript_text(segments)
@@ -572,7 +747,7 @@ def generate_copy_candidates(segments: list[dict[str, Any]], keywords: list[str]
         meta["llm_attempted"] = True
         try:
             caller = llm_fn or request_copy_from_llm
-            raw = caller(copy_user_prompt(segments, keywords or []))
+            raw = caller(copy_user_prompt(segments, keywords or [], topic_unit))
             candidates = parse_copy_candidates(raw)
             meta["source"] = "llm"
             return candidates, meta
@@ -1225,12 +1400,18 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
                 copy_override: dict[str, Any] | None = None,
                 force: bool = False,
                 template: dict[str, Any] | None = None,
-                corner_badge_text: str | None = None) -> dict[str, Any]:
+                corner_badge_text: str | None = None,
+                topic_unit: dict[str, Any] | None = None,
+                transcript_source: str | None = None) -> dict[str, Any]:
     """生成 realframe_v2 封面四产物；同键幂等返回缓存，重制 = revision+1。
 
     ``copy_override``：显式文案（重新制作封面/改标题场景），形如
     ``{"topic":..., "hook":..., "segment_ids":[...]}``；给出且 topic 合规时跳过
     LLM 与规则回退，``source="user_override"``。
+    ``topic_unit``（2026-11-09 P1）：内容分析中与切片重叠的主题块
+    ``{"title","mechanism","hook_quote",...}``——文案主题对齐的锚点，缺省 None
+    时退化为关键词评分。``transcript_source``：文案底料来源
+    （"refined"|"corrected"），仅留痕。
     返回字典含每个产物的 ``path`` + ``sha256``、最终文案、选择依据、版本号与
     ``cached`` 标记；任何一步失败抛 ``CoverReplaceError``（接线层捕获后只警告
     不拦截切片发布）。
@@ -1293,7 +1474,10 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
             raise CoverReplaceError(E_COVER_RENDER_FAILED,
                                     "封面底图写盘失败（磁盘空间不足或目录不可写）")
 
-        # 文案：显式覆盖 → LLM 一次 → 规则回退；选择确定性
+        # 文案：显式覆盖 → LLM 一次 → 规则回退；选择确定性。
+        # 2026-11-09 P1 主题对齐：选出后过主题校验，不 ok 且来源为 LLM 时
+        # 带反馈受控重生成一次（每切片 LLM 文案调用 ≤COPY_MAX_LLM_CALLS_PER_CLIP），
+        # 仍不 ok → 主题词直组句兜底入池重选；全程留痕，绝不阻断封面生成。
         override = copy_override if isinstance(copy_override, dict) else None
         if override and _cjk_len(str(override.get("topic") or "")) >= 2:
             candidates = [{"topic": re.sub(r"\s+", "", str(override["topic"])),
@@ -1303,13 +1487,50 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
             copy_meta = {"llm_attempted": False, "source": "user_override",
                          "degrade_reason": None}
         else:
-            candidates, copy_meta = generate_copy_candidates(segments, keywords,
-                                                             llm_fn=llm_fn, job_id=job_id)
+            candidates, copy_meta = generate_copy_candidates(
+                segments, keywords, topic_unit=topic_unit, llm_fn=llm_fn, job_id=job_id)
+        # topic_hint 规则候选：无主题块时（旧任务）照旧入池参与初选；有主题块时
+        # 只作验证失败后的兜底——2026-11-09 真机实证（clip-c4b8f0a328）：规划标题
+        # 的机械回声候选靠字面覆盖率压过更优的 LLM 文案（8.5 vs 7.8），不配初选。
+        hint_fallback: list[dict[str, Any]] = []
         if topic_hint and all(str(c.get("topic")) != str(topic_hint) for c in candidates):
             hint_candidate = rules_copy_candidates(
                 [{"segment_id": "hint", "text": str(topic_hint)}], [str(topic_hint)])
-            candidates = candidates + hint_candidate
-        selected, selection_report = select_copy_candidate(candidates, segments, keywords)
+            if topic_unit is not None:
+                hint_fallback = hint_candidate
+            else:
+                candidates = candidates + hint_candidate
+        selected, selection_report = select_copy_candidate(candidates, segments, keywords,
+                                                           topic_unit)
+        validation_report = validate_copy_against_topic(selected, topic_unit)
+        regeneration_count = 0
+        if (not override and not validation_report["ok"]
+                and copy_meta.get("source") == "llm"):
+            try:
+                caller = llm_fn or request_copy_from_llm
+                raw = caller(copy_user_prompt(segments, keywords or [], topic_unit,
+                                              feedback=str(validation_report.get("reason") or "")))
+                regenerated = parse_copy_candidates(raw)
+                if regenerated:
+                    regeneration_count = 1
+                    candidates = candidates + regenerated
+                    selected, selection_report = select_copy_candidate(
+                        candidates, segments, keywords, topic_unit)
+                    validation_report = validate_copy_against_topic(selected, topic_unit)
+            except Exception as exc:  # noqa: BLE001 — 重生成失败回退到兜底链
+                validation_report = {**validation_report,
+                                     "regenerate_error": f"{type(exc).__name__}: {exc}"[:120]}
+        if not override and not validation_report["ok"]:
+            # 兜底链（确定性，零 LLM）：hint 规则组 → 主题词直组句
+            fallback_candidates = list(hint_fallback) + _topic_title_candidates(topic_unit)
+            if fallback_candidates:
+                candidates = candidates + fallback_candidates
+                selected, selection_report = select_copy_candidate(
+                    candidates, segments, keywords, topic_unit)
+                validation_report = validate_copy_against_topic(selected, topic_unit)
+                validation_report["reason"] = str(validation_report.get("reason") or "") \
+                    + "（已用主题词兜底候选重选）"
+        copy_degraded = not bool(validation_report["ok"])
         topic = str(selected.get("topic") or "")
         hook = str(selected.get("hook") or "")
 
@@ -1338,6 +1559,10 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
         # 纯色兜底底图（深墨）重写 cover-base，排版/角标照常，记 warning 不拦截
         # 主链（失败只 warning 哲学）。
         cover_warnings: list[str] = []
+        if copy_degraded:
+            cover_warnings.append(
+                f"封面文案与主题相关性不足（已如实留痕）: "
+                f"{str(validation_report.get('reason') or '')[:120]}")
         final_font_1080 = int(layout["hook"]["font_size"])
         effective_375 = final_font_1080 * 375.0 / float(COVER_WIDTH)
         readability_ok = final_font_1080 >= 96
@@ -1365,6 +1590,7 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
                 "project_id": str(project_id),
                 "clip_id": str(clip_id),
                 "cover_revision": revision,
+                "prompt_version": COPY_PROMPT_VERSION,
                 "final": {"topic": topic, "hook": hook,
                           "segment_ids": list(selected.get("segment_ids") or []),
                           "source": selected.get("source")},
@@ -1372,6 +1598,10 @@ def build_cover(video_path: Path, *, project_id: str, clip_id: str,
                 "candidates": candidates,
                 "copy_meta": copy_meta,
                 "keywords_used": keywords,
+                "topic_unit_used": dict(topic_unit) if topic_unit else None,
+                "transcript_source": transcript_source,
+                "regeneration_count": regeneration_count,
+                "validation_report": validation_report,
                 "frame": {"planned_times": planned_times,
                           "selected_time_rel_s": chosen["time_rel_s"],
                           "selected_time_abs_s": chosen_source["time_abs_s"],

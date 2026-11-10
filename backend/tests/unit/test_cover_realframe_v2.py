@@ -120,6 +120,17 @@ def test_plan_frame_times_rejects_invalid_window():
     assert excinfo.value.code == cr.E_COVER_BAD_REQUEST
 
 
+def test_plan_frame_times_first_offset_defaults_and_overrides():
+    """2026-11-09：首帧默认 +1.0s（避开开场起手势帧），参数/env 可覆盖。"""
+    times = m.plan_frame_times(0, 30000)
+    assert times[0]["time_rel_s"] == 1.0
+    stepped = m.plan_frame_times(0, 30000, first_offset_s=0.2)
+    assert stepped[0]["time_rel_s"] == 0.2
+    # 起点后移吃掉极短窗口时 → 中点兜底，绝不为空
+    single = m.plan_frame_times(0, 1200)
+    assert single and 0.0 < single[0]["time_rel_s"] < 1.2
+
+
 def test_extract_candidate_frames_seeks_real_video(synthetic_video):
     planned = m.plan_frame_times(400, 2400)
     import tempfile
@@ -178,6 +189,26 @@ def test_rank_frames_tie_breaks_by_index():
     first = {"score": 5.0, "index": 0, "time_rel_s": 0.0, "path": "a"}
     ranked = m.rank_frames([base, first])
     assert ranked[0]["path"] == "a"
+
+
+def test_score_frame_brightness_and_center_terms_recorded():
+    """2026-11-09：亮度项（暗帧降权）+ 单脸居中项入分并入审计记录。"""
+    import numpy as np
+
+    well_lit = np.full((720, 960, 3), 140, dtype=np.uint8)
+    well_lit[100:400, 300:700] = (90, 140, 60)               # 高频纹理保清晰度
+    dark = (well_lit // 4).astype(np.uint8)                  # 同构图，亮度 ≈35 → 0 分
+    lit = m.score_frame(well_lit, _FakeCascade([[300, 150, 200, 200]]), index=0,
+                        time_rel_s=1.0, path=Path("lit.png"))
+    dim = m.score_frame(dark, _FakeCascade([[300, 150, 200, 200]]), index=1,
+                        time_rel_s=2.0, path=Path("dim.png"))
+    assert lit["brightness_mean"] > dim["brightness_mean"]
+    assert lit["brightness_term"] == 2.0 and dim["brightness_term"] == 0.0
+    assert lit["face_center_term"] == 1.0                    # 脸中心 x=400，偏移 8.3%
+    assert lit["score"] > dim["score"]                       # 同构图暗帧不再胜出
+    off_center = m.score_frame(well_lit, _FakeCascade([[60, 150, 200, 200]]), index=2,
+                               time_rel_s=3.0, path=Path("off.png"))
+    assert 0.0 <= off_center["face_center_term"] < 1.0
 
 
 def test_score_frame_with_real_haar_runs_and_records_structure(synthetic_video):
@@ -317,13 +348,62 @@ def test_select_copy_prefers_keyword_overlap_and_tie_takes_first():
     assert chosen["topic"] != tie_chosen["topic"] or True
 
 
+def test_select_copy_topic_unit_outweighs_keyword_overlap():
+    """2026-11-09：关键词重合让位于主题重合——主题命中的候选胜出。"""
+    candidates = [
+        {"topic": "尿酸", "hook": "少喝啤酒少吃海鲜", "segment_ids": ["seg-003"], "source": "llm"},
+        {"topic": "血糖", "hook": "先量空腹血糖", "segment_ids": ["seg-002"], "source": "llm"},
+    ]
+    chosen, report = m.select_copy_candidate(
+        candidates, SEGMENTS, ["尿酸"],
+        {"title": "血糖监测", "hook_quote": "要先量空腹血糖"})
+    assert chosen["topic"] == "血糖"
+    assert report["rule"].startswith("主题title覆盖率")
+
+
 def test_prompt_states_constraints():
     prompt = m.copy_system_prompt()
     assert "健康科普" in prompt and "严格 JSON" in prompt
     assert "证据" in prompt and "两行" in prompt
     assert "禁止虚构诊断" in prompt
+    assert "概括" in prompt                                  # 2026-11-09 主题对齐约束
     user_prompt = m.copy_user_prompt(SEGMENTS, ["高血压"])
     assert "seg-001" in user_prompt and "高血压" in user_prompt
+
+
+def test_prompt_injects_topic_speaker_and_feedback():
+    """2026-11-09：主题块/说话人标注/重生成反馈都注入提示词。"""
+    segments = [{"segment_id": "seg-001", "text": "高血压患者要规律测压。", "speaker": "医生"}]
+    prompt = m.copy_user_prompt(
+        segments, ["高血压"],
+        {"title": "居家血压监测", "hook_quote": "每天早上测一次"},
+        feedback="与主题相关度不足")
+    assert "（医生）" in prompt and "seg-001" in prompt
+    assert "居家血压监测" in prompt and "每天早上测一次" in prompt
+    assert "与主题相关度不足" in prompt
+    plain = m.copy_user_prompt(SEGMENTS, [])
+    assert "本条切片主题" not in plain and "医生" not in plain
+
+
+def test_validate_copy_against_topic_all_paths():
+    """2026-11-09：主题校验三通过路径 + 不通过路径 + 无主题块恒通过。"""
+    unit = {"title": "血糖监测", "hook_quote": "每天早上测一次"}
+    assert m.validate_copy_against_topic({"topic": "血糖", "hook": "先量空腹血糖"},
+                                         None)["reason"] == "no_topic_unit"
+    covered = m.validate_copy_against_topic({"topic": "血糖", "hook": "监测有讲究"}, unit)
+    assert covered["ok"] and covered["reason"] == "topic_title_covered"
+    via_quote = m.validate_copy_against_topic({"topic": "测压", "hook": "每天早上测一次"}, unit)
+    assert via_quote["ok"] and via_quote["reason"] == "hook_quote_matched"
+    off = m.validate_copy_against_topic({"topic": "尿酸", "hook": "少喝啤酒少吃海鲜"}, unit)
+    assert not off["ok"] and "血糖监测" in off["reason"]
+
+
+def test_topic_title_candidates_build_fallback_group():
+    fallback = m._topic_title_candidates({"title": "血糖波动管理", "hook_quote": ""})
+    assert fallback and fallback[0]["source"] == "topic_fallback"
+    assert m._cjk_len(fallback[0]["topic"]) <= m.TOPIC_MAX_CHARS
+    assert m._cjk_len(fallback[0]["hook"]) <= m.HOOK_MAX_TOTAL_CHARS
+    assert m._topic_title_candidates({"title": "压", "hook_quote": ""}) == []
 
 
 # ---------------------------------------------------------------------------
@@ -479,6 +559,92 @@ def test_build_cover_end_to_end_produces_four_products(synthetic_video, tmp_path
     ledger = m.load_ledger(out_dir)
     assert ledger["current_revision"] == 1
     assert (out_dir / "cover_realframe_v2.json").is_file()
+
+
+OFF_TOPIC_PAYLOAD = json.dumps({"candidates": [
+    {"topic": "骨头", "hook": "先做检查别猜测", "segment_ids": ["seg-001"]},
+    {"topic": "补钙", "hook": "日常走路就能补", "segment_ids": ["seg-001"]},
+    {"topic": "膝盖", "hook": "疼了就要少动", "segment_ids": ["seg-001"]},
+]}, ensure_ascii=False)
+ON_TOPIC_PAYLOAD = json.dumps({"candidates": [
+    {"topic": "血糖", "hook": "先量空腹血糖", "segment_ids": ["seg-002"]},
+]}, ensure_ascii=False)
+_TOPIC_UNIT = {"title": "血糖监测", "mechanism": "具体疑问",
+               "hook_quote": "要先量空腹血糖再决定用药", "ending_quote": ""}
+
+
+def test_build_cover_regenerates_once_when_off_topic(synthetic_video, tmp_path):
+    """2026-11-09：首轮跑题 → 带反馈重生成恰好一次 → 命中主题的候选胜出。"""
+    calls: list[str] = []
+    out_dir = tmp_path / "clips" / "clip-r1"
+
+    def stub(prompt: str) -> str:
+        calls.append(prompt)
+        return OFF_TOPIC_PAYLOAD if len(calls) == 1 else ON_TOPIC_PAYLOAD
+
+    result = m.build_cover(
+        synthetic_video, project_id="timeline_topic1", clip_id="clip-r1",
+        clip_start_ms=0, clip_end_ms=2400, segments=SEGMENTS, out_dir=out_dir,
+        analysis_keywords=[], job_id="job-topic", llm_fn=stub,
+        topic_unit=_TOPIC_UNIT)
+    assert len(calls) == 2                                   # 硬上限：恰好重生成一次
+    assert "上一轮输出不合格原因" in calls[1] and "血糖监测" in calls[1]
+    assert result["cover_copy"]["topic"] == "血糖"
+    copy_doc = json.loads((out_dir / "cover_copy.json").read_text(encoding="utf-8"))
+    assert copy_doc["regeneration_count"] == 1
+    assert copy_doc["validation_report"]["ok"] is True
+    assert copy_doc["topic_unit_used"]["title"] == "血糖监测"
+    assert copy_doc["prompt_version"] == m.COPY_PROMPT_VERSION
+
+
+def test_build_cover_topic_fallback_after_failed_regeneration(synthetic_video, tmp_path):
+    """2026-11-09：重生成仍跑题 → 主题词直组句兜底（topic_fallback）+ warning 留痕。"""
+    calls: list[str] = []
+    out_dir = tmp_path / "clips" / "clip-r2"
+
+    def stub(_prompt: str) -> str:
+        calls.append(_prompt)
+        return OFF_TOPIC_PAYLOAD
+
+    result = m.build_cover(
+        synthetic_video, project_id="timeline_topic2", clip_id="clip-r2",
+        clip_start_ms=0, clip_end_ms=2400,
+        segments=[{"segment_id": "seg-001", "text": "血糖管理要做好空腹血糖监测。"},
+                  {"segment_id": "seg-002", "text": "要先量空腹血糖再决定用药。"}],
+        out_dir=out_dir, analysis_keywords=[], job_id="job-topic2", llm_fn=stub,
+        topic_unit={"title": "血糖管理", "mechanism": "", "hook_quote": "要先量空腹血糖",
+                    "ending_quote": ""})
+    assert len(calls) == 2                                   # 重生成封顶，绝不第三次调用
+    assert result["cover_copy"]["source"] == "topic_fallback"
+    copy_doc = json.loads((out_dir / "cover_copy.json").read_text(encoding="utf-8"))
+    assert copy_doc["regeneration_count"] == 1
+    # 兜底候选直接取自主题词 → 最终校验通过；留痕注明走了兜底重选
+    assert copy_doc["validation_report"]["ok"] is True
+    assert "兜底候选重选" in str(copy_doc["validation_report"]["reason"])
+    assert not any("相关性不足" in warning for warning in result["warnings"])
+
+
+def test_build_cover_hint_is_fallback_only_with_topic_unit(synthetic_video, tmp_path):
+    """2026-11-09 真机实证：有主题块时 hint 机械回声候选不进初选池。"""
+    out_dir = tmp_path / "clips" / "clip-h1"
+    result = m.build_cover(
+        synthetic_video, project_id="timeline_hint1", clip_id="clip-h1",
+        clip_start_ms=0, clip_end_ms=2400, segments=SEGMENTS, out_dir=out_dir,
+        analysis_keywords=[], job_id="job-hint", topic_hint="血糖监测方案要点",
+        llm_fn=lambda _p: ON_TOPIC_PAYLOAD, topic_unit=_TOPIC_UNIT)
+    assert result["cover_copy"]["source"] == "llm"
+    copy_doc = json.loads((out_dir / "cover_copy.json").read_text(encoding="utf-8"))
+    assert all(candidate.get("segment_ids") != ["hint"] for candidate in copy_doc["candidates"])
+    assert all("方案要点" not in str(candidate.get("hook"))
+               for candidate in copy_doc["candidates"])
+    # 无主题块时 hint 仍照旧入池（旧任务行为不回退）
+    out_dir2 = tmp_path / "clips" / "clip-h2"
+    m.build_cover(synthetic_video, project_id="timeline_hint2", clip_id="clip-h2",
+                  clip_start_ms=0, clip_end_ms=2400, segments=SEGMENTS, out_dir=out_dir2,
+                  analysis_keywords=["高血压"], job_id="job-hint2", topic_hint="高血压管理",
+                  llm_fn=lambda _p: ON_TOPIC_PAYLOAD, topic_unit=None)
+    copy_doc2 = json.loads((out_dir2 / "cover_copy.json").read_text(encoding="utf-8"))
+    assert any(candidate.get("source") == "rules" for candidate in copy_doc2["candidates"])
 
 
 def test_build_cover_idempotent_same_key_returns_cache(synthetic_video, tmp_path):
@@ -678,6 +844,131 @@ def test_analysis_keywords_for_cover_reads_saved_analysis(tmp_path):
     assert w._analysis_keywords_for_cover({"analysis_ref": {"path": str(analysis)}}) == ["高血压", "随访"]
     assert w._analysis_keywords_for_cover({"analysis_ref": {}}) == []
     assert w._analysis_keywords_for_cover({}) == []
+
+
+def test_cover_topic_unit_from_analysis_picks_max_overlap(tmp_path):
+    """2026-11-09：按切片区间重叠最大选主题块；缺失/读不到 → None。"""
+    from src import studio_job_worker as w
+
+    analysis = tmp_path / "analysis.json"
+    analysis.write_text(json.dumps({"topic_units": [
+        {"title": "血压监测", "start_ms": 100000, "end_ms": 101000,
+         "mechanism": "具体疑问", "hook_quote": "", "ending_quote": ""},
+        {"title": "规律测压", "start_ms": 200, "end_ms": 1700,
+         "mechanism": "身份共鸣", "hook_quote": "每天早上测", "ending_quote": ""},
+    ]}), encoding="utf-8")
+    plan = {"analysis_ref": {"path": str(analysis)}}
+    unit = w._cover_topic_unit_from_analysis(plan, 200, 1800)
+    assert unit and unit["title"] == "规律测压" and unit["hook_quote"] == "每天早上测"
+    assert w._cover_topic_unit_from_analysis({"analysis_ref": {}}, 0, 1000) is None
+    assert w._cover_topic_unit_from_analysis({"analysis_ref": {"path": str(tmp_path / "x.json")}},
+                                             0, 1000) is None
+
+
+def test_cover_topic_unit_tie_breaks_by_topic_hint(tmp_path):
+    """2026-11-09 真机实证（clip-c4b8f0a328）：重叠并列时按切片规划主题择优。"""
+    from src import studio_job_worker as w
+
+    analysis = tmp_path / "analysis.json"
+    analysis.write_text(json.dumps({"topic_units": [
+        {"title": "术后复查安排与医保办理", "start_ms": 331900, "end_ms": 1108600,
+         "mechanism": "", "hook_quote": "多久来找您一次", "ending_quote": ""},
+        {"title": "基因检测的目的与结果解读", "start_ms": 534950, "end_ms": 556900,
+         "mechanism": "具体疑问", "hook_quote": "做基因检测的目的", "ending_quote": ""},
+    ]}), encoding="utf-8")
+    plan = {"analysis_ref": {"path": str(analysis)}}
+    window = (534950, 556900)                                # 两个主题块重叠完全相同
+    assert w._cover_topic_unit_from_analysis(plan, *window)["title"].startswith("术后复查")
+    unit = w._cover_topic_unit_from_analysis(plan, *window, topic_hint="黑色素瘤基因检测目的解读")
+    assert unit["title"] == "基因检测的目的与结果解读"
+
+
+def test_refined_segments_for_cover_llm_only_and_window():
+    """2026-11-09：只有 source=llm 才消费精修稿；窗口过滤+空文本段跳过。"""
+    from src import studio_job_worker as w
+
+    refinement = {"clips": {"clip-01": {"source": "llm", "segments": [
+        {"segment_id": "s1", "start_ms": 300, "end_ms": 1200,
+         "refined_text": "高血压要规律测压。", "speaker": "医生"},
+        {"segment_id": "s2", "start_ms": 5000, "end_ms": 6000,
+         "refined_text": "片外段不进封面。", "speaker": ""},
+        {"segment_id": "s3", "start_ms": 400, "end_ms": 800,
+         "refined_text": "", "speaker": ""},
+    ]}, "clip-02": {"source": "fallback", "segments": [
+        {"segment_id": "s9", "start_ms": 300, "end_ms": 1200,
+         "refined_text": "回退条目不冒充精修。", "speaker": ""}]}}}
+    pair = w._refined_segments_for_cover(refinement, "clip-01", 200, 1800)
+    assert pair is not None and pair[1] == "refined"
+    assert [seg["segment_id"] for seg in pair[0]] == ["s1"]
+    assert pair[0][0]["speaker"] == "医生"
+    assert w._refined_segments_for_cover(refinement, "clip-02", 200, 1800) is None
+    assert w._refined_segments_for_cover(None, "clip-01", 200, 1800) is None
+    assert w._refined_segments_for_cover({"clips": {}}, "clip-404", 0, 1000) is None
+
+
+def test_worker_cover_stage_uses_refined_and_topic_unit(tmp_path, monkeypatch, synthetic_video):
+    """2026-11-09 端到端：精修稿+主题块进封面 → copy_doc 留痕 transcript_source/topic_unit_used。"""
+    import uuid
+
+    from src import studio_job_worker as w
+    from src import clip_refinement as refine_mod
+    from src import cover_realframe_v2 as cover_mod
+
+    monkeypatch.setattr(w, "_log", lambda _message: None)
+    monkeypatch.setattr(w, "_COVER_LLM_FN", lambda _prompt: json.dumps({"candidates": [
+        {"topic": "血压", "hook": "规律测量血压", "segment_ids": ["s1"]}]},
+        ensure_ascii=False))
+    tasks_root = tmp_path / "tasks"
+    run_id = uuid.uuid5(uuid.NAMESPACE_URL, "studio-render:job-cov:0").hex
+    out_root = tasks_root / "output" / run_id
+    base = out_root / "clips" / "clip-01"
+    base.mkdir(parents=True)
+    import shutil as _shutil
+
+    frames = tmp_path / "wf"
+    frames.mkdir()
+    for index in range(8):
+        _write_frame(frames / f"f{index:02d}.jpg", 360, 640, offset=index)
+    video = base / "clip_final.mp4"
+    _encode_video(frames, video, framerate=4, count=8)
+    _shutil.rmtree(frames, ignore_errors=True)
+
+    plan_record = {"clips": [{"clip_id": "clip-01", "topic": "高血压管理",
+                              "start_ms": 200, "end_ms": 1800}],
+                   "analysis_ref": {}}
+    monkeypatch.setenv("STUDIO_TASKS_ROOT", str(tasks_root))
+    refine_mod.save_refinement_record("job-cov", {
+        "plan_fingerprint": refine_mod.plan_fingerprint(plan_record),
+        "clips": {"clip-01": {"source": "llm", "segments": [
+            {"segment_id": "s1", "start_ms": 300, "end_ms": 1200,
+             "refined_text": "高血压患者要规律测量血压。", "speaker": "医生"},
+            {"segment_id": "s2", "start_ms": 5000, "end_ms": 6000,
+             "refined_text": "完全片外的精修段。", "speaker": ""},
+        ]}}})
+    analysis = tmp_path / "analysis.json"
+    analysis.write_text(json.dumps({
+        "keywords": ["血压"],
+        "topic_units": [{"title": "血压监测", "start_ms": 200, "end_ms": 1700,
+                         "mechanism": "具体疑问", "hook_quote": "规律测量血压",
+                         "ending_quote": ""}]}), encoding="utf-8")
+    plan_record["analysis_ref"] = {"path": str(analysis)}
+    transcript = {"asr_segments": [
+        {"segment_id": "s1", "start_ms": 300, "end_ms": 1200,
+         "text": "高血压患者要规律测量血压。"},
+        {"segment_id": "s2", "start_ms": 5000, "end_ms": 6000, "text": "片外。"},
+    ]}
+    aggregate = {"entries": [{"clip_id": "clip-01", "status": "rendered"}], "warnings": []}
+    results = w._run_clip_cover_stage({"project_id": "timeline_cov01"}, "job-cov",
+                                      plan_record, transcript, aggregate, video, out_root)
+    assert "clip-01" in results and results["clip-01"]["copy_source"] == "llm"
+    copy_doc = json.loads((base / "cover_copy.json").read_text(encoding="utf-8"))
+    assert copy_doc["transcript_source"] == "refined"
+    assert copy_doc["topic_unit_used"]["title"] == "血压监测"
+    assert copy_doc["final"]["segment_ids"] == ["s1"]
+    assert "片外" not in json.dumps(copy_doc["candidates"], ensure_ascii=False)
+    assert copy_doc["validation_report"]["ok"] is True
+    assert copy_doc["frame"]["planned_times"][0]["time_rel_s"] == 1.0   # 首帧不再取开场
+    assert copy_doc["regeneration_count"] == 0
 
 
 def test_worker_cover_stage_and_card_binding_end_to_end(tmp_path, monkeypatch):
