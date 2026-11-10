@@ -58,6 +58,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from . import llm_budget
+from . import clip_medical_gate as med_gate
 from . import content_analysis as ca
 from . import hierarchical_planning as hp
 from .content_analysis import (
@@ -675,6 +676,11 @@ def _analysis_context_lines(analysis: dict[str, Any], max_clips: int) -> list[st
                 quote = str(unit.get(key) or "").strip()
                 if quote:
                     lines.append(f"    {label}：{quote[:60]}")
+    # 医学闸门标注（2026-11-10 第三库）：只透出对主题块的程序标注标签与匹配度，
+    # 不注入指南条目正文（提示词A「信息忠实」：规划器只能引用转写文本）。
+    annotations = analysis.get("medical_annotations") or []
+    if annotations:
+        lines.extend(med_gate.context_lines({"enabled": True, "unit_annotations": annotations}))
     intervals = analysis.get("candidate_intervals") or []
     if intervals:
         lines.append("【候选区间】")
@@ -857,10 +863,14 @@ def build_current_plan_provenance(corrected_segments: list[dict[str, Any]],
                                    transcript_version: int | None = None,
                                    model: str | None = None,
                                    rule_snapshot_id: str | None = None,
-                                   rules_snapshot: Any = None) -> dict[str, Any]:
+                                   rules_snapshot: Any = None,
+                                   medical_gate_identity: dict[str, Any] | None = None
+                                   ) -> dict[str, Any]:
     """当前输入独立生成计划缓存identity；不读取旧cache或actual_calls。"""
     if model is None:
         _, model, _ = _model_ready()
+    # 医学闸门身份：未显式传入时现场取（同一快照 → 同一指纹，纯函数语义）。
+    gate_identity = medical_gate_identity or med_gate.current_identity()
     index = _SegIndex(corrected_segments)
     rules = {"rule_snapshot_id": rule_snapshot_id, "external_snapshot": copy.deepcopy(rules_snapshot),
              "score_weights": SCORE_WEIGHTS, "duration_prefer_ms": list(DUR_PREFER_MS),
@@ -875,6 +885,11 @@ def build_current_plan_provenance(corrected_segments: list[dict[str, Any]],
                   _parse_clock_ms, _clock_of, _snap_to_positions,
                   _assemble_slice_plan, _enforce_full_coverage)]),
              "helper_source_sha256": hashlib.sha256(Path(hp.__file__).read_bytes()).hexdigest(),
+             # 医学闸门（2026-11-10 第三库）：身份含快照指纹与阈值——库/阈值变了旧计划缓存失效；
+             # 闸门与检索模块源码指纹一并进 provenance。
+             "medical_gate": gate_identity,
+             "medical_gate_helper_sha256": hashlib.sha256(
+                 Path(med_gate.__file__).read_bytes()).hexdigest(),
              "output_schema_sha256": ca._digest(_SlicePlanOut.model_json_schema())}
     source = ca.build_analysis_provenance(corrected_segments,
         transcript_version=transcript_version, model=model,
@@ -909,9 +924,16 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
     """
     index = _SegIndex(corrected_segments)
     ready, model_name, reason = _model_ready() if index.entries else (False, "", "纠错转写为空")
-    source = build_current_plan_provenance(corrected_segments, analysis,
+    # 医学闸门（规划前标注）：逐主题块匹配指南库；标注随拼装层透传给提示词A，
+    # 身份（快照指纹+阈值）进 provenance——库变化自动失效旧计划缓存。
+    gate_profile = med_gate.run_gate(corrected_segments, analysis)
+    analysis_for_prompt = dict(analysis)
+    if gate_profile.get("enabled"):
+        analysis_for_prompt["medical_annotations"] = gate_profile.get("unit_annotations") or []
+    source = build_current_plan_provenance(corrected_segments, analysis_for_prompt,
         transcript_version=transcript_version, model=model_name,
-        rule_snapshot_id=rule_snapshot_id, rules_snapshot=rules_snapshot)
+        rule_snapshot_id=rule_snapshot_id, rules_snapshot=rules_snapshot,
+        medical_gate_identity=gate_profile.get("identity"))
     notes: list[str] = []
     started = time.monotonic()
     usage_records, actual_calls = [], []
@@ -924,7 +946,7 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
 
     def _global_call() -> tuple[_SlicePlanOut, dict[str, Any]]:
         nonlocal reserved_total
-        prompt = _slice_plan_prompt(index, analysis)
+        prompt = _slice_plan_prompt(index, analysis_for_prompt)
         estimate = llm_budget.estimate_reserve(prompt, PLAN_MAX_OUTPUT_TOKENS_RETRY)
         reserved_total += estimate
         if progress:
@@ -1006,7 +1028,15 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
         clip["plan_source"] = extra.get("plan_source", plan_source)
         clip["lineage"] = extra.get("lineage", [])
         clips.append(clip)
-    discarded = _enforce_full_coverage(index, clips, discarded, plan_warnings)
+    # 医学闸门·规划后硬剔除（2026-11-10 用户拍板）：医学密度不达标的切片（如聊家常）
+    # 程序侧移入 discarded（type=非医学闲聊）；annotate_only/disabled 模式只标注不动。
+    clips, moved_discarded, gate_decisions = med_gate.enforce_clips(
+        gate_profile, clips, index, notes)
+    if moved_discarded:
+        plan_warnings.append(
+            f"medical_gate: 硬剔除 {len(moved_discarded)} 条非医学切片"
+            f"（闸门模式={gate_profile.get('mode')}）")
+    discarded = _enforce_full_coverage(index, clips, discarded + moved_discarded, plan_warnings)
     warnings = plan_warnings
     if cap_applied or fallback_cap:
         warnings.append("切片数量达到资源保护上限，已按综合得分保留最优")
@@ -1032,6 +1062,8 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
                   hierarchical_planning=hierarchical,
                   failed_windows=hierarchical["failed_windows"],
                   degradations=hierarchical["degradations"],
+                  medical_gate=med_gate.record_summary(gate_profile, gate_decisions,
+                                                       len(moved_discarded)),
                   callback_calls=len(actual_calls), callback_budget=2)
     return record
 

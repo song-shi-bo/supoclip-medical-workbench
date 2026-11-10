@@ -608,7 +608,10 @@ class StudioAuthenticationMiddleware:
         path0 = scope.get("path", "")
         # 2026-10-30 双库：/api/v1/ingest/* 与 /api/v1/kb/search 走独立 Bearer token
         # （值在 backend/.env.kb，路由内校验）；confirm 仍在会话保护下。
-        if path0.startswith("/api/v1/ingest/") or path0 == "/api/v1/kb/search":
+        # 2026-11-10 第三库：/api/v1/medical-kb/ingest|search 同款独立 token；
+        # entries/{id}/review 走 Studio 登录态，不在豁免清单。
+        if (path0.startswith("/api/v1/ingest/") or path0 == "/api/v1/kb/search"
+                or path0 in {"/api/v1/medical-kb/ingest", "/api/v1/medical-kb/search"}):
             return await self.app(scope, receive, send)
         request = Request(scope, receive=receive)
         path = scope.get("path", "")

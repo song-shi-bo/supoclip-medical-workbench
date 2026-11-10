@@ -164,7 +164,15 @@ def test_run_result_usage_before_output_zero_and_missing(monkeypatch):
 def test_plan_cache_independent_current_identity_and_each_change_invalidates(tmp_path, monkeypatch):
     source, summary = segments(10), analysis(10)
     monkeypatch.setattr(cp, "plans_root", lambda: tmp_path)
-    before = cp.build_current_plan_provenance(source, summary, transcript_version=1,
+    # 2026-11-10 医学闸门：plan_clips 的 provenance 记录「含医学标注」的提示词；
+    # 直接构建必须同样先过闸门富化，两条路径才逐字节相等（纯函数语义仍成立：
+    # 同一转写 + 同一快照 → 同一标注 → 同一指纹）。
+    from src import clip_medical_gate as gate_mod
+    gate_profile = gate_mod.run_gate(source, summary)
+    enriched = dict(summary)
+    if gate_profile["enabled"]:
+        enriched["medical_annotations"] = gate_profile["unit_annotations"]
+    before = cp.build_current_plan_provenance(source, enriched, transcript_version=1,
                                             rules_snapshot={"actual_rule": 1})
     def callback(model, prompt):
         cp._plan_call_metadata.set({"usage": llm_budget.extract_usage_details(
