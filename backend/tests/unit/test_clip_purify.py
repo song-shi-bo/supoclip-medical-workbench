@@ -143,7 +143,7 @@ def test_load_speaker_overlay_resolves_tr_prefix(tmp_path) -> None:
     directory = tmp_path / source_id
     directory.mkdir(parents=True)
     (directory / "speaker_labels.json").write_text(json.dumps({
-        "schema": 1, "labels": {"seg_0000": "医生", "seg_0001": "患者"},
+        "schema": "speaker-labels/1", "labels": {"seg_0000": "医生", "seg_0001": "患者"},
     }, ensure_ascii=False), encoding="utf-8")
     labels, fp = pu.load_speaker_overlay(tmp_path, "tr-2070f41f051ac5b2")
     assert labels is not None and len(labels) == 2
