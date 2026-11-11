@@ -184,3 +184,129 @@ def test_plan_fingerprint_changes_with_speaker_labels(monkeypatch: pytest.Monkey
     pb = cp.build_current_plan_provenance(segments, analysis, model="m",
                                           purify_identity=pu.identity(fp_b))
     assert pa["input_fingerprint"] != pb["input_fingerprint"]
+
+
+# ---------------------------------------------------------------------------
+# P2：问答化/独白化风格 + 提问保护 + 指南佐证透传
+# ---------------------------------------------------------------------------
+
+def _dialogue_segments() -> list[dict]:
+    rows = [
+        (0, "医生，做完手术还需要做基因检测吗？", 0, 6000),       # 患者提问 → qa 保留
+        (1, "这个要看病理报告的结果来决定。", 6000, 13000),       # 医生解释
+        (2, "嗯嗯。", 13000, 14000),                               # 纯应答
+        (3, "我听说那个检测很贵。", 14000, 20000),                 # 患者插话 → qa 删
+        (4, "贵的和便宜的检测位点不一样，作用都是指导用药。", 20000, 28000),  # 医生解释
+        (5, "好的好的。", 28000, 29000),                           # 患者应答（尾段）
+    ]
+    return [seg(i, t, s, e) for i, t, s, e in rows]
+
+
+def _dialogue_entries() -> tuple[list[dict], dict]:
+    entries = [{"segment_id": s["segment_id"], "start_ms": s["start_ms"],
+                "end_ms": s["end_ms"], "text": s["text"]} for s in _dialogue_segments()]
+    return entries, {e["segment_id"]: i for i, e in enumerate(entries)}
+
+
+def _dialogue_unit() -> dict:
+    return {
+        "title": "基因检测问答", "patient_question": "做完手术还需要做基因检测吗？",
+        "doctor_core_segment_ids": ["seg_0001", "seg_0004"],
+        "segment_ids": [f"seg_{i:04d}" for i in range(6)],
+    }
+
+
+def test_qa_mode_keeps_question_drops_patient_interjections() -> None:
+    entries, position_of = _dialogue_entries()
+    labels = {f"seg_{i:04d}": ("患者" if i in (0, 3, 5) else "医生") for i in range(6)}
+    result = pu.purify_clip({"clip_id": "clip_q", "start_segment_id": "seg_0000",
+                             "end_segment_id": "seg_0005"},
+                            entries, position_of, labels, unit=_dialogue_unit())
+    # 患者提问保留（问答化钩子）、插话与应答删除、医生核心段永不动
+    assert "seg_0000" not in result["dropped_segment_ids"]
+    assert result["question_kept"] is True
+    assert "seg_0003" in result["dropped_segment_ids"]
+    assert "seg_0005" in result["dropped_segment_ids"]
+    assert not set(_dialogue_unit()["doctor_core_segment_ids"]) & set(result["dropped_segment_ids"])
+    assert result["sub_ranges"] and result["sub_ranges"][0]["start_segment_id"] == "seg_0000"
+
+
+def test_mono_mode_drops_question_too() -> None:
+    entries, position_of = _dialogue_entries()
+    labels = {f"seg_{i:04d}": ("患者" if i in (0, 3, 5) else "医生") for i in range(6)}
+    result = pu.purify_clip({"clip_id": "clip_m", "start_segment_id": "seg_0000",
+                             "end_segment_id": "seg_0005"},
+                            entries, position_of, labels,
+                            unit=_dialogue_unit(), evidence_topics=["基因检测"],
+                            style="mono")
+    assert "seg_0000" in result["dropped_segment_ids"]
+    assert result["question_kept"] is False
+    assert result["evidence_topics"] == ["基因检测"]
+
+
+def test_without_labels_substantive_patient_speech_is_kept() -> None:
+    entries, position_of = _dialogue_entries()
+    result = pu.purify_clip({"clip_id": "clip_n", "start_segment_id": "seg_0000",
+                             "end_segment_id": "seg_0005"},
+                            entries, position_of, None, unit=_dialogue_unit())
+    # 无标注 → 只删纯应答段；患者提问与插话都保留（删除授权阶梯）
+    assert "seg_0000" not in result["dropped_segment_ids"]
+    assert "seg_0003" not in result["dropped_segment_ids"]
+    assert result["dropped_segment_ids"] == ["seg_0002"]
+
+
+def test_unit_for_clip_maps_by_segment_overlap() -> None:
+    entries, position_of = _dialogue_entries()
+    analysis = {"topic_units": [_dialogue_unit(), {"title": "无关块",
+                                                   "segment_ids": ["seg_9999"]}]}
+    unit = pu._unit_for_clip({"start_segment_id": "seg_0000", "end_segment_id": "seg_0005"},
+                             analysis, position_of)
+    assert unit is not None and unit["title"] == "基因检测问答"
+
+
+# ---------------------------------------------------------------------------
+# P2：content_analysis 新字段校验（patient_question 逐字 / doctor_core 子集）
+# ---------------------------------------------------------------------------
+
+def test_merge_llm_result_validates_question_and_core_ids() -> None:
+    from src import content_analysis as ca
+    rows = [
+        (0, "医生，做完手术还需要做基因检测吗？", 0, 6000),
+        (1, "要看病理报告结果决定。", 6000, 13000),
+        (2, "对的。", 13000, 14000),
+    ]
+    segments = [seg(i, t, s, e) for i, t, s, e in rows]
+    index = ca._SegIndex(segments)
+    result = ca._AnalysisOut(topic_units=[ca._TopicUnitOut.model_validate({
+        "title": "基因检测问答",
+        "segment_ids": ["seg_0000", "seg_0001", "seg_0002"],
+        "patient_question": "做完手术还需要做基因检测吗？",     # 去标点归一后逐字命中
+        "doctor_core_segment_ids": ["seg_0001", "seg_0009"],  # seg_0009 非子集 → 清理
+    })])
+    notes: list[str] = []
+    quotes: list = []
+    topics: list = []
+    intervals: list = []
+    keywords: list = []
+    ca._merge_llm_result(result, index, notes, quotes, topics, intervals, keywords)
+    unit = topics[0]
+    assert unit["patient_question"] == "做完手术还需要做基因检测吗？"
+    assert unit["doctor_core_segment_ids"] == ["seg_0001"]
+    assert any("非法 id" in n for n in notes)
+
+
+def test_merge_llm_result_clears_non_verbatim_question() -> None:
+    from src import content_analysis as ca
+    rows = [(0, "医生，这个痣要紧吗？", 0, 5000), (1, "要看变化情况。", 5000, 10000)]
+    index = ca._SegIndex([seg(i, t, s, e) for i, t, s, e in rows])
+    result = ca._AnalysisOut(topic_units=[ca._TopicUnitOut.model_validate({
+        "title": "痣的处理", "segment_ids": ["seg_0000", "seg_0001"],
+        "patient_question": "这个痣是不是癌症？",              # 非原文 → 清除
+        "doctor_core_segment_ids": ["seg_0001"],
+    })])
+    notes: list[str] = []
+    topics: list = []
+    ca._merge_llm_result(result, index, notes, [], topics, [], [])
+    assert topics[0]["patient_question"] == ""
+    assert any("患者提问" in n for n in notes)
+    assert topics[0]["doctor_core_segment_ids"] == ["seg_0001"]

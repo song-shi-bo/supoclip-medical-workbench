@@ -672,8 +672,10 @@ def _analysis_context_lines(analysis: dict[str, Any], max_clips: int) -> list[st
             if unit.get("mechanism"):
                 head += f"，机制：{unit['mechanism']}"
             lines.append(head + ")")
-            # 簇级钩子句/收尾句（阶段1逐字校验通过的引用）——提示词A原文不动，背景走拼装层。
-            for key, label in (("hook_quote", "钩子句"), ("ending_quote", "收尾句")):
+            # 簇级钩子句/收尾句/患者提问（阶段1逐字校验通过的引用）——提示词A原文
+            # 不动，背景走拼装层；患者提问是问答化开场的钩子候选（2026-11-11 P2）。
+            for key, label in (("hook_quote", "钩子句"), ("ending_quote", "收尾句"),
+                               ("patient_question", "患者提问")):
                 quote = str(unit.get(key) or "").strip()
                 if quote:
                     lines.append(f"    {label}：{quote[:60]}")
@@ -1049,9 +1051,10 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
         plan_warnings.append(
             f"medical_gate: 硬剔除 {len(moved_discarded)} 条非医学切片"
             f"（闸门模式={gate_profile.get('mode')}）")
-    # 净化重组（2026-11-11 问答化 P1）：删除切片内纯应答碎片，产出有序子区间；
-    # 任何失败整片回退原区间，绝不阻断。
-    purify_summary = clip_purify.purify_clips(clips, corrected_segments, speaker_labels)
+    # 净化重组（2026-11-11 问答化 P1/P2）：删除切片内纯应答碎片与患者插话
+    # （qa 保护提问钩子；mono 全删患者话语），产出有序子区间；任何失败整片回退。
+    purify_summary = clip_purify.purify_clips(clips, corrected_segments, speaker_labels,
+                                              analysis=analysis, gate_profile=gate_profile)
     purify_warns = [n for n in (purify_summary.get("notes") or [])]
     plan_warnings.extend(purify_warns[:4])
     if purify_summary.get("purified"):

@@ -71,7 +71,11 @@ _GOLDEN_SYSTEM_PROMPT = (
     "topic_units（≤10个不同的完整主题，标题从内容归纳、禁用固定词表标签，给 segment_ids 与 reason；"
     "每块另给 mechanism（该主题最适合的钩子机制，只能取：冲突/反常识/具体疑问/身份共鸣，都不适合则留空）、"
     "hook_quote（该块内可当钩子的原话一句，逐字复制，没有则留空）、"
-    "ending_quote（该块内可当天然收尾的原话一句，逐字复制，没有则留空）；"
+    "ending_quote（该块内可当天然收尾的原话一句，逐字复制，没有则留空）、"
+    "patient_question（引出该主题块的患者或家属提问原话一句，逐字复制该块分段中的原文，没有则留空；"
+    "这是问答化开场的钩子候选）、"
+    "doctor_core_segment_ids（该块中医生的成段解释分段 id 列表，必须是 segment_ids 的子集、按时间升序，"
+    "判断依据是内容语气：提问/确认/寒暄属患者方，成段解释/建议/结论属医生；没有把握则留空）；"
     "引用句禁止改写润色；info_seconds 由系统按分段时长计算，模型不得输出该字段）；"
     "candidate_intervals（≤12个，start_ms/end_ms 落在转写范围内且 end>start，给 topic_title 与 reason）。"
     "不改诊断/药名/剂量；跳过隐私片段。")
@@ -96,6 +100,9 @@ class _TopicUnitOut(BaseModel):
     mechanism: str = Field(default="", max_length=12)
     hook_quote: str = Field(default="", max_length=400)
     ending_quote: str = Field(default="", max_length=400)
+    # 问答化重组（2026-11-11 P2）：患者提问原话（逐字校验）+ 医生核心解释段（子集校验）。
+    patient_question: str = Field(default="", max_length=400)
+    doctor_core_segment_ids: list[str] = Field(default_factory=list, max_length=500)
 
 
 class _CandidateIntervalOut(BaseModel):
@@ -302,10 +309,12 @@ def _heuristic_topic_units(index: _SegIndex) -> list[dict[str, Any]]:
             "start_ms": unit[0]["start_ms"],
             "end_ms": unit[-1]["end_ms"],
             "reason": "本地回退：按转写停顿边界切分（>1.5s 空隙），无词表依赖。",
-            # 本地回退无模型判断：机制/钩子句/收尾句留空；info_seconds 程序可算。
+            # 本地回退无模型判断：机制/钩子句/收尾句/患者提问/医生核心段留空；info_seconds 程序可算。
             "mechanism": "",
             "hook_quote": "",
             "ending_quote": "",
+            "patient_question": "",
+            "doctor_core_segment_ids": [],
             "info_seconds": round(sum(e["end_ms"] - e["start_ms"] for e in unit) / 1000),
         })
     return result
@@ -422,6 +431,24 @@ def _merge_llm_result(result: _AnalysisOut, index: _SegIndex, notes: list[str],
         notes.append(f"主题块{label}被清除（非该块逐字原话）：{title} / {quote[:30]}")
         return ""
 
+    def _core_segment_ids(picked: list[dict[str, Any]], unit: Any, title: str) -> list[str]:
+        """医生核心解释段子集校验：必须是该块 segment_ids 的子集、按块内时间升序。"""
+        ordered_ids = [e["segment_id"] for e in picked]
+        allowed = set(ordered_ids)
+        raw = [str(sid) for sid in (unit.doctor_core_segment_ids or []) if str(sid).strip()]
+        unique: list[str] = []
+        for sid in raw:
+            if sid not in unique:
+                unique.append(sid)
+        valid = [sid for sid in unique if sid in allowed]
+        invalid = len(unique) - len(valid)
+        if invalid:
+            notes.append(f"主题块医生核心段清理 {invalid} 个非法 id（非子集）：{title}")
+        if not valid:
+            return []
+        rank = {sid: pos for pos, sid in enumerate(ordered_ids)}
+        return sorted(valid, key=lambda sid: rank[sid])
+
     seen_titles: set[str] = set()
     for unit in result.topic_units:
         picked = index.resolve(unit.segment_ids)
@@ -448,6 +475,9 @@ def _merge_llm_result(result: _AnalysisOut, index: _SegIndex, notes: list[str],
             "mechanism": mechanism,
             "hook_quote": _cluster_verbatim(picked, unit.hook_quote, "钩子句", title),
             "ending_quote": _cluster_verbatim(picked, unit.ending_quote, "收尾句", title),
+            "patient_question": _cluster_verbatim(picked, unit.patient_question,
+                                                  "患者提问", title),
+            "doctor_core_segment_ids": _core_segment_ids(picked, unit, title),
             "info_seconds": info_seconds,
         })
     for interval in result.candidate_intervals:
@@ -628,9 +658,9 @@ def load_analysis_record(job_id: str, *, expected_provenance: dict[str, Any] | N
     return record
 
 
-ANALYSIS_SCHEMA_VERSION = "analysis/v3"
-ANALYSIS_PROMPT_VERSION = "analysis-prompt/2026-11-08"
-ANALYSIS_HELPER_VERSION = "analysis-helper/v3"
+ANALYSIS_SCHEMA_VERSION = "analysis/v4"
+ANALYSIS_PROMPT_VERSION = "analysis-prompt/2026-11-11"
+ANALYSIS_HELPER_VERSION = "analysis-helper/v4"
 
 
 def _digest(value: Any) -> str:

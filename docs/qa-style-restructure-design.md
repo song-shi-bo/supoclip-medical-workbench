@@ -1,7 +1,9 @@
 # 问答化重组设计：把问诊对话切片剪出"口播感"
 
-状态：**P1 已实施（2026-11-11）**——clip_purify 净化阶段、sub_ranges 契约、多区间渲染、
-指纹接线、单测全绿；P2（分析层 schema）/P3（拼接裁判+指南佐证）待实施。
+状态：**P1+P2 已实施（2026-11-11）**——clip_purify 净化阶段（v2：删除授权阶梯/
+问答化保护提问钩子/独白化开关）、sub_ranges 契约、多区间渲染、分析层 schema
+（analysis/v4：patient_question 逐字校验 + doctor_core_segment_ids 子集校验）、
+指南佐证随 decision 透出；**P3 剩余项待实施**（LLM 拼接裁判独立 agent）。
 日期：2026-11-11 讨论
 关联：`docs/two-step-planning-design.md`、`docs/medical-gate-design.md`、`docs/AUTOEDIT_WORKBENCH.md` §3.2
 
@@ -70,16 +72,18 @@
 4. `clip_render` 多区间 concat 渲染 + 字幕平移；渲染指纹版本升级（旧缓存失效）；
 5. 单测：净化回退、拼接红线（跨患者必回退）、渲染 concat、指纹。
 
-### P2（分析层 schema，组1模式：AI 起草草案 → 用户逐字审定）
+### P2（分析层 schema，组1模式：AI 起草草案 → 用户逐字审定）——已实施 2026-11-11
 1. content_analysis 提示词增加：主题块 `patient_question`（触发提问原话，逐字校验同 hook_quote）
-   与 `doctor_core_segment_ids`（医生核心解释段，子集校验）；
-2. 拼装层透传（提示词A 原文不动）；purify 消费 schema 数据替代 heuristic；
-3. analysis 版本升级（analysis/v4），缓存身份自动失效。
+   与 `doctor_core_segment_ids`（医生核心解释段，子集校验、非法 id 清理留痕、按块内时间升序）；
+2. 拼装层透传（提示词A 原文不动）：主题块背景新增「患者提问」行；purify 消费 schema 数据；
+3. analysis 版本升级（analysis/v4 + analysis-prompt/2026-11-11 + analysis-helper/v4），
+   缓存身份自动失效。注：提示词草案按组1模式落地，用户可随时逐字修订（版本号随改随升）。
 
-### P3（拼接裁判 + 指南佐证）
-1. LLM 拼接裁判 agent（独立提示词与版本，走 llm_budget）；
-2. 医学指南库条目佐证：两段命中同条目/同主题路径 → 拼接加分；命中冲突条目 → 回退；
-3. 独白化模式（全删患者话）作为可选风格开关。
+### P3（拼接裁判 + 指南佐证）——佐证已随 decision 透出（P3-lite）
+1. LLM 拼接裁判 agent（独立提示词与版本，走 llm_budget）——待实施；
+2. 医学指南库条目佐证：闸门 matched topics 已随 purify decision 的 `evidence_topics`
+   透出（同主题块天然同条目）——已落地；
+3. 独白化模式（`MEDICAL_PURIFY_STYLE=mono`，患者话语全删）——已落地。
 
 ## 契约影响
 
@@ -98,5 +102,8 @@
 
 ## 待批事项
 
-1. P2 分析提示词草案（组1模式：AI 起草 → 用户逐字审定 → 归档 docs/prompts/）；
-2. 说话人纯度阈值与应答词表常量（env 可调，进指纹）。
+1. ~~P2 分析提示词草案~~ 已按组1模式落地（analysis-prompt/2026-11-11）；
+   用户可随时逐字修订，版本号随改随升；
+2. 说话人纯度阈值与应答词表常量（env 可调，进指纹）：已落地
+   （`MEDICAL_PURIFY_MIN_DOCTOR_RATIO` / `MEDICAL_PURIFY_MIN_KEEP_RATIO` /
+   `MEDICAL_PURIFY_STYLE` / 应答词表常量）。
