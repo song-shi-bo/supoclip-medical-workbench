@@ -927,7 +927,8 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
                analysis_ref: dict[str, Any] | None = None,
                rules_snapshot: Any = None,
                speaker_labels: dict[str, str] | None = None,
-               speaker_fingerprint: str | None = None) -> dict[str, Any]:
+               speaker_fingerprint: str | None = None,
+               gate_profile: dict[str, Any] | None = None) -> dict[str, Any]:
     """提示词A全局一次规划（两步制第一步）；失败重试一次，仍失败本地回退。
 
     模型输出 time_range 由 :func:`_assemble_slice_plan` 解析吸附到分段边界，
@@ -936,9 +937,10 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
     """
     index = _SegIndex(corrected_segments)
     ready, model_name, reason = _model_ready() if index.entries else (False, "", "纠错转写为空")
-    # 医学闸门（规划前标注）：逐主题块匹配指南库；标注随拼装层透传给提示词A，
-    # 身份（快照指纹+阈值）进 provenance——库变化自动失效旧计划缓存。
-    gate_profile = med_gate.run_gate(corrected_segments, analysis)
+    # 医学闸门（规划前标注）：worker 可预计算传入（gate_profile，单一数据源保证
+    # expected/actual 两边指纹逐字节一致）；未传入则现场计算（独立调用路径）。
+    if gate_profile is None:
+        gate_profile = med_gate.run_gate(corrected_segments, analysis)
     # 净化重组身份：说话人标注指纹由调用方（worker）解析传入，两边必须一致。
     purify_id = clip_purify.identity(speaker_fingerprint)
     analysis_for_prompt = dict(analysis)

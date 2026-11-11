@@ -16,6 +16,7 @@ import pytest
 
 from src import clip_medical_gate as gate
 from src import clip_planning as cp
+from src import clip_purify as pu
 from src import llm_budget
 from src import medical_kb as mkb
 
@@ -270,3 +271,27 @@ def test_gate_failure_degrades_without_blocking(monkeypatch: pytest.MonkeyPatch)
                            project_id="proj-gate-fallback")
     assert record["medical_gate"]["mode"] == "disabled"
     assert record["clips"], "闸门禁用时规划不应为空"
+
+
+# ---------------------------------------------------------------------------
+# worker 契约（2026-11-11 E_CACHE_CONTEXT_CHANGED 回归钉）：
+# worker 预计算 gate_profile + 富化分析喂 expected；plan_clips 传同一 profile——
+# 两边 provenance 必须逐字节相等。worker 必须用「gate 跑完后的富化分析」构建
+# expected，否则标注注入后 prompt sha 不同，契约拦截（真实事故 5e863396）。
+# ---------------------------------------------------------------------------
+
+def test_worker_contract_expected_matches_plan_record(monkeypatch: pytest.MonkeyPatch,
+                                                      tmp_path) -> None:
+    prompts: list[str] = []
+    _patch_plan_llm(monkeypatch, prompts)
+    segments, analysis = _segments(), _analysis()
+    gate_profile = gate.run_gate(segments, analysis)
+    assert gate_profile["enabled"] is True
+    enriched = dict(analysis)
+    enriched["medical_annotations"] = gate_profile["unit_annotations"]
+    expected = cp.build_current_plan_provenance(
+        segments, enriched, model="openai:test-model",
+        medical_gate_identity=gate_profile["identity"],
+        purify_identity=pu.identity(None))
+    record = cp.plan_clips(segments, analysis, gate_profile=gate_profile)
+    assert record["source_provenance"] == expected
