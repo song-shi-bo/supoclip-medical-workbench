@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 import uuid
 from typing import Any
@@ -397,6 +398,37 @@ def render_run_id(job):
     generation = int(lifecycle(job).get("render_generation") or 0)
     job_id = str(job.get("id") or job.get("job_id") or "")
     return uuid.uuid5(uuid.NAMESPACE_URL,f"studio-render:{job_id}:{generation}").hex if generation else job_id
+
+
+async def job_id_for_render_run_id(run_id: str) -> str | None:
+    """渲染 run id → studio job id（render_run_id 的反向解析）。
+
+    run id = uuid5(NAMESPACE_URL, f"studio-render:{job_id}:{generation}")，
+    确定性可逆：遍历未删除 job 行 × 尝试 render_generation 0..8 匹配。
+    台账卡片/前端拿到的 render_task_id 就是这个 run id，而 plans/ 产物、
+    /api/jobs/{id} 都以 studio job id 为键——两端 ID 对齐靠本解析（2026-11-11）。
+    """
+    if not run_id or not re.fullmatch(r"[0-9a-f]{32}", str(run_id)):
+        return None
+    maker = get_session_maker()
+    async with maker() as session:
+        result = await session.execute(text(
+            "SELECT id, config FROM studio_jobs WHERE deleted_at_utc IS NULL"))
+        rows = result.mappings().all()
+    target = str(run_id)
+    for row in rows:
+        base_config = row["config"]
+        if isinstance(base_config, str):
+            try:
+                base_config = json.loads(base_config)
+            except ValueError:
+                base_config = {}
+        for generation in range(0, 9):
+            candidate = render_run_id({"id": row["id"], "config": {
+                **(base_config or {}), "_lifecycle": {"render_generation": generation}}})
+            if candidate == target:
+                return str(row["id"])
+    return None
 
 
 def _is_activated(job):

@@ -484,6 +484,18 @@ async def require_reference(request: Request, kind: str, value: str, write: bool
             project = access.require(principal, "project", str(job["project_id"]), write=write)
             owner = {"subject": project["owner"], "domain_id": DOMAIN_ID}
             access.register("task", value, owner, project_id=job["project_id"], provenance="verified_job_alias")
+    if kind == "job" and not access.get("job", value) and re.fullmatch(r"[0-9a-f]{32}", value):
+        # 渲染 run id 别名（2026-11-11）：台账卡片/前端持有 render_run_id，而
+        # /api/jobs/{id} 等以 studio job id 为键——由确定性 uuid5 反解派生别名，
+        # 只由真实DB关联派生，不从客户端参数猜归属（真实事故 job 5e863396 成片面板 403/404）。
+        from .studio_job_store import get_job, job_id_for_render_run_id
+        resolved_job = await job_id_for_render_run_id(value)
+        if resolved_job:
+            job = await get_job(resolved_job)
+            if job and job.get("project_id"):
+                project = access.require(principal, "project", str(job["project_id"]), write=write)
+                owner = {"subject": project["owner"], "domain_id": DOMAIN_ID}
+                access.register("job", value, owner, project_id=job["project_id"], provenance="verified_render_run_alias")
     return access.require(principal, kind, value, write=write)
 
 

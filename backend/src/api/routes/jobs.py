@@ -331,6 +331,15 @@ async def submit_reedit_job(request: Request):
 async def job_status(job_id: str):
     job = await get_job(job_id)
     if job is None:
+        # 渲染 run id → studio job id（2026-11-11）：台账卡片/前端持有的
+        # render_task_id 是 run id，成片字幕水合用它查询本接口——确定性反解对齐。
+        from ...studio_job_store import job_id_for_render_run_id
+        resolved = await job_id_for_render_run_id(job_id)
+        if resolved:
+            job = await get_job(resolved)
+            if job is not None:
+                job_id = resolved
+    if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     queued_waiting = job["status"] == "queued" and not await worker_online()
     artifacts = []

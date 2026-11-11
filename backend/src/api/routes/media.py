@@ -1353,6 +1353,18 @@ def _apply_timeline_image_tails(source: Path, clip_id: str,
     return work
 
 
+async def _resolve_plan_task_id(task_id: str) -> str:
+    """渲染 run id → studio job id（plans/ 产物键，2026-11-11 面板 404 修复）。
+
+    台账卡片/前端持有的 task_id 是渲染 run id（render_run_id），而精修/规划
+    产物落盘在 plans/<studio job id>/；两者对齐靠确定性 uuid5 反解。
+    """
+    from ...studio_job_store import job_id_for_render_run_id
+
+    resolved = await job_id_for_render_run_id(task_id)
+    return resolved or task_id
+
+
 @router.get("/studio/auto-edit/{task_id}/clips/{clip_id}/refined-transcript")
 async def studio_clip_refined_transcript(task_id: str, clip_id: str):
     """右侧「切片精修文案」面板数据（两步制第二步消费侧，2026-11-05）。
@@ -1362,6 +1374,8 @@ async def studio_clip_refined_transcript(task_id: str, clip_id: str):
     行时间码为 null（前端显示 —）。精修产物缺失或切片未知 → 404。
     """
     from ... import clip_planning, clip_refinement
+
+    task_id = await _resolve_plan_task_id(task_id)
 
     def _build() -> dict:
         refinement = clip_refinement.load_refinement_record(task_id)
@@ -1389,6 +1403,8 @@ async def studio_clip_refined_copy(task_id: str, clip_id: str, download: bool = 
     时如实回退原始纠错转写拼装并标注——绝不冒充精修文本。
     """
     from ... import clip_planning, clip_refinement
+
+    task_id = await _resolve_plan_task_id(task_id)
 
     def _build() -> tuple[str, str]:
         refinement = clip_refinement.load_refinement_record(task_id)
