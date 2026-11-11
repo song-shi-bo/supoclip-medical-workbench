@@ -1375,6 +1375,7 @@ async def studio_clip_refined_transcript(task_id: str, clip_id: str):
     """
     from ... import clip_planning, clip_refinement
 
+    requested_task_id = task_id
     task_id = await _resolve_plan_task_id(task_id)
 
     def _build() -> dict:
@@ -1389,7 +1390,11 @@ async def studio_clip_refined_transcript(task_id: str, clip_id: str):
             for c in ((plan_record or {}).get("clips") or []))
         if not known_clip:
             raise HTTPException(status_code=404, detail=f"切片不存在：{clip_id}")
-        return clip_refinement.build_transcript_payload(task_id, clip_id, plan_record, refinement)
+        payload = clip_refinement.build_transcript_payload(task_id, clip_id, plan_record, refinement)
+        # 防串片双保险的回显契约：载荷 task_id 必须=请求路径的 task_id（前端持有的
+        # 是渲染 run id；数据源解析到 job id 属内部实现，不外泄到响应字段）。
+        payload["task_id"] = requested_task_id
+        return payload
 
     return await run_in_threadpool(_build)
 
