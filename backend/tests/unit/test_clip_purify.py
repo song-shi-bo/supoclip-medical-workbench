@@ -135,6 +135,25 @@ def test_identity_changes_with_speaker_fingerprint() -> None:
     assert a["speaker_fingerprint"] != b["speaker_fingerprint"]
 
 
+def test_load_speaker_overlay_resolves_tr_prefix(tmp_path) -> None:
+    """真实事故回归钉（2026-11-11）：config transcript_id 带 tr- 前缀，
+    overlay 目录名无前缀——两种形态都必须能加载（job 5e863396 纯度全 None）。"""
+    import json
+    source_id = "2070f41f051ac5b2"
+    directory = tmp_path / source_id
+    directory.mkdir(parents=True)
+    (directory / "speaker_labels.json").write_text(json.dumps({
+        "schema": 1, "labels": {"seg_0000": "医生", "seg_0001": "患者"},
+    }, ensure_ascii=False), encoding="utf-8")
+    labels, fp = pu.load_speaker_overlay(tmp_path, "tr-2070f41f051ac5b2")
+    assert labels is not None and len(labels) == 2
+    assert labels["seg_0001"] == "患者"
+    assert fp
+    # 无前缀形态同样可用
+    labels2, fp2 = pu.load_speaker_overlay(tmp_path, source_id)
+    assert labels2 == labels and fp2 == fp
+
+
 # ---------------------------------------------------------------------------
 # 与 plan_clips 集成：sub_ranges 进计划 + 指纹纳入 purify 身份
 # ---------------------------------------------------------------------------

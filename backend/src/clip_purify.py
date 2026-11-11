@@ -84,18 +84,26 @@ def load_speaker_overlay(transcripts_root: Path, source_id: str | None
                          ) -> tuple[dict[str, str] | None, str | None]:
     """读源级说话人标注 overlay（speaker_labeling.load_labels 的薄包装）。
 
+    source_id 兼容两种形态：config 里的 `tr-<id>` 与目录名的 `<id>`（2026-11-11
+    修复：真实事故中 transcript_id 带 tr- 前缀导致 overlay 永远找不到）。
     任何失败 → (None, None)（净化降级为纯应答词 heuristic，绝不阻断）。
     """
     if not source_id:
         return None, None
     try:
         from . import speaker_labeling  # 局部导入避免环
-        record = speaker_labeling.load_labels(transcripts_root, str(source_id))
-        labels = record.get("labels") if isinstance(record, dict) else None
-        if not isinstance(labels, dict) or not labels:
-            return None, None
-        clean = {str(k): str(v) for k, v in labels.items() if k and v}
-        return clean or None, speaker_overlay_fingerprint(clean)
+        candidates = [str(source_id)]
+        stripped = str(source_id).strip()
+        if stripped.startswith("tr-"):
+            candidates.append(stripped[3:])
+        for candidate in candidates:
+            record = speaker_labeling.load_labels(transcripts_root, candidate)
+            labels = record.get("labels") if isinstance(record, dict) else None
+            if isinstance(labels, dict) and labels:
+                clean = {str(k): str(v) for k, v in labels.items() if k and v}
+                if clean:
+                    return clean, speaker_overlay_fingerprint(clean)
+        return None, None
     except Exception:  # noqa: BLE001
         return None, None
 
