@@ -482,8 +482,17 @@ def refine_clips(plan_record: dict[str, Any], corrected_segments: list[dict[str,
         clip_id = str(clip.get("clip_id") or f"clip-{order:02d}")
         clip_start = int(clip.get("start_ms") or 0)
         clip_end = int(clip.get("end_ms") or 0)
-        window = [seg for seg in by_segment
-                  if seg["end_ms"] > clip_start and seg["start_ms"] < clip_end]
+        # 净化重组（2026-11-11 问答化 P1）：有 sub_ranges 时精修窗口取子区间并集
+        # （被净化的应答碎片段不进提示词B，"只删"语义作用在有效内容上）。
+        sub_ranges = [r for r in (clip.get("sub_ranges") or []) if isinstance(r, dict)]
+        if sub_ranges:
+            spans = [(int(r.get("start_ms") or 0), int(r.get("end_ms") or 0))
+                     for r in sub_ranges]
+            window = [seg for seg in by_segment
+                      if any(seg["end_ms"] > s and seg["start_ms"] < e for s, e in spans)]
+        else:
+            window = [seg for seg in by_segment
+                      if seg["end_ms"] > clip_start and seg["start_ms"] < clip_end]
         warnings: list[str] = []
         if not window:
             warnings.append("切片窗口内没有纠错分段，无法精修（如实回退空产物）")

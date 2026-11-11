@@ -36,6 +36,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
+from . import clip_purify
+
 FFMPEG_BIN = os.getenv("CONTENT_RENDER_FFMPEG", "ffmpeg")
 FFPROBE_BIN = os.getenv("CONTENT_RENDER_FFPROBE", "ffprobe")
 FFPROBE_TIMEOUT_SECONDS = 120
@@ -245,11 +247,12 @@ def _render_fingerprint(clip, source, corrected_segments, transcript_ref, rule_s
         identity = [stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns]
     except OSError:
         identity = [str(source)]
-    # 版本串参与指纹：refined-burn/1 = 烧录源改为「精修稿优先」（2026-11-09
-    # 用户拍板：烧录改用精修稿）。sidecar-subtitles/2 及更早的旧缓存（纠错转写
-    # 烧录、含语气词）必须全部失效重渲，成片字幕才会切换为精修稿。
-    payload = {"version": "refined-burn/1", "source": identity,
+    # 版本串参与指纹：purify-concat/1 = 问答化净化重组多区间渲染（2026-11-11
+    # 问答化 P1：clip.sub_ranges 有序子区间 concat，字幕按虚拟时间轴平移）。
+    # refined-burn/1 及更早的旧缓存必须全部失效重渲（多区间契约变更）。
+    payload = {"version": "purify-concat/1", "source": identity,
                "start_ms": clip.get("start_ms"), "end_ms": clip.get("end_ms"),
+               "sub_ranges": clip.get("sub_ranges"),
                "transcript": transcript_ref, "segments": corrected_segments,
                "refine": _refined_identity(refined_entry),
                "rule": rule_snapshot_id, "video_args": _VIDEO_ARGS, "audio_args": _AUDIO_ARGS}
@@ -287,6 +290,51 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _purify_ranges(clip: dict[str, Any], start_ms: int, end_ms: int
+                   ) -> list[tuple[int, int]] | None:
+    """clip.sub_ranges → 校验后的绝对毫秒区间列表；无效/未净化返回 None。
+
+    校验：有序、互不重叠、都在 [start_ms, end_ms] 界内、且不等价于整段
+    （等价于整段 = noop，走单区间老路径）。任何异常返回 None（回退老路径）。
+    """
+    try:
+        raw = clip.get("sub_ranges") or []
+        spans = [(int(r.get("start_ms") or 0), int(r.get("end_ms") or 0))
+                 for r in raw if isinstance(r, dict)]
+        if not spans:
+            return None
+        for prev, cur in zip(spans, spans[1:]):
+            if cur[0] < prev[1]:
+                return None
+        for s, e in spans:
+            if s < start_ms or e > end_ms or e <= s:
+                return None
+        if len(spans) == 1 and spans[0][0] <= start_ms and spans[0][1] >= end_ms:
+            return None
+        return spans
+    except Exception:
+        return None
+
+
+def _shift_segments_for_ranges(segments: list[dict[str, Any]],
+                               ranges: list[tuple[int, int]]
+                               ) -> tuple[list[dict[str, Any]], int]:
+    """分段映射到虚拟时间轴：完整落在子区间内的按累计偏移平移，其余剔除。"""
+    shifted: list[dict[str, Any]] = []
+    offset = 0
+    for (s, e) in ranges:
+        for seg in segments:
+            seg_s = int(seg.get("start_ms") or 0)
+            seg_e = int(seg.get("end_ms") or 0)
+            if seg_s >= s and seg_e <= e:
+                item = dict(seg)
+                item["start_ms"] = seg_s - s + offset
+                item["end_ms"] = seg_e - s + offset
+                shifted.append(item)
+        offset += e - s
+    return shifted, offset
+
+
 def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
                corrected_segments: list[dict[str, Any]], transcript_ref: dict[str, Any],
                rule_snapshot_id: str | None, force: bool = False,
@@ -309,14 +357,22 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
     start_ms = int(clip.get("start_ms") or 0)
     end_ms = int(clip.get("end_ms") or 0)
     duration_ms = max(1, end_ms - start_ms)
+    # 净化重组（2026-11-11 问答化 P1）：sub_ranges → 虚拟时间轴（子区间 concat），
+    # 分段/字幕全部平移到虚拟时间轴；无效 sub_ranges → None 走单区间老路径。
+    ranges = _purify_ranges(clip, start_ms, end_ms)
 
     _write_json(plan_path, clip)
     # 烧录源（2026-11-09 用户拍板：烧录改用精修稿）：该切片精修 source=llm 时，
     # 文本替换为 refined_text（已删语气词/无价值句）；缺失/fallback 如实回退
     # 纠错转写（subtitle_provenance.subtitle_source 记录实际来源）。
     burn_segments, refined_count = _apply_refined_segments(corrected_segments, refined_entry)
+    if ranges:
+        burn_segments, duration_ms = _shift_segments_for_ranges(burn_segments, ranges)
+        srt_start, srt_end = 0, duration_ms
+    else:
+        srt_start, srt_end = start_ms, end_ms
     srt_text, used_ids, subtitle_warnings = build_srt(
-        burn_segments, start_ms, end_ms)
+        burn_segments, srt_start, srt_end)
     srt_path.write_text(srt_text, encoding="utf-8")
 
     render_warnings: list[str] = list(subtitle_warnings)
@@ -350,12 +406,44 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
     else:
         subtitle_mode = "absent"
     try:
-        _run_ffmpeg([
-            "-ss", f"{start_ms / 1000:.3f}", "-i", str(source),
-            "-t", f"{duration_ms / 1000:.3f}",
-            *video_args, *_AUDIO_ARGS,
-            "-movflags", "+faststart", str(working_path),
-        ])
+        if ranges:
+            # 多区间 concat（purify-concat/1）：输入侧粗定位（首段起、末段止），
+            # filter_complex 逐段 trim+concat 成虚拟时间轴，再接原 -vf 链
+            # （scale/字幕烧录，字幕时间已是虚拟时间轴，无需改动）。
+            vf_value = video_args[video_args.index("-vf") + 1]
+            base = ranges[0][0]
+            rel = [(s - base, e - base) for s, e in ranges]
+            n = len(rel)
+            parts: list[str] = []
+            for i, (s, e) in enumerate(rel):
+                parts.append(f"[0:v]trim=start={s / 1000:.3f}:end={e / 1000:.3f},"
+                             f"setpts=PTS-STARTPTS[v{i}]")
+            for i, (s, e) in enumerate(rel):
+                parts.append(f"[0:a]atrim=start={s / 1000:.3f}:end={e / 1000:.3f},"
+                             f"asetpts=PTS-STARTPTS[a{i}]")
+            v_labels = "".join(f"[v{i}]" for i in range(n))
+            a_labels = "".join(f"[a{i}]" for i in range(n))
+            parts.append(f"{v_labels}concat=n={n}:v=1:a=0[vcat]")
+            parts.append(f"{a_labels}concat=n={n}:v=0:a=1[acat]")
+            parts.append(f"[vcat]{vf_value}[vout]")
+            vi = video_args.index("-vf")
+            codec_args = video_args[:vi] + video_args[vi + 2:]
+            _run_ffmpeg([
+                "-ss", f"{ranges[0][0] / 1000:.3f}",
+                "-t", f"{(ranges[-1][1] - ranges[0][0]) / 1000:.3f}",
+                "-i", str(source),
+                "-filter_complex", ";".join(parts),
+                "-map", "[vout]", "-map", "[acat]",
+                *codec_args, *_AUDIO_ARGS,
+                "-movflags", "+faststart", str(working_path),
+            ])
+        else:
+            _run_ffmpeg([
+                "-ss", f"{start_ms / 1000:.3f}", "-i", str(source),
+                "-t", f"{duration_ms / 1000:.3f}",
+                *video_args, *_AUDIO_ARGS,
+                "-movflags", "+faststart", str(working_path),
+            ])
     except RuntimeError as exc:
         working_path.unlink(missing_ok=True)
         raise ClipRenderError(str(exc)) from exc
@@ -369,15 +457,21 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
     provenance = {"transcript_id": transcript_ref.get("transcript_id"),
                   "transcript_version": transcript_ref.get("transcript_version"),
                   "segment_ids": used_ids,
-                  "time_shift": "subtitle_ms = transcript_ms - clip.start_ms",
+                  "time_shift": ("subtitle_ms = purify 虚拟时间轴（子区间 concat 平移）"
+                                 if ranges else "subtitle_ms = transcript_ms - clip.start_ms"),
                   "subtitle_mode": subtitle_mode,
                   # 烧录文本来源（2026-11-09 精修稿契约）：clip_refinement=精修稿
                   # （source=llm，已删语气词/无价值句）；corrected_transcript=精修
                   # 缺失/fallback 时的如实回退。refined_segment_count=实际替换为
                   # 非空精修文本的分段数。
                   "subtitle_source": "clip_refinement" if refined_count else "corrected_transcript",
-                  "refined_segment_count": refined_count}
-    subtitle_segments = _subtitle_cues(burn_segments, start_ms, end_ms)
+                  "refined_segment_count": refined_count,
+                  **({"purify": {"version": clip_purify.PURIFY_VERSION,
+                                 "ranges": [[s, e] for s, e in ranges],
+                                 "dropped_segment_ids": list(
+                                     (clip.get("purify") or {}).get("dropped_segment_ids") or [])}}
+                     if ranges else {})}
+    subtitle_segments = _subtitle_cues(burn_segments, srt_start, srt_end)
     warnings_doc = {
         "render_fingerprint": _render_fingerprint(clip, source, corrected_segments, transcript_ref, rule_snapshot_id, refined_entry),
         "srt_sha256": hashlib.sha256(srt_text.encode()).hexdigest(),

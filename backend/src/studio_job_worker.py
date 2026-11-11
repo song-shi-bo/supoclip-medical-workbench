@@ -757,12 +757,28 @@ def _run_clip_planning_stage(job: dict, job_id: str, transcript: dict,
     * 返回计划记录；``plan_ready`` 终态由调用方按 stop_after 决定是否发射。
     """
     from src import clip_planning
+    from src import clip_purify
     from src import r2
+    from src import studio_transcript_store
 
     started = time.time()
 
     def _progress(message: str) -> None:
         _state(job_id, "planning", message, 0.6)
+
+    # 净化重组（2026-11-11 问答化 P1）：源级说话人标注 overlay 由 worker 显式
+    # 解析并传给 expected/plan_clips 两边（identity 一致性契约）；加载失败降级
+    # 为无标注净化（纯应答词 heuristic），绝不阻断。
+    speaker_labels: dict[str, str] | None = None
+    speaker_fingerprint: str | None = None
+    try:
+        _source_id = (transcript.get("transcript_id")
+                      or (job.get("config") or {}).get("transcript_id"))
+        speaker_labels, speaker_fingerprint = clip_purify.load_speaker_overlay(
+            studio_transcript_store.transcripts_root(), _source_id)
+    except Exception as exc:  # noqa: BLE001 — 标注加载失败不阻断规划
+        speaker_labels, speaker_fingerprint = None, None
+        _log(f"job {job_id} speaker overlay 加载失败（净化降级）：{type(exc).__name__}")
 
     _state(job_id, "planning", "模型切片规划（连续区间/柔性时长/只记 warning）", 0.5)
     analysis_ref = {
@@ -775,7 +791,8 @@ def _run_clip_planning_stage(job: dict, job_id: str, transcript: dict,
         "resumed": bool(analysis_record.get("_resumed")),
     }
     expected=clip_planning.build_current_plan_provenance(list(transcript.get("asr_segments") or []),analysis_record,
-        transcript_version=transcript.get("transcript_version"),rule_snapshot_id=_rules_version(job),rules_snapshot=_frozen_rules(job))
+        transcript_version=transcript.get("transcript_version"),rule_snapshot_id=_rules_version(job),rules_snapshot=_frozen_rules(job),
+        purify_identity=clip_purify.identity(speaker_fingerprint))
     record = clip_planning.plan_clips(
         list(transcript.get("asr_segments") or []), analysis_record,
         transcript_version=transcript.get("transcript_version"),
@@ -783,6 +800,7 @@ def _run_clip_planning_stage(job: dict, job_id: str, transcript: dict,
         progress=_progress,
         rule_snapshot_id=_rules_version(job),
         analysis_ref=analysis_ref, rules_snapshot=_frozen_rules(job),
+        speaker_labels=speaker_labels, speaker_fingerprint=speaker_fingerprint,
     )
     record["plan_generation"]=_generation(job)
     _stage_metadata("planning",record)

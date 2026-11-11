@@ -59,6 +59,7 @@ from pydantic import BaseModel, Field
 
 from . import llm_budget
 from . import clip_medical_gate as med_gate
+from . import clip_purify
 from . import content_analysis as ca
 from . import hierarchical_planning as hp
 from .content_analysis import (
@@ -864,13 +865,16 @@ def build_current_plan_provenance(corrected_segments: list[dict[str, Any]],
                                    model: str | None = None,
                                    rule_snapshot_id: str | None = None,
                                    rules_snapshot: Any = None,
-                                   medical_gate_identity: dict[str, Any] | None = None
+                                   medical_gate_identity: dict[str, Any] | None = None,
+                                   purify_identity: dict[str, Any] | None = None
                                    ) -> dict[str, Any]:
     """当前输入独立生成计划缓存identity；不读取旧cache或actual_calls。"""
     if model is None:
         _, model, _ = _model_ready()
     # 医学闸门身份：未显式传入时现场取（同一快照 → 同一指纹，纯函数语义）。
     gate_identity = medical_gate_identity or med_gate.current_identity()
+    # 净化重组身份（2026-11-11 问答化 P1）：说话人标注指纹变化 → 旧计划缓存失效。
+    purify_id = purify_identity or clip_purify.identity(None)
     index = _SegIndex(corrected_segments)
     rules = {"rule_snapshot_id": rule_snapshot_id, "external_snapshot": copy.deepcopy(rules_snapshot),
              "score_weights": SCORE_WEIGHTS, "duration_prefer_ms": list(DUR_PREFER_MS),
@@ -890,6 +894,9 @@ def build_current_plan_provenance(corrected_segments: list[dict[str, Any]],
              "medical_gate": gate_identity,
              "medical_gate_helper_sha256": hashlib.sha256(
                  Path(med_gate.__file__).read_bytes()).hexdigest(),
+             "clip_purify": purify_id,
+             "clip_purify_helper_sha256": hashlib.sha256(
+                 Path(clip_purify.__file__).read_bytes()).hexdigest(),
              "output_schema_sha256": ca._digest(_SlicePlanOut.model_json_schema())}
     source = ca.build_analysis_provenance(corrected_segments,
         transcript_version=transcript_version, model=model,
@@ -916,24 +923,30 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
                job_id: str | None = None, project_id: str | None = None,
                progress=None, rule_snapshot_id: str | None = None,
                analysis_ref: dict[str, Any] | None = None,
-               rules_snapshot: Any = None) -> dict[str, Any]:
+               rules_snapshot: Any = None,
+               speaker_labels: dict[str, str] | None = None,
+               speaker_fingerprint: str | None = None) -> dict[str, Any]:
     """提示词A全局一次规划（两步制第一步）；失败重试一次，仍失败本地回退。
 
     模型输出 time_range 由 :func:`_assemble_slice_plan` 解析吸附到分段边界，
     权威毫秒按分段重算；:func:`_enforce_full_coverage` 兜底全覆盖契约。
+    规划后依次执行：医学闸门硬剔除 → 净化重组（clip_purify，问答化 P1）。
     """
     index = _SegIndex(corrected_segments)
     ready, model_name, reason = _model_ready() if index.entries else (False, "", "纠错转写为空")
     # 医学闸门（规划前标注）：逐主题块匹配指南库；标注随拼装层透传给提示词A，
     # 身份（快照指纹+阈值）进 provenance——库变化自动失效旧计划缓存。
     gate_profile = med_gate.run_gate(corrected_segments, analysis)
+    # 净化重组身份：说话人标注指纹由调用方（worker）解析传入，两边必须一致。
+    purify_id = clip_purify.identity(speaker_fingerprint)
     analysis_for_prompt = dict(analysis)
     if gate_profile.get("enabled"):
         analysis_for_prompt["medical_annotations"] = gate_profile.get("unit_annotations") or []
     source = build_current_plan_provenance(corrected_segments, analysis_for_prompt,
         transcript_version=transcript_version, model=model_name,
         rule_snapshot_id=rule_snapshot_id, rules_snapshot=rules_snapshot,
-        medical_gate_identity=gate_profile.get("identity"))
+        medical_gate_identity=gate_profile.get("identity"),
+        purify_identity=purify_id)
     notes: list[str] = []
     started = time.monotonic()
     usage_records, actual_calls = [], []
@@ -1036,6 +1049,13 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
         plan_warnings.append(
             f"medical_gate: 硬剔除 {len(moved_discarded)} 条非医学切片"
             f"（闸门模式={gate_profile.get('mode')}）")
+    # 净化重组（2026-11-11 问答化 P1）：删除切片内纯应答碎片，产出有序子区间；
+    # 任何失败整片回退原区间，绝不阻断。
+    purify_summary = clip_purify.purify_clips(clips, corrected_segments, speaker_labels)
+    purify_warns = [n for n in (purify_summary.get("notes") or [])]
+    plan_warnings.extend(purify_warns[:4])
+    if purify_summary.get("purified"):
+        plan_warnings.insert(0, f"clip_purify: {purify_summary['purified']} 条切片已净化重组（问答化）")
     discarded = _enforce_full_coverage(index, clips, discarded + moved_discarded, plan_warnings)
     warnings = plan_warnings
     if cap_applied or fallback_cap:
@@ -1064,6 +1084,7 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
                   degradations=hierarchical["degradations"],
                   medical_gate=med_gate.record_summary(gate_profile, gate_decisions,
                                                        len(moved_discarded)),
+                  purify=purify_summary,
                   callback_calls=len(actual_calls), callback_budget=2)
     return record
 
