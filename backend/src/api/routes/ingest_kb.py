@@ -140,6 +140,7 @@ class TopicIn(BaseModel):
     published_at: Optional[str] = None
     heat_score: int = 0
     tags: list[str] = Field(default_factory=list, max_length=10)
+    search_keyword: str = Field(default="", max_length=100)
 
 
 class HotTopicsIn(BaseModel):
@@ -166,9 +167,9 @@ class ScriptsIn(BaseModel):
 
 INSERT_TOPIC = text("""
     INSERT INTO hot_topics (id, title, summary, raw_text, source_platform, source_url,
-                            author, published_at, heat_score, tags, content_hash)
+                            author, published_at, heat_score, tags, search_keyword, content_hash)
     VALUES (gen_random_uuid()::text, :title, :summary, :raw_text, 'douyin', :source_url,
-            :author, :published_at, :heat_score, CAST(:tags AS text[]), :content_hash)
+            :author, :published_at, :heat_score, CAST(:tags AS text[]), :search_keyword, :content_hash)
     ON CONFLICT (content_hash) DO NOTHING
 """)
 
@@ -200,6 +201,7 @@ async def ingest_hot_topics(payload: HotTopicsIn, request: Request,
             "source_url": t.source_url, "author": t.author,
             "published_at": _parse_ts(t.published_at),
             "heat_score": t.heat_score, "tags": t.tags,
+            "search_keyword": t.search_keyword.strip(),
             "content_hash": content_hash,
         })
         hashes.append(content_hash)
@@ -271,7 +273,7 @@ async def kb_search(request: Request, q: str = "", tag: str = "", status: str = 
         if use_semantic:
             rows = (await db.execute(text("""
                 SELECT id, title, summary, tags, heat_score, status, source_url,
-                       created_at, embedding_json
+                       search_keyword, created_at, embedding_json
                 FROM hot_topics
                 WHERE embedding_json IS NOT NULL
                   AND (:status = '' OR status = :status)
@@ -284,9 +286,10 @@ async def kb_search(request: Request, q: str = "", tag: str = "", status: str = 
                               "similarity": round(sim, 4)} for sim, r in scored]
         else:
             rows = (await db.execute(text("""
-                SELECT id, title, summary, tags, heat_score, status, source_url, created_at
+                SELECT id, title, summary, tags, heat_score, status, source_url, search_keyword, created_at
                 FROM hot_topics
-                WHERE (:q = '' OR title ILIKE :like OR summary ILIKE :like OR raw_text ILIKE :like)
+                WHERE (:q = '' OR title ILIKE :like OR summary ILIKE :like OR raw_text ILIKE :like
+                       OR search_keyword ILIKE :like)
                   AND (:status = '' OR status = :status)
                   AND (cardinality(CAST(:tags AS text[])) = 0 OR tags @> CAST(:tags AS text[]))
                 ORDER BY heat_score DESC, created_at DESC LIMIT :limit
