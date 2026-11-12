@@ -241,6 +241,24 @@ async def ingest_scripts(payload: ScriptsIn, request: Request,
         deduped += 1 - row.rowcount
     await db.commit()
     embedded = await _embed_missing_scripts(db, hashes)
+    # 钩子模式库自动刷新（2026-11-12 用户接受全自动模式）：文稿入库成功后
+    # fire-and-forget 后台刷新（新增素材检测→计数更新→LLM 新结构提议），
+    # 任何失败只写日志，绝不影响入库响应。
+    import threading
+
+    from ... import hook_pattern_refresh
+
+    def _refresh_hook_patterns() -> None:
+        try:
+            summary = hook_pattern_refresh.run_refresh_sync()
+            if summary.get("updated"):
+                print(f"[hook-pattern-refresh] 模式库已更新: "
+                      f"{json.dumps(summary, ensure_ascii=False)[:200]}")
+        except Exception as exc:  # noqa: BLE001 — 后台刷新失败仅记录
+            print(f"[hook-pattern-refresh] 刷新失败(忽略): {type(exc).__name__}: {exc}")
+
+    threading.Thread(target=_refresh_hook_patterns,
+                     name="hook-pattern-refresh", daemon=True).start()
     return {"inserted": inserted, "deduped": deduped, "embedded": embedded,
             "warnings": warnings}
 

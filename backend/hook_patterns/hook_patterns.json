@@ -1,0 +1,91 @@
+{
+  "version": "hook-patterns/v1",
+  "updated_at": "2026-11-12",
+  "discipline": "模式库只存「开头手法结构」，永不存参考素材原句；示例片段仅供人工维护参考，加载器与注入代码不读取示例字段——结构上保证示例文本不可能进入任何提示词。",
+  "patterns": [
+    {
+      "id": "P1",
+      "name": "案例警示",
+      "structure": "真实案例+严重后果开场，先给结果再点原因",
+      "mechanisms": ["冲突"],
+      "material_count": 2,
+      "reference_hint": "因错误做法→癌变；年仅24岁从确诊到离世不满一年",
+      "status": "active"
+    },
+    {
+      "id": "P2",
+      "name": "认知反差",
+      "structure": "先陈述大众默认认知，随即推翻",
+      "mechanisms": ["反常识"],
+      "material_count": 4,
+      "reference_hint": "很多人以为X……但其实Y；不是体检没用，而是项目不对",
+      "status": "active"
+    },
+    {
+      "id": "P3",
+      "name": "数字预告",
+      "structure": "数字+清单承诺（N个信号/N个要点/N个妙招）",
+      "mechanisms": ["具体疑问"],
+      "material_count": 5,
+      "reference_hint": "两个信号；五大信号；3个降压妙招；4个特点",
+      "status": "active"
+    },
+    {
+      "id": "P4",
+      "name": "提问直击",
+      "structure": "疑问句直击痛点",
+      "mechanisms": ["具体疑问"],
+      "material_count": 3,
+      "reference_hint": "为什么年年体检一发现就是中晚期；身上的肉疙瘩会变成肿瘤吗",
+      "status": "active"
+    },
+    {
+      "id": "P5",
+      "name": "亲历叙事",
+      "structure": "第一人称身份+得病宣言+历程承诺",
+      "mechanisms": ["身份共鸣"],
+      "material_count": 2,
+      "reference_hint": "在我四十岁这年我得了癌症，讲讲我经历了什么",
+      "status": "active"
+    },
+    {
+      "id": "P6",
+      "name": "人群点名",
+      "structure": "直接点名目标人群+风险警示",
+      "mechanisms": ["身份共鸣"],
+      "material_count": 1,
+      "reference_hint": "大于六十岁有高血压的要注意了",
+      "status": "active"
+    },
+    {
+      "id": "P7",
+      "name": "比喻定调",
+      "structure": "一个比喻为疾病定调（本条仅人工使用，程序不做自动识别）",
+      "mechanisms": ["冲突", "反常识"],
+      "material_count": 3,
+      "reference_hint": "定时炸弹；隐形大师；暴风雨前的求救信号",
+      "status": "active"
+    },
+    {
+      "id": "P8",
+      "name": "实拍原声",
+      "structure": "场景真实对话直接开场，无解说",
+      "mechanisms": [],
+      "material_count": 1,
+      "reference_hint": "手术室医患真实对话",
+      "status": "manual_only"
+    }
+  ],
+  "constraints": {
+    "max_hook_chars": 30,
+    "must_come_from_transcript": true,
+    "gap_within_seconds": 3
+  },
+  "changelog": [
+    {
+      "version": "hook-patterns/v1",
+      "date": "2026-11-12",
+      "note": "首版：从16条参考转写开头人工提炼8类开头模式"
+    }
+  ]
+}

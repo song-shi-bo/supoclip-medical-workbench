@@ -62,6 +62,7 @@ from . import clip_medical_gate as med_gate
 from . import clip_purify
 from . import content_analysis as ca
 from . import hierarchical_planning as hp
+from . import hook_patterns as hook_pat
 from .content_analysis import (
     LLM_CALL_TIMEOUT_SECONDS,
     _SegIndex,
@@ -684,6 +685,25 @@ def _analysis_context_lines(analysis: dict[str, Any], max_clips: int) -> list[st
     annotations = analysis.get("medical_annotations") or []
     if annotations:
         lines.extend(med_gate.context_lines({"enabled": True, "unit_annotations": annotations}))
+    # 钩子候选（2026-11-12 钩子模式库）：候选全部为**本片转写逐字原句**（主题块
+    # 钩子句/患者提问/金句），经模式库结构打分排序——注入的是排序后的原句清单，
+    # 不含任何参考素材文本（「学模式不学内容」纪律）。
+    hook_texts: list[str] = []
+    for unit in units[:12]:
+        for key in ("hook_quote", "patient_question"):
+            quote = str(unit.get(key) or "").strip()
+            if quote:
+                hook_texts.append(quote)
+    for quote in (analysis.get("golden_quotes") or [])[:6]:
+        text = quote.strip() if isinstance(quote, str) else str(quote.get("text") or "").strip()
+        if text:
+            hook_texts.append(text[:60])
+    ranked_hooks = hook_pat.rank_candidates(hook_texts)
+    if ranked_hooks:
+        lines.append("【钩子候选（本片转写逐字原句，按开头模式排序，钩子须从中逐字选用）】")
+        for cand in ranked_hooks:
+            tag = f"（{cand['pattern_name']}）" if cand.get("pattern_name") else ""
+            lines.append(f"  「{cand['text'][:60]}」{tag}")
     intervals = analysis.get("candidate_intervals") or []
     if intervals:
         lines.append("【候选区间】")
@@ -899,6 +919,12 @@ def build_current_plan_provenance(corrected_segments: list[dict[str, Any]],
              "clip_purify": purify_id,
              "clip_purify_helper_sha256": hashlib.sha256(
                  Path(clip_purify.__file__).read_bytes()).hexdigest(),
+             # 钩子模式库（2026-11-12 问答化）：身份=库文件内容 sha256（确定性，
+             # worker expected 与 plan_clips 内部两次构建必然相等）；模式库改版
+             # → 旧计划缓存自动失效。
+             "hook_patterns": hook_pat.identity(),
+             "hook_patterns_helper_sha256": hashlib.sha256(
+                 Path(hook_pat.__file__).read_bytes()).hexdigest(),
              "output_schema_sha256": ca._digest(_SlicePlanOut.model_json_schema())}
     source = ca.build_analysis_provenance(corrected_segments,
         transcript_version=transcript_version, model=model,
@@ -1061,6 +1087,34 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
     plan_warnings.extend(purify_warns[:4])
     if purify_summary.get("purified"):
         plan_warnings.insert(0, f"clip_purify: {purify_summary['purified']} 条切片已净化重组（问答化）")
+    # 钩子逐字执法（2026-11-12 钩子模式库）：计划产出的 hook_first_line 必须是
+    # 本片转写逐字原句（去标点归一后包含校验）——不一致 → 替换为该切片范围内
+    # 模式打分最高的逐字候选 + warning 留痕（模型只准选、不准写）。
+    hook_pat_summary = {"replaced_non_verbatim": 0, "verified_verbatim": 0}
+    if clips:
+        transcript_norm = "".join(_norm(str(s.get("text") or ""))
+                                  for s in corrected_segments)
+        position_of = {e["segment_id"]: pos for pos, e in enumerate(index.entries)}
+        for clip in clips:
+            hook_line = str(clip.get("hook_first_line") or "").strip()
+            if not hook_line:
+                continue
+            if _norm(hook_line) and _norm(hook_line) in transcript_norm:
+                hook_pat_summary["verified_verbatim"] += 1
+                continue
+            start_pos = position_of.get(str(clip.get("start_segment_id") or ""))
+            end_pos = position_of.get(str(clip.get("end_segment_id") or ""))
+            if start_pos is None or end_pos is None or start_pos > end_pos:
+                continue
+            window = [e["text"] for e in index.entries[start_pos:end_pos + 1]]
+            best = (hook_pat.rank_candidates(window) or [None])[0]
+            if best is None:
+                continue
+            original = hook_line
+            clip["hook_first_line"] = best["text"]
+            hook_pat_summary["replaced_non_verbatim"] += 1
+            notes.append(f"钩子逐字执法：hook_first_line「{original[:30]}」非转写原话，"
+                         f"已替换为切片内逐字候选「{best['text'][:30]}」")
     discarded = _enforce_full_coverage(index, clips, discarded + moved_discarded, plan_warnings)
     warnings = plan_warnings
     if cap_applied or fallback_cap:
@@ -1090,6 +1144,7 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
                   medical_gate=med_gate.record_summary(gate_profile, gate_decisions,
                                                        len(moved_discarded)),
                   purify=purify_summary,
+                  hook_patterns={**hook_pat.identity(), **hook_pat_summary},
                   callback_calls=len(actual_calls), callback_budget=2)
     return record
 

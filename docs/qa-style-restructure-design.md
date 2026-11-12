@@ -1,11 +1,25 @@
 # 问答化重组设计：把问诊对话切片剪出"口播感"
 
-状态：**P1+P2 已实施（2026-11-11）**——clip_purify 净化阶段（v2：删除授权阶梯/
-问答化保护提问钩子/独白化开关）、sub_ranges 契约、多区间渲染、分析层 schema
-（analysis/v4：patient_question 逐字校验 + doctor_core_segment_ids 子集校验）、
-指南佐证随 decision 透出；**P3 剩余项待实施**（LLM 拼接裁判独立 agent）。
+状态：**P1+P2 已实施（2026-11-11）+ 钩子模式库已实施（2026-11-12）**——clip_purify 净化阶段（v2）、sub_ranges 契约、多区间渲染、分析层 schema（analysis/v4）、指南佐证透出、**钩子模式库（hook-patterns/v1：16 条参考转写开头提炼 8 类开头模式；逐字候选打分排序注入拼装层；hook_first_line 逐字执法；文稿入库触发素材驱动自动刷新）**；**P3 剩余项待实施**（LLM 拼接裁判独立 agent）。
 日期：2026-11-11 讨论
 关联：`docs/two-step-planning-design.md`、`docs/medical-gate-design.md`、`docs/AUTOEDIT_WORKBENCH.md` §3.2
+
+## 钩子模式库（2026-11-12 追加，用户前提：钩子必须逐字来自 29 分钟转写原话）
+
+- 模式库 = **筛选标尺不是生成模板**：只存"开头手法结构"（8 类：案例警示/认知反差/
+  数字预告/提问直击/亲历叙事/人群点名/比喻定调/实拍原声），永不存参考素材原句
+  （`reference_hint` 示例字段加载器不读取，结构上保证示例不进提示词）；
+- 拼装层在【医学主题匹配】后注入【钩子候选（本片转写逐字原句，按开头模式排序）】
+  ——候选来自分析层逐字校验过的 hook_quote / patient_question / 金句；
+- 规划后**逐字执法**：hook_first_line 去标点归一后必须命中转写，否则替换为切片内
+  模式打分最高的逐字候选 + notes 留痕；
+- **素材驱动自动刷新**：文稿入库成功后 fire-and-forget 后台刷新——新增素材开头
+  按现有模式打分累积 material_count；累计 ≥5 条触发一次小额 LLM 批量提议
+  （无法归入现有模式的新结构，输出禁含素材原句），合并后版本 +1 存档；
+- 指纹：模式库文件内容 sha256（不含示例字段）+ 模块源码 sha 进 plan 指纹——
+  模式库改版自动失效旧计划缓存；
+- 环境变量：`HOOK_PATTERNS_PATH`（库路径）、`HOOK_PATTERNS_MAX`（模式总数上限 15）、
+  `HOOK_PATTERNS_PROPOSAL_THRESHOLD`（LLM 提议触发阈值 5）。
 
 ## 用户拍板的三项决策（2026-11-11）
 
