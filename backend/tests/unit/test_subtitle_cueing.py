@@ -202,3 +202,26 @@ def test_styled_ass固化样式():
     dlg = [ln for ln in ass.splitlines() if ln.startswith("Dialogue:")][0]
     assert "因为你0.4的厚度\\N原则上要求扩切0.5公分" in dlg
     assert "0:00:06.75,0:00:14.83" in dlg
+
+
+def test_word_level_alignment_trims_trailing_silence_and_pauses():
+    """words_ms 词级对齐（2026-11-12 生产接线）：cue 尾部停在最后一个词、
+    尾部静音不挂字幕、句界停顿不被无限补齐。"""
+    segs = [{"segment_id": "s", "start_ms": 0, "end_ms": 8000,
+             "text": "第一句话。第二句话。"}]
+    # 词只覆盖到 3.0s，段尾到 8.0s（5s 尾部静音）
+    words_ms = [
+        {"text": "第一句话", "start": 0.0, "end": 1200.0},
+        {"text": "。", "start": 1200.0, "end": 1400.0},
+        {"text": "第二句话", "start": 1600.0, "end": 2800.0},
+        {"text": "。", "start": 2800.0, "end": 3000.0},
+    ]
+    cues, _, _ = sc.build_cues_from_segments(segs, 0, 60_000, _cfg(), words_ms=words_ms)
+    assert len(cues) == 2, cues
+    # 第一句闭合到下一句起点（短停顿 0.2s ≤ gap_extend 0.8s，防闪烁）
+    assert cues[0]["end"] == pytest.approx(1.6, abs=0.05)
+    # 尾部静音不挂字幕：末条 cue 停在词尾 3.0s，而不是段尾 8.0s
+    assert cues[-1]["end"] == pytest.approx(3.0, abs=0.1)
+    # 插值回退（不传 words）同输入会挂满段尾——对照组
+    cues2, _, _ = sc.build_cues_from_segments(segs, 0, 60_000, _cfg())
+    assert cues2[-1]["end"] > cues[-1]["end"]

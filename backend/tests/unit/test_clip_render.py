@@ -596,3 +596,97 @@ def test_worker_render_stage_loads_refinement_record(monkeypatch, tmp_path, subt
         {"job_id": "autoedit_norefine", "object_key": "synthetic", "project_id": "timeline_rw"},
         "autoedit_norefine", {"asr_segments": []}, plan)
     assert seen[-1] is None
+
+
+# ---------------------------------------------------------------------------
+# 词级对齐接线（2026-11-12 words）：指纹版本 / provenance 留痕 / 虚拟时间轴平移
+# ---------------------------------------------------------------------------
+
+def test_render_fingerprint_words_version(tmp_path, subtitle_mock_runtime):
+    """words 参与指纹（words-align/1）；不传/空列表 = 旧 purify-concat/1 缓存基。"""
+    source, _calls = subtitle_mock_runtime
+    clip = {"clip_id": "fpw", "start_ms": 0, "end_ms": 1000}
+    segs = [{"segment_id": "s", "start_ms": 0, "end_ms": 1000, "text": "文本。"}]
+    base = cr._render_fingerprint(clip, source, segs, {}, None)
+    with_words = cr._render_fingerprint(clip, source, segs, {}, None,
+                                        words=[{"text": "文", "start": 0.0, "end": 0.5}])
+    assert base != with_words                      # 带词渲染 ≠ 旧无词缓存
+    assert base == cr._render_fingerprint(clip, source, segs, {}, None)
+    assert base == cr._render_fingerprint(clip, source, segs, {}, None, words=[])
+
+
+def test_shift_words_for_ranges_maps_and_clips():
+    """词时间与分段同映射平移：区间内平移、跨界词裁剪、净化间隙词剔除。"""
+    ranges = [(1000, 2000), (3000, 4000)]
+    words = [
+        {"text": "甲", "start": 1200.0, "end": 1500.0},   # 区间1内 → 200-500
+        {"text": "乙", "start": 1800.0, "end": 2200.0},   # 跨界 → 裁剪 800-1000
+        {"text": "丙", "start": 2200.0, "end": 2900.0},   # 净化间隙 → 剔除
+        {"text": "丁", "start": 3500.0, "end": 3900.0},   # 区间2（offset 1000）→ 1500-1900
+    ]
+    out = cr._shift_words_for_ranges(words, ranges)
+    assert [(w["text"], w["start"], w["end"]) for w in out] == [
+        ("甲", 200.0, 500.0), ("乙", 800.0, 1000.0), ("丁", 1500.0, 1900.0)]
+
+
+def test_render_one_words_alignment_provenance_and_cache(tmp_path, subtitle_mock_runtime):
+    """render_one(words=...)：provenance.words 留痕 + 同词缓存命中 + 无词重渲。"""
+    source, calls = subtitle_mock_runtime
+    out = tmp_path / "out"
+    clip = {"clip_id": "words-align", "start_ms": 0, "end_ms": 4000}
+    segs = [{"segment_id": "seg-a", "start_ms": 0, "end_ms": 4000,
+             "text": "第一句话。第二句话。"}]
+    words = [
+        {"text": "第一句话", "start": 0.0, "end": 1.2},
+        {"text": "。", "start": 1.2, "end": 1.4},
+        {"text": "第二句话", "start": 1.6, "end": 2.8},
+        {"text": "。", "start": 2.8, "end": 3.0},
+    ]
+    opts = dict(source=source, out_dir=out, corrected_segments=segs,
+                transcript_ref={"transcript_id": "synthetic-tr", "transcript_version": 3},
+                rule_snapshot_id=None)
+    rendered = cr.render_one(clip, words=words, **opts)
+    assert rendered["status"] == "rendered"
+    prov = json.loads((out / "warnings.json").read_text())["subtitle_provenance"]
+    assert prov["words"]["used"] is True and prov["words"]["count"] >= 2
+    assert prov["words"]["virtual_timeline"] is False
+    # 词级对齐：尾部静音（词止于 3.0s、段到 4.0s）不挂字幕
+    blocks = [b for b in (out / "subtitles.srt").read_text().split("\n\n") if b.strip()]
+    last_ts = blocks[-1].splitlines()[1].split("-->")[1].strip()
+    h, m, rest = last_ts.split(":"); s, ms = rest.split(",")
+    last_end = int(h) * 3600 + int(m) * 60 + int(s) + int(ms) / 1000
+    assert last_end < 3.6, f"cue 尾部应停在词尾附近，实际 {last_end}s"
+    # 同词 → 缓存命中（fingerprint words-align/1）；不传词 → 指纹变化重渲
+    assert cr.render_one(clip, words=words, **opts)["status"] == "skipped_playable"
+    assert len(calls) == 1
+    again = cr.render_one(clip, **opts)
+    assert again["status"] == "rendered" and len(calls) == 2
+    prov2 = json.loads((out / "warnings.json").read_text())["subtitle_provenance"]
+    assert prov2["words"]["used"] is False
+
+
+def test_render_plan_threads_words_to_render_one(tmp_path, subtitle_mock_runtime):
+    """render_plan(words=...) 透传给每条切片；None 时不传键（旧替身兼容）。"""
+    source, _calls = subtitle_mock_runtime
+    seen: dict = {}
+
+    def fake_render_one(clip, *, source, out_dir, corrected_segments, transcript_ref,
+                        rule_snapshot_id, refined_entry=None, **kwargs):
+        seen["words_passed"] = "words" in kwargs
+        seen["words"] = kwargs.get("words")
+        return {"clip_id": clip.get("clip_id"), "status": "rendered",
+                "warnings": [], "render_warnings": []}
+
+    plan = {"clips": [{"clip_id": "clip-w", "start_ms": 0, "end_ms": 1500}]}
+    segs = [{"segment_id": "s", "start_ms": 0, "end_ms": 1500, "text": "文本。"}]
+    words = [{"text": "文本", "start": 0.0, "end": 1.0}]
+    result = cr.render_plan(plan, source=source, out_root=tmp_path / "o",
+                            corrected_segments=segs, transcript_ref={},
+                            words=words, render_one_fn=fake_render_one)
+    assert result["job_status"] == "completed"
+    assert seen["words_passed"] is True and seen["words"] == words
+    seen.clear()
+    cr.render_plan(plan, source=source, out_root=tmp_path / "o2",
+                   corrected_segments=segs, transcript_ref={},
+                   render_one_fn=fake_render_one)
+    assert seen["words_passed"] is False      # None → 不带 words 键，兼容旧签名替身

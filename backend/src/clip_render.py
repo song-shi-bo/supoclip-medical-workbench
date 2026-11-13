@@ -250,7 +250,7 @@ def _refined_identity(refined_entry: dict[str, Any] | None) -> str | None:
 
 
 def _render_fingerprint(clip, source, corrected_segments, transcript_ref, rule_snapshot_id,
-                        refined_entry=None):
+                        refined_entry=None, words=None):
     try:
         stat = source.stat()
         identity = [stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns]
@@ -259,7 +259,10 @@ def _render_fingerprint(clip, source, corrected_segments, transcript_ref, rule_s
     # 版本串参与指纹：purify-concat/1 = 问答化净化重组多区间渲染（2026-11-11
     # 问答化 P1：clip.sub_ranges 有序子区间 concat，字幕按虚拟时间轴平移）。
     # refined-burn/1 及更早的旧缓存必须全部失效重渲（多区间契约变更）。
-    payload = {"version": "purify-concat/1", "source": identity,
+    # words-align/1 = 词级对齐烧录（2026-11-12）：传 words 时cue 时间走真实词
+    # 首尾，旧无词缓存（purify-concat/1）指纹不匹配 → 自动失效重渲。
+    version = "words-align/1" if words else "purify-concat/1"
+    payload = {"version": version, "source": identity,
                "start_ms": clip.get("start_ms"), "end_ms": clip.get("end_ms"),
                "sub_ranges": clip.get("sub_ranges"),
                "transcript": transcript_ref, "segments": corrected_segments,
@@ -269,7 +272,7 @@ def _render_fingerprint(clip, source, corrected_segments, transcript_ref, rule_s
 
 
 def _cached_entry(clip, source, out_dir, segments, transcript_ref, rule_snapshot_id,
-                  refined_entry=None):
+                  refined_entry=None, words=None):
     final = out_dir / "clip_final.mp4"
     warnings = out_dir / "warnings.json"
     srt = out_dir / "subtitles.srt"
@@ -277,7 +280,7 @@ def _cached_entry(clip, source, out_dir, segments, transcript_ref, rule_snapshot
         return None
     try:
         doc = json.loads(warnings.read_text(encoding="utf-8"))
-        if doc.get("render_fingerprint") != _render_fingerprint(clip, source, segments, transcript_ref, rule_snapshot_id, refined_entry):
+        if doc.get("render_fingerprint") != _render_fingerprint(clip, source, segments, transcript_ref, rule_snapshot_id, refined_entry, words):
             return None
         if doc.get("srt_sha256") != hashlib.sha256(srt.read_bytes()).hexdigest():
             return None
@@ -344,13 +347,39 @@ def _shift_segments_for_ranges(segments: list[dict[str, Any]],
     return shifted, offset
 
 
+def _shift_words_for_ranges(words_ms: list[dict[str, Any]],
+                            ranges: list[tuple[int, int]]) -> list[dict[str, Any]]:
+    """词级时间与 ``_shift_segments_for_ranges`` 同映射平移到虚拟时间轴。
+
+    跨界词按保留区间裁剪（取与区间交集），保证词中点落在平移后分段窗口内、
+    词对齐不被边界词缺失拉偏；词时间单位毫秒（绝对源轴 → 虚拟轴）。"""
+    out: list[dict[str, Any]] = []
+    offset = 0
+    for (s, e) in ranges:
+        for w in words_ms:
+            try:
+                ws, we = float(w.get("start") or 0.0), float(w.get("end") or 0.0)
+            except (TypeError, ValueError):
+                continue
+            if we <= s or ws >= e:
+                continue
+            c0, c1 = max(ws, s), min(we, e)
+            out.append({"text": str(w.get("text") or ""),
+                        "start": c0 - s + offset, "end": c1 - s + offset})
+        offset += e - s
+    return out
+
+
 def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
                corrected_segments: list[dict[str, Any]], transcript_ref: dict[str, Any],
                rule_snapshot_id: str | None, force: bool = False,
-               refined_entry: dict[str, Any] | None = None) -> dict[str, Any]:
+               refined_entry: dict[str, Any] | None = None,
+               words: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """渲染单条切片（幂等）。返回条目状态：``rendered`` / ``skipped_playable``。
 
     技术故障抛 :class:`ClipRenderError`（调用方隔离，不中断其他切片）。
+    ``words``：词级时间（秒，绝对源轴，{text,start,end}，来自纠错转写 v2）——
+    提供时烧录字幕 cue 时间走词对齐（2026-11-12 字幕优化）；缺失回退插值。
     """
     clip_id = str(clip.get("clip_id") or "").strip()
     if not clip_id:
@@ -375,13 +404,25 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
     # 文本替换为 refined_text（已删语气词/无价值句）；缺失/fallback 如实回退
     # 纠错转写（subtitle_provenance.subtitle_source 记录实际来源）。
     burn_segments, refined_count = _apply_refined_segments(corrected_segments, refined_entry)
+    # 词级时间与分段同链路：净化重组时平移到虚拟时间轴（2026-11-12 words 接线），
+    # build_srt 约定收秒（内部自行 ×1000 → ms）
+    words_used: list[dict[str, Any]] | None = None
+    if words:
+        words_ms = [{"text": str(w.get("text") or ""),
+                     "start": float(w.get("start") or 0.0) * 1000.0,
+                     "end": float(w.get("end") or 0.0) * 1000.0}
+                    for w in words]
+        if ranges:
+            words_ms = _shift_words_for_ranges(words_ms, ranges)
+        words_used = [{"text": w["text"], "start": w["start"] / 1000.0,
+                       "end": w["end"] / 1000.0} for w in words_ms] or None
     if ranges:
         burn_segments, duration_ms = _shift_segments_for_ranges(burn_segments, ranges)
         srt_start, srt_end = 0, duration_ms
     else:
         srt_start, srt_end = start_ms, end_ms
     srt_text, used_ids, subtitle_warnings = build_srt(
-        burn_segments, srt_start, srt_end)
+        burn_segments, srt_start, srt_end, words=words_used)
     srt_path.write_text(srt_text, encoding="utf-8")
 
     render_warnings: list[str] = list(subtitle_warnings)
@@ -475,6 +516,12 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
                   # 非空精修文本的分段数。
                   "subtitle_source": "clip_refinement" if refined_count else "corrected_transcript",
                   "refined_segment_count": refined_count,
+                  # 词级对齐留痕（2026-11-12 words 接线）：used=是否提供词级时间；
+                  # count=平移后仍在窗口内的词数；virtual_timeline=是否随净化
+                  # sub_ranges 平移到虚拟时间轴。
+                  **({"words": {"used": True, "count": len(words_used),
+                                "virtual_timeline": bool(ranges)}}
+                     if words_used else {"words": {"used": False}}),
                   **({"purify": {"version": clip_purify.PURIFY_VERSION,
                                  "ranges": [[s, e] for s, e in ranges],
                                  "dropped_segment_ids": list(
@@ -482,7 +529,7 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
                      if ranges else {})}
     subtitle_segments = _subtitle_cues(burn_segments, srt_start, srt_end)
     warnings_doc = {
-        "render_fingerprint": _render_fingerprint(clip, source, corrected_segments, transcript_ref, rule_snapshot_id, refined_entry),
+        "render_fingerprint": _render_fingerprint(clip, source, corrected_segments, transcript_ref, rule_snapshot_id, refined_entry, words),
         "srt_sha256": hashlib.sha256(srt_text.encode()).hexdigest(),
         "subtitle_mode": subtitle_mode, "subtitle_segments": subtitle_segments,
         "clip_id": clip_id,
@@ -508,12 +555,12 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
 
 
 def render_one(clip, *, source, out_dir, corrected_segments, transcript_ref,
-               rule_snapshot_id, force=False, refined_entry=None):
+               rule_snapshot_id, force=False, refined_entry=None, words=None):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", str(clip.get("clip_id") or "")):
         raise ClipRenderError("非法clip_id，拒绝渲染路径")
     final = out_dir / "clip_final.mp4"
     if not force:
-        cached = _cached_entry(clip, source, out_dir, corrected_segments, transcript_ref, rule_snapshot_id, refined_entry)
+        cached = _cached_entry(clip, source, out_dir, corrected_segments, transcript_ref, rule_snapshot_id, refined_entry, words)
         if cached is not None:
             return cached
     duration = int(clip.get("end_ms") or 0) - int(clip.get("start_ms") or 0)
@@ -523,7 +570,7 @@ def render_one(clip, *, source, out_dir, corrected_segments, transcript_ref,
                                        corrected_segments=corrected_segments,
                                        transcript_ref=transcript_ref,
                                        rule_snapshot_id=rule_snapshot_id, force=force,
-                                       refined_entry=refined_entry)
+                                       refined_entry=refined_entry, words=words)
     except CapacityInsufficientError as exc:
         failure = ClipRenderError(str(exc))
         failure.capacity = exc.as_dict()
@@ -541,12 +588,16 @@ def render_plan(plan_record: dict[str, Any], *, source: Path, out_root: Path,
                 rule_snapshot_id: str | None = None,
                 progress: Callable[[str], None] | None = None,
                 render_one_fn=None,
-                refinement: dict[str, Any] | None = None) -> dict[str, Any]:
+                refinement: dict[str, Any] | None = None,
+                words: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """逐条渲染整个计划（隔离 + 幂等），返回聚合结果与最终任务状态。
 
     ``refinement``：clip_refinement.json 记录（2026-11-09 烧录精修稿契约）。
     按切片取 ``clips[clip_id]`` 条目传给渲染：source=llm 的条目替换烧录文本；
     缺失/fallback 条目按纠错转写渲染（render 层如实回退，不冒充）。
+
+    ``words``：词级时间（秒，绝对源轴，来自纠错转写 v2）——透传给每条切片
+    ``render_one``（2026-11-12 words 接线）；None/缺路径回退段内插值。
 
     状态聚合（需求 6）：
     * 全部成功且无警告 → ``completed``；
@@ -565,11 +616,13 @@ def render_plan(plan_record: dict[str, Any], *, source: Path, out_root: Path,
             progress(f"渲染切片 {number}/{len(clips)}：{clip.get('topic', clip_id)}")
         out_dir = out_root / "clips" / clip_id
         try:
+            # words 仅在有值时透传：兼容测试注入的旧签名 render_one_fn 替身
+            extra = {"words": list(words)} if words else {}
             entry = render(clip, source=source, out_dir=out_dir,
                                corrected_segments=corrected_segments,
                                transcript_ref=transcript_ref,
                                rule_snapshot_id=rule_snapshot_id,
-                               refined_entry=refinement_clips.get(clip_id))
+                               refined_entry=refinement_clips.get(clip_id), **extra)
             entry["technical_error"] = None
         except ClipRenderError as exc:
             entry = {"clip_id": clip_id, "status": "technical_error",

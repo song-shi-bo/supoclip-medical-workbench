@@ -63,22 +63,8 @@ def _stats(cues: list[dict]) -> dict:
 
 def _shift_words_for_ranges(words_ms: list[dict[str, float]],
                             ranges: list[tuple[int, int]]) -> list[dict[str, float]]:
-    """词级时间与 ``_shift_segments_for_ranges`` 同映射平移到虚拟时间轴。
-
-    跨界词按保留区间裁剪（保留与区间交集），保证词中点落在平移后的
-    分段窗口内、词对齐不被边界词缺失拉偏。"""
-    out: list[dict[str, float]] = []
-    offset = 0
-    for (s, e) in ranges:
-        for w in words_ms:
-            ws, we = float(w["start"]), float(w["end"])
-            if we <= s or ws >= e:
-                continue
-            c0, c1 = max(ws, s), min(we, e)
-            out.append({"text": str(w.get("text") or ""),
-                        "start": c0 - s + offset, "end": c1 - s + offset})
-        offset += e - s
-    return out
+    """引用生产实现（2026-11-12 words 接线后收敛到 clip_render 单一实现）。"""
+    return clip_render._shift_words_for_ranges(words_ms, ranges)
 
 
 def main() -> None:

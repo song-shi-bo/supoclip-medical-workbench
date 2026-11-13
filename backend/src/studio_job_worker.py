@@ -1284,6 +1284,9 @@ def _run_clip_render_stage(job: dict, job_id: str, transcript: dict,
         rule_snapshot_id=plan_record.get("rule_snapshot_id") or _rule_snapshot_id(),
         progress=_progress,
         refinement=_load_refinement_for_render(job_id, plan_record),
+        # 词级对齐（2026-11-12 words 接线）：v2 转写词级时间（秒）→ 烧录 cue 走
+        # 真实词首尾；缺失/空 → build_srt 回退段内插值（旧行为）
+        words=(transcript.get("words") or []) or None,
     )
 
     # 封面固化（2026-10-18）：每条切片发布前自动生成 realframe_v2 封面并替换片头，
@@ -1408,6 +1411,8 @@ def _run_reedit_replace(job: dict, job_id: str, transcript: dict) -> None:
         rule_snapshot_id=plan_record.get("rule_snapshot_id") or _rule_snapshot_id(),
         refinement=_load_refinement_for_render(job_id, plan_record),
         progress=lambda message: _state(job_id, "rendering", message, 0.6),
+        # 词级对齐（2026-11-12 words 接线）：重新剪辑渲染同样消费词级时间
+        words=(transcript.get("words") or []) or None,
     )
 
     _state(job_id, "verifying_outputs", "校验新切片产物（至少一条可解码、可播放）", 0.75)
