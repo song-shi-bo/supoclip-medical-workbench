@@ -1,0 +1,4951 @@
+[page 1] 2026
+Melanoma
+Presented with support from FOUNDATION
+Guiding Treatment. Changing Lives.
+NATIONAL COMPREHENSIVE CANCER NETWORK
+®
+NCCN Guidelines for Patients®
+Cancer care recommendations from leading experts at the  
+National Comprehensive Cancer Network® (NCCN®)
+Available online at  
+NCCN.org/patientguidelines
+[page 2] 
+[page 3] 1
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+Melanoma
+NCCN Guidelines for Patients®
+The essential guide for people facing cancer.
+Based on care recommendations from leading cancer experts.
+Explains high-quality cancer care provided at  
+state-of-the-art cancer centers.
+Reviewed and revised every year.
+Did you know that top cancer centers across the United States work together to 
+improve cancer care? This alliance of leading cancer centers is called the National 
+Comprehensive Cancer Network® (NCCN®).
+Because cancer care is always evolving, NCCN develops and frequently updates 
+evidence-based cancer care recommendations used by health care providers 
+worldwide. These recommendations are known as the NCCN Clinical Practice 
+Guidelines in Oncology (NCCN Guidelines®).
+The NCCN Guidelines for Patients plainly explain these expert recommendations, 
+so you can talk with your care team about the best care for you.
+These NCCN Guidelines for Patients are based on the NCCN Guidelines® 
+for Melanoma: Cutaneous, Version 1.2026 — February 17, 2026.
+View the NCCN 
+Guidelines for 
+Patients free online: 
+NCCN.org/
+patientguidelines
+Find an NCCN 
+Cancer Center  
+near you: 
+NCCN.org/
+cancercenters
+Learn how the 
+NCCN Guidelines 
+for Patients are 
+developed: 
+NCCN.org/patient-
+guidelines-process
+Connect with us
+@NCCNorg @NCCNVideo   NCCN @NCCNorg
+[page 4] 2
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+Melanoma
+Supporters
+NCCN Guidelines for Patients are supported by funding from the  
+NCCN Foundation®
+NCCN Foundation gratefully acknowledges the following corporate 
+supporters for helping to make available these NCCN Guidelines for 
+Patients: Immunocore.  
+ 
+NCCN independently adapts, updates, and hosts the NCCN Guidelines for 
+Patients. Our corporate supporters do not participate in the development of 
+the NCCN Guidelines for Patients and are not responsible for the content and 
+recommendations contained therein.
+FOUNDATION
+Guiding Treatment. Changing Lives.
+NATIONAL COMPREHENSIVE CANCER NETWORK
+®
+To make a gift, visit 
+NCCNFoundation.org/Donate
+To learn more, visit online  
+NCCN.org/patientguidelines  
+or email  
+PatientGuidelines@ NCCN.org
+[page 5] 3
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+Melanoma
+Contents
+4 Chapter 1
+About melanoma
+9 Chapter 2
+Melanoma risk, prevention, and 
+detection
+16 Chapter 3
+Testing for melanoma
+30 Chapter 4
+Staging for melanoma
+35 Chapter 5
+Treatment overview
+51 Chapter 6
+Treatment for stages 0 to 2: 
+Early stage
+59 Chapter 7
+Treatment for stage 3: Regional 
+spread
+72 Chapter 8
+Treatment for recurrence
+80 Chapter 9
+Treatment for stage 4: Metastatic 
+melanoma
+87 Chapter 10
+Follow-up care
+90 Chapter 11
+Other resources
+94 Words to know
+97 NCCN Contributors
+98 NCCN Cancer Centers
+100 Index
+NCCN Guidelines for Patients and illustrations herein may not be reproduced in any 
+form for any purpose without the express written permission of NCCN. No one, including 
+doctors or patients, may use the NCCN Guidelines for Patients for any commercial 
+purpose and may not claim, represent, or imply that the NCCN Guidelines for Patients 
+that have been modified in any manner are derived from, based on, related to, or arise out 
+of the NCCN Guidelines for Patients. The NCCN Guidelines are a work in progress that 
+may be redefined as often as new significant data become available. NCCN makes no 
+warranties of any kind whatsoever regarding its content, use, or application and disclaims 
+any responsibility for its application or use in any way.
+NCCN Foundation seeks to support the millions of patients and their families affected 
+by a cancer diagnosis by funding and distributing NCCN Guidelines for Patients. NCCN 
+Foundation is also committed to advancing cancer treatment by funding the nation’s 
+promising doctors at the center of innovation in cancer research. For more details and the 
+full library of patient and caregiver resources, visit NCCN.org/patients.
+National Comprehensive Cancer Network (NCCN) and NCCN Foundation 
+3025 Chemical Road, Suite 100, Plymouth Meeting, PA 19462 USA
+PLEASE NOTE that by downloading/using this NCCN Content, you agree to the terms of the NCCN End-User License Agreement (https://www.nccn.org/end-user-license-
+agreement) and you MAY NOT distribute this Content or use it with any artificial intelligence system, machine learning model, or large language model or other artificial 
+intelligence tool. 
+Copyright © 2026 National Comprehensive Cancer Network, Inc. All Rights Reserved.
+[page 6] 4
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+1
+About melanoma
+5 What is melanoma?
+6 What are the signs of melanoma?
+6 How is melanoma treated?
+7 How can I get the best care?
+Chapter 1
+[page 7] 5
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+1 About melanoma  
+Melanoma is a serious form of skin 
+cancer. But it can be curable, especially 
+if caught early. This patient guideline 
+provides the latest information on 
+melanoma testing, staging, and treatment 
+to help you make informed decisions with 
+your doctor. First, it’s important to know 
+what exactly melanoma is.
+What is melanoma?
+Melanoma is one of the most serious types 
+of skin cancer because it spreads beyond the 
+skin more often than other skin cancers. But 
+if discovered early, it’s curable with the right 
+treatment. More than 3 in 4 are found early—
+before they have spread—and when they're 
+easier to treat.
+Melanoma occurs when something goes 
+wrong in your melanocytes. Melanocytes are 
+skin cells that make melanin, a pigment that 
+gives your skin its color. When skin cells are 
+damaged, new cells may grow out of control 
+and can form a mass of cancerous cells. For 
+more information on where melanoma starts 
+and how to prevent it, see the next chapter: 
+Melanoma risk, prevention, and detection.
+Diagnosing and treating melanoma early can 
+lead to better results. It's also encouraging 
+that more effective treatments have become 
+available in the past decade for melanoma that 
+has spread (metastasized).
+Melanoma skin cancer
+Melanoma usually has 
+an irregular shape and 
+different colors. It can 
+show up as a change to an 
+existing mole but also can 
+appear as a new spot on the 
+skin. See Chapter 2 to learn 
+about the ABCDE rule.
+[page 8] 6
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+1 About melanoma  
+Important note: While melanoma often occurs 
+in people over 50 years of age, it can occur in 
+anyone at any age—even children.
+What are the signs of 
+melanoma?
+Melanoma spots (also called lesions or 
+tumors) can be found anywhere on your body. 
+Most often, they are found in areas of high-
+intensity sun exposure, such as the trunk, legs, 
+arms, and head. They may appear (develop) 
+on normal skin or as a new mole or one that 
+has changed.
+Sometimes, melanoma can be found in areas 
+that get little or no sun exposure and are called 
+acral melanomas. These areas can include the 
+soles of your feet, palms of your hands, and 
+underneath your fingernails or toenails. People 
+with darker skin are more likely to develop 
+melanoma in areas that are less exposed to 
+the sun.
+Melanoma can also occur on internal mucosal 
+surfaces, such as in the mouth, inside of the 
+nose, on the tongue, in the intestines, and in 
+the genital areas (mucosal melanoma); as well 
+as in the eyes (ocular or uveal melanoma).
+Although rare, melanoma can also show as 
+a bump or a nodule that lacks dark pigment 
+(usually pink or light brown in color), called 
+amelanotic melanoma.
+When you or your health care provider 
+examines your skin, attention should be 
+paid to the following:
+  A mole that has changed in any way: size, 
+shape, or color
+  A new spot on the skin that persists, 
+becomes raised, or bleeds easily
+  Ugly duckling sign: a spot that looks 
+different from other spots on your skin
+To learn more about spotting melanoma on 
+your own and about the ABCDE rule for moles, 
+see Chapter 2: Melanoma risk, prevention, and 
+detection.
+How is melanoma treated?
+Treatment for melanoma depends on the 
+extent of the cancer, known as its stage. 
+Staging of melanoma happens twice: after 
+biopsy and after surgery. The reason for 2 
+staging periods is because surgery often gives 
+more specific information than the original 
+biopsy. This means the melanoma could be 
+changed to a higher stage (upstaged) and 
+treated differently at that point.
+There are 5 stages of melanoma that range 
+from stage 0 (in situ) to stage 4 (metastatic 
+melanoma). For more detailed information 
+on staging, read Chapter 4: Staging for 
+melanoma.
+[page 9] 7
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+1 About melanoma  
+The lower the number, the earlier the stage 
+and the easier the melanoma is to treat with 
+fewer treatments needed. The good news 
+is that most melanomas are found in earlier 
+stages. And even if melanoma is diagnosed 
+at a later stage, many potentially effective 
+treatments are available.
+Surgery is typically the primary treatment for 
+earlier stages. To learn more, read Chapter 6: 
+Treatment for stages 0 to 2: Early stage.
+For melanoma that has spread regionally 
+(locally), you might receive surgery along 
+with other treatments, like immunotherapy, 
+intralesional talimogene laherparepvec 
+(T-VEC) injections, targeted therapy, or 
+radiation therapy. For more information, read 
+Chapter 7: Treatment for stage 3: Regional 
+spread.
+Sometimes melanoma can return, which 
+is called recurrence. Recurrent melanoma 
+is treated based on its pathological stage 
+(assigned after surgery) and whether it has 
+spread to another part of the body. You might 
+receive treatment before surgery as well as 
+after it. For more information on recurrence, 
+read Chapter 8: Treatment for recurrence.
+For stage 4 melanoma (metastatic or distant 
+spread), you might have a combination 
+of systemic treatment, surgery, radiation, 
+intralesional T-VEC injections, or supportive 
+care. Read Chapter 9: Treatment for stage 
+4: Metastatic melanoma for more specific 
+information.
+How can I get the best care?
+Advocate for yourself. You have an important 
+role to play in your care. Many people feel 
+more satisfied when they actively take part in 
+planning their cancer care.
+The NCCN Guidelines for Patients will help 
+you play a larger role in your care. Discuss the 
+recommendations in this guide with your care 
+team. Ask questions about your options and 
+share your goals and concerns.
+Don’t know what to ask? You’re not alone. 
+That’s why we include suggested questions to 
+ask at the end of chapters.
+Keep reading to find the best care for you.
+[page 10] 8
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+1 About melanoma  
+It is important to understand what 
+you are going through. If your 
+doctor says something you do not 
+understand, don’t just nod like you 
+do. Let them know ‘I don’t fully 
+understand what __ means’ or ‘I 
+don’t fully understand what you 
+just said. Can you please explain it 
+in simpler terms?’”
+“
+How this guide  
+can help you
+Making decisions about cancer care is 
+stressful. There’s a lot to learn, and you 
+don’t know what the future holds.
+Use this guide to get the information 
+and support you need.
+Patients, doctors, and other health 
+care professionals trust the NCCN 
+Guidelines for Patients. This guide uses 
+clear, everyday language to explain 
+current cancer care recommendations 
+made by respected experts in the field. 
+Their recommendations are based on 
+the latest research and practices at 
+leading cancer centers.
+Your health is unique to you, so your 
+cancer care should be, too. As you read 
+this guide, you’ll learn which treatments 
+are likely to provide the best results for 
+you. And you’ll be better prepared to 
+talk with your care team.
+[page 11] 9
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+2
+Melanoma risk, prevention, 
+and detection
+10 Where does melanoma start?
+11 What are the risk factors?
+12 Genetic risk
+13 Preventing melanoma
+14 Early detection: ABCDE rule
+15 Key points
+15 Questions to ask
+Chapter 2
+[page 12] 10
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+2 Melanoma risk, prevention, and detection  
+The last chapter gave a brief overview 
+of melanoma and how this guide can 
+help you. This chapter gives more details 
+about the cancer, like where it starts and 
+how to prevent and detect it.
+To further understand melanoma, it’s important 
+to know where it forms and what its risk factors 
+are. With that information, you can aim for 
+prevention and detection.
+Where does melanoma start?
+Your skin is your body’s largest organ. It 
+covers about 20 square feet—about the size 
+of an oversized beach towel. Skin protects you 
+from invaders (such as bacteria, fungi, and 
+viruses); helps control body temperature; and 
+allows the sensations of touch, heat, and cold.
+Skin has 3 layers:
+  Epidermis – The outermost layer of skin 
+provides a waterproof barrier and creates 
+skin color.
+  Dermis – This second layer holds 
+connective tissue, blood and lymphatic 
+vessels, hair follicles, and sweat glands.
+  Hypodermis – This deep skin tissue is 
+made of subcutaneous fat, connective 
+tissue, and blood and lymphatic vessels.
+Melanin
+Located at the base of the epidermis are 
+cells called melanocytes. These cells decide 
+the color of your eyes and hair. Melanin is 
+produced in these cells. This is the pigment 
+(chemical) in skin that gives it color. In addition, 
+melanin protects skin from harmful ultraviolet 
+(UV) rays from the sun. When melanocytes 
+grow uncontrollably, they start forming cancer 
+known as melanoma. Melanocytes are found 
+Where melanoma forms
+Melanocytes are the 
+cells located in the lower 
+epidermis that, when 
+damaged, can become 
+melanoma. 
+[page 13] 11
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+2 Melanoma risk, prevention, and detection  
+in other areas of the body, but the focus of this 
+guide is cancer of sun-exposed and non–sun-
+exposed skin melanocytes, called melanoma.
+Causes
+It's unclear how cell damage leads to 
+melanoma. But your genes, your health, and 
+environmental risk factors can all contribute.
+The clearest link is between exposure to UV 
+radiation from the sun or tanning devices. 
+Exposure to UV radiation causes changes to 
+the DNA (genetic material) of pigment cells 
+and increases the risk of melanoma, especially 
+in people with lighter skin tones. It’s important 
+to know that UV radiation does not cause all 
+melanomas. Some melanomas can occur in 
+areas of your body that are not exposed to 
+sunlight.
+What are the risk factors?
+While the exact cause of melanoma is 
+unknown, there are many risk factors that 
+make it more likely that you will develop it. A 
+risk factor increases the chance of developing 
+cancer—it doesn’t mean that you will get 
+it. Some risk factors are associated with 
+activities like spending time in the sun or 
+tanning devices. Other risk factors are genetic, 
+meaning they are passed down through genes 
+(from parent to child). For more information on 
+genetic risk factors, see the next section.
+Here are some of the most common risk 
+factors that make it more likely for a person to 
+develop melanoma.
+  Lighter skin, hair, and eyes – If 
+you have less melanin (pigment) in your 
+skin, it means less protection from UV 
+radiation. People with light hair and blue/
+green eyes tend to have less melanin in 
+their skin.
+  A tendency to sunburn – If you 
+sunburn easily or have a history of 
+chronic sunburns, especially if you 
+develop redness and blistering
+  Many moles – If you have a high 
+number of moles (more than 50) on 
+your body or they’re large and unusually 
+shaped
+  UV light exposure – If you spend 
+extended time exposed to UV light 
+(radiation that comes from the sun or 
+tanning devices)
+  Earlier skin cancers – If you’ve had 
+conditions such as actinic keratosis, or 
+other skin cancers, such as basal cell or 
+squamous cell skin cancers
+  Childhood cancers – If you had cancer 
+as a child, this could increase your risk of 
+melanoma as you get older
+  Weakened or suppressed immune 
+systems – If you have a weakened 
+immune system from organ transplants 
+or autoimmune diseases, or you take 
+medicine that suppresses immune 
+function
+  Rare inherited conditions – If you 
+have a skin condition such as xeroderma 
+pigmentosum, or certain hereditary breast 
+and ovarian syndromes
+[page 14] 12
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+2 Melanoma risk, prevention, and detection  
+Genetic risk
+As mentioned, melanoma is a type of cancer 
+that can run in families. About 1 in 10 people 
+with melanoma have a family member who 
+has or has had melanoma. Some families 
+get melanoma because they share the same 
+skin type or history of sun exposure. Other 
+families share genes that put them at risk of 
+melanoma. For more information on family 
+history, see Chapter 3: Testing for melanoma.
+Genes are the instructions in cells for making 
+new cells and controlling how cells behave. An 
+abnormal change in these instructions, called a 
+mutation, may cause cells to grow and multiply 
+out of control. Gene mutations can lead to 
+genetic conditions like cancer.
+Inherited genes that increase melanoma risk 
+may also increase the risk of other cancers. 
+You may have hereditary melanoma if you 
+have a family history of:
+  Skin (cutaneous) melanoma or eye 
+(uveal) melanoma, especially among 
+multiple blood relatives
+  Pancreatic, kidney, gastrointestinal, 
+and/or breast cancer
+There are several abnormal (mutated) genes 
+related to hereditary melanoma. They can 
+include:
+  CDKN2A mutation, which is the most 
+common gene mutation for melanoma. 
+It’s also called p16INK4A or MTS1. This 
+mutation is often found in families where 
+several members developed melanoma at 
+a young age.
+  CDK4 gene mutation, which significantly 
+increases the risk of hereditary 
+melanoma, but is considered rare.
+  The melanocortin-1 receptor (MC1R) 
+gene, which helps decide your skin’s 
+color. MC1R can determine if you or 
+your family members have red hair and/
+or light skin, which increases your risk of 
+melanoma.
+  BAP1 gene mutations, which can 
+cause uveal and, less often, cutaneous 
+melanoma.
+Genetic testing
+Your clinical and family history might 
+call for multigene panel testing. This can 
+help your care team know if you have a 
+higher genetic risk of melanoma and other 
+cancers. This information can also help 
+guide recommendations for early detection 
+and monitoring in both you and your family 
+members.
+You might be referred to genetic counseling 
+and testing if you or someone in your family 
+has a history of 2 or more instances of invasive 
+cutaneous (skin) melanoma. You might also 
+be referred if you or someone in your family 
+has a history of 2 or more non-skin cancers, 
+like pancreatic, kidney, gastrointestinal and/
+or breast cancer, especially in a first-degree 
+relative.
+Testing for other genes that can harbor 
+melanoma-predisposing mutations may 
+also be needed.
+[page 15] 13
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+2 Melanoma risk, prevention, and detection  
+For more information about genetic testing, 
+see NCCN Guidelines for Patients: Genetic 
+Testing for Hereditary Breast, 
+Ovarian, Pancreatic, and 
+Prostate Cancers, available at 
+NCCN.org/patientguidelines 
+and on the NCCN Patient 
+Guides for Cancer app.
+Preventing melanoma
+Once you understand the risk factors, it’s 
+important to know that you can take steps 
+to decrease the likelihood of new melanoma 
+cells from forming. Taking preventive action 
+is especially important if you’re at higher 
+risk, have sun sensitivity, or have a lighter 
+complexion. Here are some of the leading 
+ways to do that.
+  Reduce UV (ultraviolet) radiation 
+exposure – This means reducing your 
+exposure to the sun and avoiding indoor 
+tanning beds and other devices.
+  Prevent sun damage – Limit your sun 
+exposure between the peak hours of 
+10:00 am and 4:00 pm.
+  Wear protective clothing – This 
+includes a wide-brim hat, clothes made 
+with UV-protective fabric, and sunglasses.
+  Use sunscreen – Choose a broad-
+spectrum sunscreen with a sun protection 
+factor (SPF) of at least 30. You should 
+apply sunscreen 15 minutes before going 
+outside to be most effective. Reapply at 
+least once every 2 hours.
+  Check your skin regularly – This 
+includes both self-examinations and skin 
+exams by a health care provider (see 
+ABCDE rule next).
+Limit time in the sun
+Use caution when spending 
+time outdoors. Reduce your 
+risk of skin cancer by limiting 
+sun exposure, wearing 
+protective clothing, and using 
+sunscreen. 
+[page 16] 14
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+2 Melanoma risk, prevention, and detection  
+Early detection: ABCDE rule
+If you’re diagnosed with melanoma or if you’re 
+trying to prevent another one from occurring, 
+you’ll likely need to see your doctor on a 
+regular schedule for skin checks (see Chapter 
+10: Follow-up care). Between your regular 
+visits, following the ABCDE rule is a good way 
+to help detect the signs of melanoma. Check 
+moles or spots (lesions) on your own in front 
+of a mirror (a handheld mirror can help, too) or 
+with a partner and keep this rule in mind:
+  Asymmetry – This means the mole or 
+spot is not uniform, and one half doesn’t 
+match the other half.
+  Border – The edges of a spot seem 
+irregular and lack definition.
+  Color – The color of the spot is not the 
+same throughout (may be brown or black 
+or sometimes with patches of pink, red, 
+white, or blue).
+  Diameter – The spot is larger than 6 mm 
+across (about the size of a pencil eraser).
+  Evolving – The spot or mole changes 
+size, shape, or color over time.
+Understanding melanoma like how it forms 
+and what it looks like can help with preventing 
+new melanoma lesions and those that come 
+back, called recurrences. For more information 
+on melanoma recurrence, see Chapter 8: 
+Treatment for recurrence.
+Early detection of 
+melanoma: ABCDE rule
+For skin self-exams, always 
+follow the ABCDE rule to 
+detect unusual moles.
+[page 17] 15
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+2 Melanoma risk, prevention, and detection  
+Key points
+  Melanoma forms in the skin’s top layer, 
+the epidermis.
+  Exposure to ultraviolet (UV) radiation is 
+linked to melanoma.
+  People with light hair and light eyes tend 
+to have less melanin in their skin and are 
+more at risk of melanoma.
+  A risk factor means you are more likely to 
+develop melanoma—it doesn’t mean you 
+will.
+  Reducing your exposure to UV light (time 
+in the sun and tanning beds) is one way 
+to prevent melanoma.
+  You can help detect melanoma on your 
+own by following the ABCDE rule.
+  You might be referred to genetic 
+counseling if genetic tests show 2 or more 
+instances of cancer diagnoses in your 
+family.
+Questions to ask
+  Does having risk factors for melanoma 
+influence my chances of getting 
+melanoma again?
+  What number SPF is best for me?
+  Can you recommend trusted brands of 
+sunscreen?
+  If I find a new spot or one that looks 
+different than it did, what should I do?
+  Do you have any recommendations for 
+melanoma support groups?
+What’s next
+Now that you know the basics of 
+melanoma, you might want to know about 
+how it’s officially detected. That happens 
+through testing. Read the next chapter for 
+the various tests that can help find and 
+diagnose melanoma.
+[page 18] 16
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+3
+Testing for melanoma
+17 Medical history
+18 Physical exam
+20 Biopsy
+21 Biopsy results
+24 Imaging tests
+26 Biomarker tests
+27 Blood tests
+28 Understanding test results
+29 Key points
+29 Questions to ask
+Chapter 3
+[page 19] 17
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+3 Testing for melanoma  
+You’ll need testing to correctly identify the 
+type and stage of melanoma as well as 
+to see if it has spread and how far. With 
+that information, you and your provider 
+will talk about treatment next steps. This 
+chapter presents an overview of the tests 
+you might receive and what to expect — 
+keep in mind you may not receive all of 
+these tests.
+Basic health tests help your doctor detect 
+diseases, including melanoma (see Guide 
+1). Tests also help your care team judge the 
+extent of the melanoma, which is called the 
+cancer stage. You can read about melanoma 
+cancer staging in more detail in the next 
+chapter, Chapter 4: Staging for melanoma.
+Medical history
+A medical history is a record of all health 
+issues and treatments you’ve had in your life. 
+This information can help your doctor with 
+treatment planning.
+Be prepared to list any illnesses or injuries 
+and when they happened. Bring a list of old 
+and new medicines and any over-the-counter 
+medicines, vitamins, or herbal supplements 
+you take. Tell your doctor about any medical 
+conditions or allergies you have. You should 
+also tell your doctor if you’ve had any severe 
+sunburns or other severe scarring in the past.
+Your medical history also includes if you’ve 
+had other types of skin cancer, such as basal 
+cell skin cancer or squamous cell skin cancer. 
+These are often less serious types of skin 
+cancer.
+More information on these skin cancers can 
+be found in NCCN Guidelines for Patients: 
+Basal Cell Skin Cancer and NCCN Guidelines 
+for Patients: Squamous Cell Skin Cancer, 
+available at NCCN.org/patientguidelines and 
+on the NCCN Patient Guides for Cancer app.
+Guide 1
+Common tests for melanoma
+Medical and family history
+Physical exam
+Complete skin exam
+Biopsy 
+Imaging tests
+Biomarker tests
+Blood tests (for monitoring)
+Most melanomas are found  
+in the early stages when they’re  
+easier to treat.
+[page 20] 18
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+3 Testing for melanoma  
+Family history
+Your doctor will ask about the health history of 
+family members who are blood relatives. This 
+information is called a family history. Some 
+cancers and other diseases can run in families. 
+Ask family members about their health issues 
+like heart disease, cancer (including skin 
+cancer), and diabetes, and at what age they 
+were diagnosed. For more information on 
+genetic risks, see Chapter 10: Follow-up care.
+Physical exam
+During a physical exam, a health care provider 
+may:
+  Check your temperature, blood pressure, 
+pulse, and breathing rate
+  Weigh you and measure your height
+  Listen to your lungs and heart
+  Look in your eyes, ears, nose, and throat
+  Feel and apply pressure to parts of your 
+body to see if organs are of normal size, 
+are soft or hard, or cause pain when 
+touched
+  Feel for small structures called lymph 
+nodes in your neck, underarm, and groin 
+to see if they are bigger than normal
+Skin exams
+It’s important to have an experienced health 
+care provider, such as a dermatologist, give 
+you a thorough skin exam. Not only does your 
+skin protect your body, but it also tells doctors 
+a lot about your health. Providers take your 
+pulse and blood pressure through your skin. 
+They notice if the skin feels warm, hot, or cool 
+to the touch.
+Skin exam
+A health care provider may 
+use a dermatoscope (a special 
+magnifying lens and light 
+source held near the skin) to 
+see spots on the skin more 
+clearly and in more detail.
+[page 21] 19
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+3 Testing for melanoma  
+Skin exams are used for diagnosis, staging, 
+and treatment planning. Expect a head-to-toe 
+exam that includes a review of your:
+  Head and scalp
+  Face and mouth
+  Eyes and eyelids
+  Ears and earlobes
+  Trunk, arms, and legs
+  Hands and fingers
+  Feet, toes, and toenails
+Your doctor or other health care provider will 
+look for spots that are unusual and need to be 
+examined more closely or watched.
+Lesions
+Your provider will examine your skin for lesions 
+(spots). A skin lesion is defined as a change 
+in skin color or texture. Skin lesions can 
+appear anywhere on your body. They can be 
+benign (not cancer) or cancer. Your doctor or 
+other health care provider may use the ugly 
+duckling or the ABCDE rule (discussed in 
+Chapter 2) and/or a specialized device called a 
+dermatoscope to thoroughly review any marks 
+or lesions on your skin.
+When a melanoma lesion is diagnosed, 
+it’s considered a cancerous tumor, 
+so it will be referred to that way 
+throughout this guide.
+Skin color
+Your skin color is mainly based on the amount 
+of melanin in your skin. You know your skin 
+better than anyone. Show your provider 
+any changes or differences where it looks 
+abnormal or different to you.
+Pay attention to moles
+More than 50 moles on your 
+body and the presence of 
+large or unusual moles 
+increase the risk of melanoma.
+[page 22] 20
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+3 Testing for melanoma  
+Biopsy
+If you have a skin lesion that looks odd to you 
+or your doctor, part or all of it will be removed. 
+This is called a skin biopsy. A biopsy is 
+needed to diagnose melanoma. It will be sent 
+to a pathologist who will examine it under a 
+microscope.
+Skin biopsy types
+Skin biopsies are done using a local anesthetic 
+(numbing medicine), which is injected into the 
+area with a very small needle. You’ll likely feel 
+a small prick and a little stinging sensation as 
+the medicine is injected, but you should not 
+feel any pain during the biopsy.
+You may want to ask how the biopsy incision 
+will be closed. Usually, the doctor will close 
+it with stitches. Having a biopsy and incision 
+usually means you’ll have a scar. Feel free 
+to ask your doctor about the incision and the 
+potential for scarring before you have the 
+biopsy.
+A skin biopsy can be done in several ways. 
+The type of biopsy your provider does will 
+depend on the lesion's size and location, as 
+well as other factors. For the biopsy, either 
+the entire lesion or a part of it will be removed 
+and tested under a microscope to confirm 
+melanoma.
+A biopsy can be partial (incisional), in which 
+only part of the lesion is removed, or complete 
+(excisional), in which all of the lesion is 
+removed.
+A complete (excisional) biopsy is preferred for 
+finding melanoma because it removes a larger 
+area of skin than a partial (incisional) biopsy. 
+It can be done through an elliptical removal 
+method, a punch method, or a shave removal 
+method (also called a saucerization biopsy).
+Skin punch biopsy
+A small piece of skin and 
+connective tissue are removed 
+using a handheld tool.
+[page 23] 21
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+3 Testing for melanoma  
+Elliptical biopsy
+An elliptical excisional biopsy removes an 
+area of skin and underlying connective tissue, 
+usually in the shape of a football. A rim of 
+normal-looking tissue that surrounds the lesion 
+will also be removed. The normal-looking 
+tissue is called the margin. This method 
+requires stitches to close the wound.
+Punch biopsy
+For a punch biopsy, a small piece of skin and 
+underlying connective tissue are removed with 
+a hand held tool. The skin is then closed with 
+a few stitches. One or more punch biopsies 
+may be used on very large lesions, where a 
+complete (excisional) biopsy isn’t possible. 
+This can help to avoid inaccurate pathology 
+(lab) results.
+Shave biopsy
+A shave biopsy can be done either on the skin 
+surface (superficial) or deeper. Superficial 
+shave biopsies can be used when a lesion 
+is likely not cancerous. This type of biopsy is 
+generally not recommended when melanoma 
+is suspected, but may be useful for certain 
+types of flat melanoma (mainly, lentigo 
+maligna).
+But deep shave biopsies (also called scoop 
+or saucerization biopsies) are used for most 
+melanoma lesions to completely remove the 
+suspicious lesion. This type of biopsy uses a 
+tool similar to a razor to remove the top layer 
+of skin (epidermis) and part of the underlying 
+layer (dermis). The sample is sent to a lab to 
+be examined.
+Lymph node biopsy
+A lymph node might be biopsied if your 
+provider suspects it has cancer cells. Lymph 
+nodes are small, bean-shaped filters of the 
+immune system. Under normal circumstances, 
+lymph nodes are usually too small to be seen 
+or felt. But if a lymph node feels swollen, hard 
+to the touch, or doesn't move when pushed (is 
+fixed or immobile), it may be cancerous.
+A lymph node biopsy can be done using a 
+needle, which is preferred. It can also be done 
+as a minor surgery to remove a lymph node, if 
+it can't be biopsied with a needle.
+Biopsy results
+Your biopsy sample should be reviewed 
+by a pathologist or, preferably, by a 
+dermatopathologist. These doctors specialize in 
+diagnosing skin disorders, including melanoma 
+and other skin tumors. This review is called a 
+histopathology review. The pathologist will note 
+the overall appearance and size, shape, and 
+type of your cells, as well as other features. 
+The melanoma will be given a stage based on 
+this information and other factors. See the next 
+chapter for more details on staging.
+The pathologist or dermatopathologist will 
+examine the following details.
+Breslow thickness
+The Breslow thickness or depth is used to 
+measure in millimeters (mm) how far the 
+melanoma has gone into deeper layers of 
+the skin (dermis). The deeper it goes, the 
+more advanced the melanoma is. This is an 
+important predictor and is used as part of 
+melanoma staging to decide treatment.
+[page 24] 22
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+3 Testing for melanoma  
+Ulceration status
+Ulceration refers to a breakdown of skin on 
+top of the melanoma, like an open sore. An 
+ulcerated melanoma is considered more 
+serious because it has a greater risk of 
+spreading. Ulceration is considered during 
+melanoma staging.
+Dermal mitotic rate
+The dermal mitotic rate (DMR) or mitotic rate 
+is a measure of how fast cancer cells grow 
+and divide in the dermis. It is measured by 
+looking at the surgically removed lesion under 
+a microscope. The number of cells that show 
+mitoses (cells dividing) are counted.
+The more the cells divide (higher mitotic 
+count), the more likely they are to invade 
+the blood or lymph vessels and spread 
+(metastasize) to other areas of the body.
+Margin status (deep and peripheral)
+The edge, or border, of the tissue removed in 
+cancer surgery is called the margin. Margin 
+status of a biopsy or excision specimen 
+refers to whether the lesion is present at the 
+deep margin (the base of the sample) or the 
+peripheral margin (side edges of the sample).
+The margin is described as negative or clear 
+when the pathologist finds no cancer cells at 
+the edge of the tissue, suggesting that all of 
+the cancer has been removed.
+The extent of the final surgical margin depends 
+on how deep the melanoma is (the Breslow 
+thickness). A wider excision of the melanoma 
+is typically done after the initial (first) biopsy, 
+even if the margins are clear on the initial 
+biopsy.
+Surgical margin
+The tumor will be removed along with some normal-looking tissue around its rim. The 
+normal-looking tissue is called the surgical margin. The surgical margin will be tested 
+for cancer. Postoperative therapy is based on if there is cancer in the margins. 
+[page 25] 23
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+3 Testing for melanoma  
+Expect your doctor to remove the melanoma 
+tumor as well as a small amount of normal-
+looking skin around it. This margin helps to 
+increase the chance that all cancerous cells 
+will be removed. Speak to your provider about 
+how much area around the tumor will be 
+removed. They may draw it on your skin with a 
+marker.
+Microsatellitosis (present or absent)
+Melanoma may metastasize (spread or travel) 
+through your lymphatic system to the skin, 
+subcutaneous (under the skin) tissues, and 
+lymph nodes.
+One way it can spread is through 
+microsatellitosis (having microsatellite tumors). 
+This refers to tiny tumor deposits that have 
+spread to lymph vessels in the skin near the 
+first melanoma tumor. Microsatellitosis can 
+only be seen with a microscope.
+Microsatellites are different from satellite 
+tumors, which are bigger and can be seen or 
+felt. Satellite tumors are usually found within 
+2 centimeters (cm) from the melanoma site 
+or scar and show as a nodule or bump. Any 
+bumps beyond 2 cm from the melanoma are 
+referred to as in-transit metastases.
+Pure desmoplasia (if present)
+Desmoplastic melanoma (DM) is a rare type of 
+melanoma that is usually found on the head, 
+neck, and shoulders. It occurs in 1 out of 25 
+people who have melanoma.
+DM is divided into 2 categories: pure and 
+mixed. Pure desmoplastic melanoma may 
+be associated with a higher risk of local 
+recurrence on the skin but has a lower risk 
+of lymph node involvement than mixed 
+desmoplastic melanoma. Mixed desmoplastic 
+melanoma has a higher risk of spreading to 
+nearby lymph nodes.
+Lymphovascular or angiolymphatic 
+invasion
+Lymphovascular or angiolymphatic invasion 
+refers to melanoma that has grown into 
+(invaded) lymph vessels or blood vessels and 
+is more aggressive (more likely to spread).
+Neurotropism or perineural invasion
+Neurotropism or perineural invasion refers to 
+melanoma growing around nerves in the skin 
+or within nerves (called intraneural invasion). 
+It’s most often seen in DM and has a higher 
+tendency to recur.
+For a list of what factors will be considered 
+when pathologists analyze biopsies, 
+see Guide 2. Your pathologist or 
+dermatopathologist (pathologist specializing 
+in diagnosing skin diseases) might also 
+use specific immunohistochemical stains 
+or molecular tests to detect markers on 
+melanoma cells.
+[page 26] 24
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+3 Testing for melanoma  
+Imaging tests
+Imaging tests take pictures (images) of the 
+inside of your body. These tests are sometimes 
+used for cancer staging or to check symptoms. 
+However, not everyone needs imaging, 
+especially for the early stages of melanoma.
+For most of these testing scans, contrast 
+materials will be used. Contrast materials 
+are substances that help certain areas of the 
+body stand out on images. They are used to 
+make the images clearer. Contrast materials 
+aren’t permanent and will leave the body 
+in your urine. They are usually given orally 
+(by mouth) or intravenously (injected with a 
+needle through the vein), which is called an IV 
+contrast.
+Most scans are done with IV contrast unless 
+it’s unsafe for you. This means it could cause 
+a bad reaction if you have certain allergies 
+or conditions or take certain medications. It’s 
+important to tell your doctors if you've ever had 
+an allergic reaction to contrast.
+After imaging, a radiologist, an expert in 
+interpreting test images, will write a report and 
+send it to your provider. Your test results will be 
+discussed with you. The following are types of 
+imaging tests.
+Guide 2 
+Factors examined in the biopsy
+Breslow thickness (how deep the melanoma tumor has grown into the skin)
+Ulceration status (if there are breaks in the skin)
+Dermal mitotic rate (a measure of how fast cancer cells grow)
+Deep and peripheral margin status (if the area around the tumor is free from cancer)
+Microsatellitosis (if there are small satellite lesions that aren’t part of the primary lesion)
+Pure desmoplasia (if there is fibrous tissue in a tumor)
+Lymphovascular or angiolymphatic invasion (if cancer is in lymph nodes or fluid)
+Neurotropism (invasion in, around, and through peripheral nerves)
+[page 27] 25
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+3 Testing for melanoma  
+CT scan
+A computed tomography (CT or CAT) scan 
+is done with a computerized x-ray machine. 
+It takes many pictures (x-rays) from different 
+angles of the same body part. Pictures are 
+merged to form a 3D image.
+MRI scan
+A magnetic resonance imaging (MRI) scan 
+uses strong magnets and radio waves to take 
+digital pictures of the inside of the body. It does 
+not use x-rays.
+PET scan
+A positron emission tomography (PET) scan 
+uses a radioactive drug called a tracer. A tracer 
+is injected into a vein (through an IV). The 
+needle is usually inserted in the inside of your 
+elbow. You may need to wait for the tracer to 
+be absorbed by your body, which takes about 
+1 hour.
+Once inside of the body, the tracer will travel 
+and collect in organs and tissues. The tracer 
+is attached to a substance that your cells and 
+tissues use for energy or food. Cancer cells 
+use more of this substance than non-cancer 
+cells.
+Cancer cells show up as bright spots on PET 
+scans, but not all bright spots are cancer. 
+It’s normal for the brain, heart, kidneys, and 
+bladder to be bright on a PET scan since they 
+need a lot of food for energy. When a PET 
+scan is combined with CT, it’s called a PET/CT 
+scan. They are almost always used together.
+Ultrasound
+Ultrasound uses sound waves to make 
+pictures of areas inside of the body. Your 
+provider might order a nodal basin (area of 
+lymph nodes) ultrasound before removing 
+lymph nodes. This is to get a clearer 
+picture of the area before lymph node 
+removal. Ultrasound imaging might also be 
+CT machine
+A CT machine is large and 
+has a tunnel in the middle. 
+During the test, you will lie 
+on a table that moves slowly 
+through the tunnel.
+[page 28] 26
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+3 Testing for melanoma  
+recommended if the doctor’s physical exam 
+of the nodal basin is unclear.
+Biomarker tests
+Biomarkers are specific features of cancer 
+cells. Biomarkers can include proteins made 
+in response to cancer and/or reflect changes 
+(mutations) in the DNA of cancer cells. A 
+mutation might cause a gene to create a 
+protein and keep making it. This can lead to 
+the development of a tumor.
+Testing biomarkers involves studying a piece 
+of tumor tissue in a lab or testing a blood 
+sample (also called a liquid biopsy). Other 
+names for biomarker testing include molecular 
+testing, tumor profiling, genomic testing, tumor 
+gene testing, next-generation sequencing, and 
+mutation testing.
+Immunohistochemistry (IHC) is a common 
+and quick lab test of biomarkers that involves 
+adding a chemical marker to immune cells. 
+The cells are then studied under a microscope. 
+IHC might be used to see if cancer has spread 
+or to look for mutations, such as BRAF or PD-
+L1 proteins. It may also be used to help tell the 
+difference between different types of cancer.
+Biomarker testing is used to learn whether the 
+cancer has any changes that can be targeted 
+to help guide your treatment. The results of 
+biomarker testing can also be used to figure 
+out whether you meet the criteria for certain 
+clinical trials. An important development: 
+Circulating tumor DNA blood tests (called 
+ctDNA or liquid biopsy) that measure genetic 
+changes are being investigated for use in 
+monitoring melanoma.
+Biomarker testing is usually 
+done in advanced stages (stage 
+3 and stage 4) of melanoma. But 
+not everyone with melanoma in 
+those stages will need this type 
+of testing.
+Uses for biomarker testing
+Biomarker or molecular testing can be 
+used in the following instances:
+• To help diagnose cancer
+• To help determine your prognosis 
+(outlook) or to see how advanced 
+your cancer is, especially the risk of 
+metastasis (how likely it is to spread)
+• To find genetic mutations, which 
+happen after birth, that can be treated 
+with a targeted therapy or an immune 
+therapy
+• To help you and your care team with 
+treatment planning
+[page 29] 27
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+3 Testing for melanoma  
+BRAF mutations
+BRAF is a gene involved in controlling normal 
+cell growth. But when a BRAF gene has 
+mutated (changed), it can cause melanoma 
+to grow more aggressively. A BRAF mutation 
+is found in at least half of people who have 
+melanoma of the skin.
+It’s helpful if the BRAF gene mutation is found 
+before treatment for advanced cancer. Doctors 
+can use targeted therapy to inhibit (stop) the 
+BRAF gene mutation from continuing to grow 
+the cancer.
+If IHC detects a BRAF V600E mutation 
+(the most common type of BRAF mutation), 
+targeted therapy or immunotherapy may 
+be a treatment possibility, if needed.
+If IHC does not detect a BRAF V600E 
+mutation, a more specialized test like 
+polymerase chain reaction (PCR) or next- 
+generation sequencing (NGS) may be used. 
+These tests may also detect BRAF V600K and 
+other mutations, like NRAS and KIT.
+Blood tests
+Blood tests check for signs of disease and how 
+well organs are working. They use a sample of 
+your blood, which is removed through a needle 
+placed into your vein.
+Blood tests aren’t used to diagnose melanoma 
+or monitor early melanomas. However, they 
+may be done before or during treatment, 
+especially for more advanced melanomas.
+The following are tests that your provider may 
+request.
+Lactate dehydrogenase – Lactate 
+dehydrogenase (LDH) is a protein found 
+in most cells. Dying cells release LDH into 
+blood. A high level of LDH is a sign that the 
+melanoma may have spread to other parts 
+of the body and may be harder to treat. This 
+blood test may be done if your care provider 
+suspects the cancer has spread to distant sites 
+(called stage 4 or metastatic cancer).
+Extra blood tests – Other blood tests aren’t 
+regularly done before starting treatment. But 
+they may be done to plan surgical treatment. 
+If you have advanced melanoma, these tests 
+might be done to check how well the bone 
+marrow, liver, and kidneys are working before 
+and during treatment. This may include a 
+complete blood count (CBC) or comprehensive 
+metabolic panel (CMP). A CMP can check 
+liver and kidney health, blood glucose, protein 
+levels, fluid and electrolytes, and metabolism.
+Don’t dwell on what you CAN’T do. 
+Rather focus on what you CAN do."“
+[page 30] 28
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+3 Testing for melanoma  
+Understanding test results
+The results of your physical exam, skin biopsy, 
+and possible imaging scans will guide your 
+treatment plan. It’s important you understand 
+what these tests mean. Don't hesitate to ask 
+your care team questions.
+Keep these other tips in mind:
+  Bring someone with you to your 
+appointments, if possible.
+  Write down questions before your 
+appointments and take notes during 
+clinic visits.
+  Get copies of blood tests, imaging results, 
+and reports about the specific type of 
+melanoma you have.
+  Sign up for the patient portal. Once on 
+the portal, in most cases you can get test 
+results as soon as they're ready.
+  Organize your papers. Create files for 
+insurance forms, medical records, and 
+test results. You can do the same with 
+digital copies on a computer.
+Positive vs. Negative 
+Results 
+The truth of what they mean
+It might seem confusing and the 
+opposite of what you’d think at first. 
+But it’s important to know that when 
+you hear of a positive result in cancer 
+testing, it means cancer was found. 
+When you hear of a negative result, it 
+means cancer was not found.
+[page 31] 29
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+3 Testing for melanoma  
+Key points
+  Basic health tests help your care team 
+assess the extent (cancer stage) of the 
+melanoma.
+  A medical history is a record of all health 
+issues and treatments you’ve had in your 
+life, including other cancers.
+  A head-to-toe skin exam should include 
+a review of the scalp, face, mouth, eyes 
+and eyelids, ears, trunk and extremities, 
+hands, fingers, feet, toes, and toenails. 
+This includes examining your skin for 
+lesions (spots).
+  A melanoma diagnosis is mostly based 
+on the results of a skin biopsy. If you have 
+an unusual lesion, it will be removed and 
+sent to a lab to be examined.
+  Imaging tests take pictures of the inside 
+of your body, which are examined to look 
+for cancer. Not everyone with melanoma 
+needs imaging tests.
+  Biomarker or molecular tests look 
+for certain genes, proteins, or other 
+molecules in a sample of tissue, blood, 
+or other bodily fluid. These tests are 
+sometimes used to help diagnose 
+melanoma, and to stage and treat it.
+  Blood tests are not often done to 
+diagnose melanoma but may be done 
+before or during treatment for advanced 
+melanomas.
+Questions to ask
+  Why did I get this specific test?
+  Do the tests have any risks?
+  Do I need other tests to confirm my 
+diagnosis?
+  How much scarring will there be from the 
+biopsy?
+  Should I use over-the-counter anti-
+scarring products to help minimize 
+scarring?
+What’s next
+This chapter gave an overview of the 
+different types of tests, from skin exams 
+and genetic tests to imaging, which are 
+used to diagnose melanoma. Now that 
+you know the kinds of tests you might 
+have, read the next chapter on the variety 
+of treatments available. To find out more 
+specifically how the melanoma might be 
+treated, read about it in the stage-specific 
+chapters.
+[page 32] 30
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+4
+Staging for melanoma
+31 TNM staging
+32 Clinical vs. pathological
+33 A summary of stages
+34 Key points
+34 Questions to ask
+Chapter 4
+[page 33] 31
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+4 Staging for melanoma  
+A cancer stage is a way to describe the 
+extent of the cancer at the time you're first 
+diagnosed. Staging is needed to make 
+treatment decisions, and it happens twice 
+with melanoma: after biopsy and after 
+surgery. Understanding the melanoma 
+stage is very important, so don’t hesitate 
+to ask your care team questions.
+You may have heard of a cancer stage, but 
+what exactly does it mean? It’s essentially a 
+number that’s assigned based on the extent 
+(severity) of the cancer to help guide the 
+treatment. Read on for more details.
+TNM staging
+The American Joint Committee on Cancer 
+(AJCC) TNM staging system is widely used to 
+stage melanoma. In this system, the letters T 
+(tumor), N (node or lymph node status), and M 
+(metastasis or spread) describe different areas 
+of cancer growth. The TNM stages will be 
+combined to assign the cancer stage group.
+  Tumor depth (T) refers to the thickness 
+of the primary tumor and whether the 
+tumor has broken through the skin like 
+an open sore (this is called ulceration). 
+Tumor depth is measured in millimeters 
+(mm). There are 5 tumor designations 
+(Tis, T1, T2, T3 and T4). See the Figure 
+on the next page.
+  Lymph node status (N) describes 
+whether the cancer has spread nearby 
+(regionally) through small tubes called 
+lymph vessels or to small, bean-shaped 
+structures (in the neck, armpits, or groin) 
+called lymph nodes. It also includes 
+satellite, in-transit, and/or microsatellite 
+tumors. For more information on these 
+tumors, see Chapter 7: Treatment for stage 
+3: Regional spread.
+  Metastasis (M) signifies whether 
+the cancer has spread to parts of the 
+body far from the primary tumor, like 
+internal organs and distant lymph nodes. 
+Areas of spread tends to be lungs, liver, 
+bones, brain, and gastrointestinal (GI) 
+tract. There are only 2 designations for 
+metastasis: either the cancer has spread 
+to distant areas (M1), or it has not (M0). 
+For more information on metastatic 
+melanoma, see Chapter 9: Treatment for 
+stage 4: Metastatic melanoma.
+There are 5 stages of melanoma, stages 0 
+through 4. Doctors may write stages (1 through 
+4) as Roman numerals: stages I, II, III, and IV.
+Based on the cancer test results described in 
+Chapter 3, your doctor will assign a melanoma 
+stage (0, 1, 2, 3, or 4). Many times, that stage 
+will be accompanied by a letter (A, B, C, or D) 
+discussed futher on page 33.
+The higher the stage, the thicker the tumor or 
+the more the cancer has spread.
+The thickness of a melanoma 
+tumor is measured in 
+millimeters (mm). The tip of a 
+pencil is about 1 mm thick.
+[page 34] 32
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+4 Staging for melanoma  
+Clinical vs. pathological
+With melanoma, you’ll be staged twice. The 
+first time is called clinical staging. The second 
+time is called pathological staging.
+  Clinical staging happens after the 
+biopsy. This is when you find out you 
+have a diagnosis of melanoma and what 
+stage it is.
+  Pathological staging happens after 
+you have surgery to remove the tumor 
+and surrounding area (and nearby lymph 
+nodes, if needed) to see how advanced 
+the cancer is. The cancer may have 
+changed from the clinical stage, or 
+additional information from the surgery 
+might alter the stage. This is especially 
+true when a sentinel lymph node biopsy 
+(SLNB) finds melanoma microscopically 
+in nearby lymph nodes.
+While the clinical stage helps guide treatment, 
+the pathological stage is more accurate and 
+specific. The pathological stage involves more 
+information from the surgery to clarify your 
+diagnosis and to guide further treatment.
+Breslow thickness: What is it?
+In your pathology report, you might see 
+Breslow depth or thickness mentioned. 
+This is the measurement, in millimeters 
+(mm), of how deep or thick the melanoma 
+tumor is. 
+Melanoma staging
+The TNM classification of malignant tumors reflecting tumor thickness
+[page 35] 33
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+4 Staging for melanoma  
+A summary of stages
+Because it might be challenging to follow the 
+clinical and pathological stages on their own, 
+they’re summarized below and described in 
+more detail in the stage-specific chapters.
+In general, stage 0, stage 1, and stage 2 
+melanoma are early cancers of the skin that 
+are not known to have spread elsewhere. 
+Surgery is the most common treatment. For 
+more detailed information on early-stage 
+melanoma, see Chapter 6: Treatment for 
+stages 0 to 2: Early stage.
+Stage 3 melanoma has spread but is 
+considered regional (or local). Once the tumor 
+is considered stage 3, it involves the lymph 
+nodes and lymphatic vessels. After surgery, 
+it’s broken down into 4 pathological stages 
+(3A, 3B, 3C, and 3D). For more detailed 
+information on stage 3 melanoma, see Chapter 
+7: Treatment for stage 3: Regional spread.
+Stage 4 melanoma is cancer that has spread 
+(metastasized) to distant areas of the body, 
+such as the lungs, liver, brain, bones, or GI 
+tract. For more detailed information on stage 4 
+melanoma, see Chapter 9: Treatment for stage 
+4: Metastatic melanoma.
+If you have any questions, be sure to ask your 
+provider to explain the melanoma in a way that 
+you can best understand it.
+While a diagnosis of 
+melanoma can be scary, 
+many advances in treatment 
+have been made in the past 
+decade. 
+[page 36] 34
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+4 Staging for melanoma  
+Key points
+  Staging for melanoma is needed to make 
+appropriate treatment choices.
+  Staging helps describe the depth of 
+the tumor, whether any lymph nodes 
+are involved, and whether or not the 
+melanoma has spread (metastasized).
+  You’ll be staged for cancer twice: after 
+biopsy (clinical stage) and after surgery 
+(pathological stage).
+  The clinical stage helps guide treatment, 
+but the pathological stage is more 
+accurate.
+  Stage 0 through stage 2 is considered 
+early-stage cancer.
+  Stage 3 melanoma has spread only to 
+nearby tissues, so it's called regional.
+  Stage 4 melanoma refers to cancer that 
+has spread (metastasized) to distant 
+areas of the body.
+Questions to ask
+  What stage is the melanoma at biopsy?
+  When will I have surgery?
+  Will I need recovery time from surgery?
+  Are the lymph nodes involved?
+  Other than surgery, what else might I 
+expect?
+What’s next
+Now you’ve learned why and how 
+melanoma is staged. The next step 
+is treatment, which is the focus of the 
+following chapter. Keep in mind that it’s 
+an overview, and no one will receive 
+every treatment. When you know the 
+melanoma’s stage, you can read all about 
+the treatment for it in the stage-specific 
+treatment chapters that follow. 
+[page 37] 35
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5
+Treatment overview
+36 Who is on your care team?
+37 Surgery
+42 Systemic therapy
+47 Radiation therapy
+48 Clinical trials
+50 Key points
+50 Questions to ask
+Chapter 5
+[page 38] 36
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+This chapter describes the kinds 
+of treatments you may receive for 
+melanoma. It’s important to know that not 
+everyone will receive the same treatment. 
+Treatment for melanoma is based on its 
+stage and location. For more information 
+on your stage, read the stage-specific 
+chapters.
+After you've been diagnosed with melanoma, 
+knowing what to do next can be overwhelming 
+and confusing. But you have a care team to 
+help. Aside from your primary care provider 
+(such as your family doctor), there are several 
+medical professionals who will help you make 
+decisions about your treatment and supportive 
+care.
+Who is on your care team?
+Depending on your diagnosis, your care team 
+might include the following specialists.
+Doctors who treat cancer
+Dermatologists diagnose and treat skin 
+conditions, including skin cancer. They also 
+do skin exams and help you learn how to do 
+them on your own. Some dermatologists also 
+perform surgery.
+Surgical oncologists are trained to 
+diagnose, surgically treat, and remove 
+cancerous tumors.
+Medical oncologists specialize in 
+prescribing cancer drugs. They are trained 
+to diagnose and treat cancer using special 
+medicines that may be taken by mouth or 
+given through a vein (intravenously, or IV).
+Radiation oncologists are trained to 
+use different types of radiation to destroy 
+cancerous cells while keeping other cells 
+healthy.
+Pathologists study tissue and cells 
+from a biopsy under a microscope to 
+figure out the diagnosis and tumor stage. 
+Dermatopathologists are experts in skin 
+diseases.
+Plastic surgeons reconstruct, restore, and 
+repair body parts. They may be needed to 
+close a wound after surgery, especially if it 
+involves deeper tissue.
+Head and neck surgeons treat diseases 
+(both cancerous and noncancerous) of the 
+head and neck.
+Guide 3
+Common treatments for melanoma
+Surgery
+Systemic therapy
+Radiation therapy
+Clinical trials
+[page 39] 37
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+Other health professionals
+Oncology nurses provide hands-on care, 
+like giving systemic therapy, managing your 
+care plan, answering questions, and helping 
+you cope with side effects. Sometimes these 
+experts are called nurse navigators.
+Pharmacists are trained to prepare and give 
+out medicine and teach about proper use and 
+side effects. Some pharmacists specifically 
+work with people with cancer.
+Geneticists study how traits are passed 
+down from parents to children through genes. 
+They are trained to diagnose and treat genetic 
+disorders and counsel people and families at 
+risk.
+Nutritionists and dietitians help guide 
+you on what foods are best for your diagnosis 
+and treatment.
+Palliative care nurses help provide an 
+extra layer of support with cancer-related 
+symptoms.
+Psychologists and psychiatrists can help 
+you manage mental health issues, such as 
+depression, anxiety, or other conditions, that 
+can affect how you feel during treatment.
+Social workers help people solve and cope 
+with problems in their everyday lives while they 
+are undergoing treatment.
+Some members of your care team will be with 
+you throughout your treatment and beyond, 
+while others will be there for parts of it.
+You know your body better than anyone. Help 
+other team members understand:
+  How you feel
+  What you need
+  What is working and what isn't
+  Your goals for treatment
+Keep a list of names and contact information 
+for each member of your team. Add it to your 
+cell phone, too, if you have one. Hang the list 
+in an obvious place where anyone can access 
+it in an emergency.
+This will make it easier for you and anyone 
+else involved in your care to know who to 
+contact with questions or concerns.
+Common treatments for melanoma are listed in  
+Guide 3 and discussed next.
+Surgery
+Surgery is an operation or procedure to 
+remove cancer from the body. The type of 
+surgery depends on the size, number of 
+tumors, and their location. Surgery is the 
+primary treatment for most melanomas.
+A person diagnosed with melanoma should 
+expect to have surgery after the skin biopsy.
+The goal of surgery for a primary melanoma 
+tumor is to remove all the cancer. For 
+melanomas that have a low risk of spreading, 
+surgery may be the only treatment needed. 
+Different types of surgery are used to treat 
+melanoma. They are mentioned ahead.
+[page 40] 38
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+Wide excision
+A wide excision surgery is the most common 
+type of surgery. It removes the melanoma 
+tumor as well as normal tissue surrounding 
+it (the surgical margin). The surgical margin 
+is measured in centimeters (cm). The size of 
+the margin to be removed depends on the 
+thickness of the primary tumor (see Guide 
+4). Still, margins can be even smaller in places 
+like the face, ears, palms of the hands, and 
+soles of the feet because of their delicate nature 
+and narrower surface area. In some cases, 
+Mohs micrographic surgery (also called Mohs 
+surgery) or staged excision with permanent 
+sections may be used, especially in early-stage 
+melanoma. For more information, see Chapter 
+6: Treatment for stages 0 to 2: Early stage.
+A wide excision may be done in a doctor's office, 
+surgical center, or hospital (operating room).
+You may receive local anesthesia before the 
+surgery. Local anesthesia is medicine that 
+numbs a small area of the body to minimize 
+pain during the surgery. Most stage 0 and 
+stage 1 melanomas are treated under local 
+anesthesia.
+For deeper or more advanced melanomas that 
+require lymph node biopsy (described ahead) 
+or more extensive surgery, general anesthesia 
+may be used. You will be fully asleep during 
+the surgery.
+A wide excision is done even if the melanoma 
+tumor was removed by biopsy. A wide excision 
+also removes nearby microsatellites and lymph 
+vessels in the skin because they could contain 
+tumor cells.
+A wide excision is often cut as an ellipse 
+(football shape), which allows the wound to 
+heal as a flat line. The surgical margin is cut 
+based on the thickness of the melanoma 
+tumor.
+Guide 4 
+Surgical margin guidelines for wide excision of melanoma
+If your tumor thickness is: The recommended surgical margin is:
+In situ (cancer hasn't spread) 0.5 to 1 cm
+Less than 1 mm 1 cm
+1 to 2 mm 1 to 2 cm
+Greater than 2 to 4 mm 2 cm
+Greater than 4 mm 2 cm
+[page 41] 39
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+Side effects of wide excision
+Side effects of wide excision surgery may 
+include pain, swelling, numbness, and/
+or scarring. Pain and swelling are usually 
+temporary and should only last for a few weeks 
+after surgery. Scars can be a lasting result of 
+surgery. Talk to your doctor if you’re concerned 
+about scarring after the surgery.
+Following the surgery, a skin graft might be 
+recommended for larger incisions. A skin graft 
+is when a surgeon takes skin from another part 
+of your body and uses it to cover the wound.
+Skin grafts are surgeries that can be 
+performed in the clinic or hospital. Most larger 
+skin grafts involve sedation (giving medicine 
+to help you relax) or general anesthesia, 
+which means you’ll be asleep throughout the 
+procedure and won’t feel any pain.
+Sometimes, rotational “flaps” of tissue may 
+be used to cover the wound so you can avoid 
+a skin graft. A skin flap is a type of wound 
+closure that takes skin from an area close to a 
+wound and layers it to fill the removal of a skin 
+lesion. Talk to your doctor about your options 
+and how you can expect to heal after wide 
+excision surgery.
+Sentinel lymph node biopsy
+A sentinel lymph node is the first lymph node 
+where cancer cells are most likely to spread 
+from a primary tumor on the skin. Sometimes 
+there is more than one sentinel lymph node 
+found, or multiple lymph node basins involved, 
+like both armpit areas. The lymph node basin 
+is the area of lymph nodes where lymph from 
+the tumor drains.
+A sentinel lymph node biopsy (SLNB) is a 
+surgery that removes one or more lymph 
+nodes to examine for any cancer cells. These 
+nodes will be checked by a pathologist in a lab. 
+(Most people with melanoma have an SLNB at 
+the same time as wide excision surgery.)
+Wide excision
+A wide excision surgery 
+removes the melanoma 
+tumor as well as some 
+normal-looking tissue 
+surrounding it. 
+[page 42] 40
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+The results will be used to stage the cancer 
+and plan treatment.
+To find the sentinel lymph node(s), your 
+surgeon or the radiology team will inject a 
+radioactive substance (and in some cases, 
+a blue-colored dye) into your skin near the 
+tumor. The substance will drain into the 
+sentinel lymph nodes. Your surgeon will use a 
+special probe to find the radioactive nodes and 
+remove them through a small cut in your skin. 
+This procedure is typically done under general 
+anesthesia.
+Side effects of SLNB
+You could experience some side effects 
+after an SLNB, including numbness, pain, 
+or bruising.
+You could also develop a seroma, which is a 
+pocket of clear fluid in the lymph node basin. 
+A seroma usually goes away on its own but 
+sometimes it needs to be drained with a 
+needle.
+Your doctor or care team should discuss with 
+you the possible risks and benefits of an SLNB 
+before you have the surgery.
+Lymph node dissection
+A lymph node dissection is a surgical 
+procedure where lymph nodes are removed 
+and checked for cancer. The procedure may 
+be done if the cancer has spread to the lymph 
+node basin. But it is not often done if there is 
+cancer only in sentinel lymph node(s). A lymph 
+node dissection removes nodes to prevent 
+cancer from coming back or spreading. This 
+surgery is done under general anesthesia.
+Complete (also known as completion) 
+lymph node dissection (CLND) is a 
+dissection done after tiny amounts of cancer 
+are found in the SLNB. Although it can be an 
+option for some people, nodal basin ultrasound 
+or other imaging tests are more commonly 
+used to check the lymph nodes.
+Lymph node dissection is generally 
+recommended for advanced melanomas when 
+enlarged lymph nodes are found on clinical 
+exam or through imaging. Or it's done for 
+nodes that have grown over time and have 
+shown to contain melanoma.
+Lymph nodes
+There are hundreds of small, bean-shaped 
+structures throughout the human body 
+called lymph nodes. Lymph nodes catch and 
+filter out foreign particles and harmful cells, 
+including cancer cells.
+[page 43] 41
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+Therapeutic lymph node dissection 
+(TLND) is when all of the lymph nodes in a 
+nodal basin (area) are removed to help control 
+the melanoma and prevent recurrence. TLND 
+is often combined with systemic drug therapy 
+(cancer drugs that travel throughout the body) 
+given before and/or after surgery as a boost to 
+help further control the melanoma.
+Common side effects of TLND include pain, 
+numbness, limited movement (of arms or 
+legs), and lymphedema. Lymphedema is the 
+most serious side effect of lymph node surgery 
+because it causes swelling and discomfort, 
+most commonly in the arms or legs. It’s treated 
+with compression therapy and/or physical 
+therapy.
+More information about managing 
+lymphedema can be found in NCCN 
+Guidelines for Patients: Survivorship Care for 
+Cancer-Related Late and Long-Term Effects, 
+available at NCCN.org/patientguidelines and 
+on the NCCN Patient Guides for Cancer app.
+Order of Treatments
+Most people with melanoma will receive 
+more than one type of treatment. This is 
+an overview of the order of treatments 
+and what they do.
+Neoadjuvant (before) treatment is 
+given to shrink the tumor before primary 
+treatment (surgery). This might make 
+surgery possible for some challenging 
+melanoma tumors.
+Primary treatment is the main treatment 
+given to rid the body of cancer. Surgery 
+is usually the main treatment when the 
+tumor can be removed, often in early-
+stage melanoma. In later stages, surgery 
+is often combined with cancer drugs.
+• First-line treatment is the first set of 
+cancer drugs given.
+• Second-line treatment is the next set 
+of cancer drugs given if the first-line 
+treatment hasn't worked.
+Adjuvant (after) treatment is given after 
+primary treatment to rid the body of any 
+cancer cells left behind from surgery. 
+It's also used when the risk of cancer 
+returning (recurrence) is felt to be high.
+Talk with your doctor about your treatment 
+plan and what it means for your stage of 
+melanoma.
+
+[page 44] 42
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+Systemic therapy
+Systemic therapies are cancer drugs that 
+travel throughout the body and are often used 
+to treat more advanced melanoma. Depending 
+on the stage, systemic therapies could be 
+used as neoadjuvant treatments (before the 
+primary treatment, which is often surgery) or 
+adjuvant treatments (after the primary surgery 
+treatment).
+The most common types of systemic therapies 
+that treat melanoma include targeted therapies 
+and immunotherapies, and, less often, 
+chemotherapies. Each type of treatment is 
+explained below.
+When it comes to systemic therapies, 
+all treatments listed in this guide are 
+recommended and appropriate. When 
+helpful, NCCN experts also assign a level 
+of preference to their recommendations for 
+systemic therapies:
+  Preferred therapies have the most 
+evidence they may work better and be 
+safer than other therapies.
+  Other recommended therapies 
+can provide effective results but may 
+have less evidence, more side effects, or 
+may not work quite as well as preferred 
+therapies.
+  Therapies used in certain cases 
+work best for individuals with specific 
+cancer features or health circumstances.
+Targeted therapy
+Targeted therapy drugs are a type of systemic 
+therapy designed to target and attack specific 
+cancer cells. For melanoma, these drugs 
+target the activity of a specific or unique 
+feature of melanoma cells and interfere with 
+how those cancer cells grow.
+Cancer growth inhibitors
+Cancer growth inhibitors (or blockers) are a 
+type of targeted therapy that stops cancer cells 
+from growing. Our bodies make chemicals 
+called growth factors that control cell growth.
+Cancer growth inhibitors work by blocking 
+the growth factors that trigger cancer cells to 
+divide and grow. They are often taken orally 
+(by mouth) and can be taken at home.
+There are several types of cancer growth 
+inhibitors, including the following.
+  BRAF inhibitors: When a BRAF 
+gene mutates, it gives faulty instructions 
+to proteins that can help cancer cells 
+grow. BRAF inhibitors are drugs that 
+directly attack these proteins. They can 
+shrink or slow the growth of tumors in 
+melanoma that has spread or can't be 
+removed completely. Types of BRAF 
+inhibitors include vemurafenib (Zelboraf), 
+dabrafenib (Tafinlar), and encorafenib 
+(Braftovi).
+  MEK inhibitors: MEK is a protein that's 
+activated when the BRAF gene mutates 
+and causes melanoma cancer cells to 
+grow. Drugs known as MEK inhibitors 
+target and attack the MEK protein. 
+They are often used in combination with 
+From the time of diagnosis, you can 
+ask your doctor about participating in 
+a clinical trial of a melanoma treatment.  
+Clinical trials can be an option at any 
+stage of disease.
+[page 45] 43
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+BRAF inhibitors. The MEK inhibitors 
+include trametinib (Mekinist), cobimetinib 
+(Cotellic), and binimetinib (Mektovi).
+  KIT inhibitors: Mutations in the KIT 
+gene can cause some rarer melanomas 
+to develop, like those on the palms, on 
+the soles, or under the nail beds. Types of 
+KIT inhibitors include imatinib (Gleevec), 
+dasatinib (Sprycel), and nilotinib 
+(Tasigna).
+In most cases, BRAF inhibitors are combined 
+with MEK inhibitors to treat melanomas that 
+have mutations in the BRAF genes. These 
+combinations include:
+  Dabrafenib (Tafinlar) and trametinib 
+(Mekinist)
+  Encorafenib (Braftovi) and binimetinib 
+(Mektovi)
+  Vemurafenib (Zelboraf) and cobimetinib 
+(Cotellic)
+As for side effects, BRAF and MEK inhibitors 
+can cause non-melanoma skin cell cancers; 
+photosensitivity (being sensitive to sunlight); 
+other skin reactions; and many possible 
+systemic side effects, including rash, nausea, 
+diarrhea, loss of appetite, and fatigue. In some 
+cases, side effects can be severe and even 
+life-threatening, so tell your doctor if you have 
+any of them.
+If you develop a skin reaction (rash, itching, 
+swelling) after any of the systemic therapies 
+listed above, it’s recommended that you see a 
+dermatologist regularly for treatment.
+Immunotherapy
+The immune system is the body's defense 
+against infection and disease. Immunotherapy 
+is a systemic treatment that uses the immune 
+system to kill cancer cells.
+Your immune system can tell the difference 
+between normal cells and those it sees as 
+foreign, like germs and cancer cells. And 
+for the most part, it will do its job to fight the 
+foreign cells but not the normal cells.
+T cells are a key part of the immune system. 
+T cells that kill infected cells and cancer cells 
+are called cytotoxic or killer T cells.
+But sometimes the proteins on tumor cells bind 
+with T-cell proteins, which prevents the T cells 
+from killing the tumor cells. These tumor 
+cell proteins are called immune checkpoint 
+proteins. PD-L1 is a tumor cell checkpoint 
+protein that can bind with PD-1 checkpoint 
+protein on T cells.
+Immune checkpoint inhibitors
+Immune checkpoint inhibitors are a type of 
+immunotherapy. They work by blocking the 
+proteins from binding, which then frees the 
+T cells to kill the tumor cells.
+Checkpoint inhibitors are slowly injected into 
+a vein (infusion). It may take up to 30 to 60 
+minutes to get the full dose. Infusions are 
+usually given every few weeks. The number of 
+weeks between treatments can depend on the 
+type of inhibitor used.
+[page 46] 44
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+Examples of immune checkpoint inhibitors that 
+treat melanoma include:
+  Pembrolizumab (Keytruda)
+  Pembrolizumab and berahyaluronidase 
+alfa-pmph (Keytruda Qlex)
+  Nivolumab (Opdivo)
+  Nivolumab and hyaluronidase-nvhy 
+(Opdivo Qvantig)
+  Ipilimumab (Yervoy)
+  Atezolizumab (Tecentriq)
+  Atezolizumab and hyaluronidase-tqjs 
+(Tecentriq Hybreza)
+  Nivolumab and relatlimab-rmbw 
+(Opdualag)
+Immunotherapy can be given alone or 
+combined with other types of treatment. In 
+some cases, an immunotherapy combined with 
+another immunotherapy, or an immunotherapy 
+combined with a targeted therapy, is 
+recommended for treatment. Two examples of 
+combinations are:
+  Nivolumab* and ipilimumab
+  Nivolumab and relatlimab-rmbw
+*Nivolumab and hyaluronidase injectable 
+cannot be combined with ipilimumab.
+Are there vaccines that treat 
+melanoma?
+There are vaccines that can treat melanoma. 
+But unlike vaccines for flu, pneumonia, and 
+other illnesses, melanoma vaccines don’t 
+prevent melanoma. Instead, they can be 
+used to stop cancer from returning if you 
+already had surgery to remove tumors. 
+Vaccine therapies for melanoma are 
+often tested in clinical trials. Vaccines for 
+melanoma can be given through systemic 
+or local treatment.
+Systemic treatment is usually given 
+through drugs that release antigens into 
+the bloodstream to boost the body’s 
+immune system so it can fight cancer. 
+These drugs target the parts of melanoma 
+cells that make them different from 
+normal cells. They work differently from 
+chemotherapy drugs, which attack both 
+normal and cancer cells.
+Local treatment directs antigens to a 
+specific organ or area of the body, such 
+as an abnormal growth on the skin. After 
+surgery, these treatments could include 
+topical therapy (medicine in a lotion or 
+cream applied directly to the skin) or 
+therapies injected directly into melanoma 
+in the skin or lymph nodes.
+
+[page 47] 45
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+New forms of immune checkpoint inhibitors 
+that can be injected under the skin 
+(subcutaneously, and sometimes called sub-Q) 
+are available. They can be given at different 
+weekly intervals depending on the medicine 
+and take much less time to give than an 
+infusion. Three subcutaneous injections are 
+currently available:
+  Nivolumab and hyaluronidase-nvhy 
+(known as Opdivo Qvantig)
+  Pembrolizumab and berahyaluronidase 
+alfa-pmph (known as Keytruda Qlex)
+  Tezolizumab and hyaluronidase-tqjs 
+(known as Tecentriq Hybreza).
+Checkpoint inhibitors can cause immune-
+related side effects, including rash, diarrhea, 
+shortness of breath, headache, and abnormal 
+thyroid function. These side effects can occur 
+during or after treatment and can sometimes 
+be lifelong.
+For more information, see NCCN Guidelines 
+for Patients: Immunotherapy Side Effects, 
+available at NCCN.org/patientguidelines and 
+on the NCCN Patient Guides for Cancer app.
+IL-2
+Interleukin 2 (IL-2, Proleukin) is an 
+immunotherapy that can be slowly injected 
+into a vein (infusion) or directly into the tumor. 
+IL-2 is a group of proteins made by white blood 
+cells and other cells that handle increasing 
+immune response. The therapy works by 
+supercharging the immune system to target 
+and kill cancer cells.
+Side effects of IL-2 can include fever, chills, 
+decrease in blood pressure, muscle stiffness, 
+diarrhea, dizziness, tiredness, headache, 
+weight gain, nausea, vomiting, and loss of 
+appetite.
+IL-2 is now mainly used as part of TIL (tumor-
+infiltrating lymphocytes) therapy (see below).
+T-VEC
+Talimogene laherparepvec (T-VEC) (Imlygic) 
+is a modified form of the herpesvirus made in 
+a lab. T-VEC is a type of viral immunotherapy 
+that uses the genetically formed virus to 
+stimulate the body’s immune system. It’s 
+injected directly into the tumor. T-VEC destroys 
+tumor cells and also helps your body find and 
+attack nearby cancer cells. Some side effects 
+of T-VEC include fever, headaches, chills, 
+muscle aches, and feeling tired and weak. 
+Most people—about 9 out of 10—who receive 
+T-VEC develop flu-like symptoms, which 
+usually get better after a few days.
+
+[page 48] 46
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+TIL
+Tumor-infiltrating lymphocyte (TIL) therapy 
+(Lifileucel, Amtagvi) is an immune cell 
+treatment approved as a second-line therapy 
+for people whose melanoma hasn’t responded 
+to other immunotherapies. It uses the person's 
+own cancer-fighting T cells, called tumor-
+infiltrating lymphocytes. These cells are 
+collected from a person's own tumor. In a lab, 
+the TILs are isolated from the tumor sample, 
+grown into the billions, and infused (through an 
+IV) back into the person.
+TIL is used for melanoma that has a BRAF 
+mutation and has progressed on prior 
+immunotherapy and targeted therapy. It’s a 
+specialized type of cellular therapy given only 
+in approved centers with experience in the 
+technique.
+Side effects are common and come from the 
+chemotherapy (see next section) given along 
+with the TIL. They include anemia, high fever, 
+and drops in platelets and certain white blood 
+cells. When used with IL-2, see side effects 
+of IL-2 discussed on page 45. Side effects 
+usually resolve within a couple of weeks.
+Chemotherapy
+Chemotherapy kills fast-growing cells 
+throughout the body, including both cancer 
+cells and normal cells. Chemotherapy drugs 
+are usually given through an injection into a 
+vein (IV) or are taken as a pill (by mouth).
+Because chemotherapy doesn't treat 
+melanoma as well as immunotherapy and 
+targeted therapy do, your care team will likely 
+use those therapies first.
+But if your cancer does not respond to 
+immunotherapy or targeted therapy or if you 
+have severe side effects, chemotherapy may 
+be a possibility.
+Infusions are when cancer 
+drugs are given through an 
+IV (intravenously).
+[page 49] 47
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+Chemotherapy drugs used to treat melanoma 
+include:
+  Carboplatin
+  Cisplatin
+  Dacarbazine (also called DTIC)
+  Nab-paclitaxel
+  Paclitaxel
+  Temozolomide (Temodar)
+Chemotherapy treatment may last several 
+months. Side effects include tiredness, nausea 
+or vomiting, loss of appetite, diarrhea, nerve 
+damage, and hair loss. These side effects 
+often go away after you finish treatment.
+Read more about help for nausea and 
+vomiting in NCCN Guidelines for Patients: 
+Nausea and Vomiting, available at NCCN.org/
+patientguidelines and on the NCCN Patient 
+Guides for Cancer app.
+Radiation therapy
+Radiation therapy is a painless treatment that 
+focuses high-energy rays on tumor cells. The 
+rays are delivered to the tumor area to damage 
+the DNA inside of the tumor cells. This either 
+kills the tumor cells or stops new tumor cells 
+from being made. You won’t see, hear, or feel 
+the radiation. It passes through your skin and 
+other tissues to reach the tumor.
+Radiation therapy can be given alone or with 
+other treatments. Treatment may focus on 
+individual tumors, a small area of the body, or 
+a specific lymph node area. Radiation therapy 
+can also be used as a palliative treatment to 
+help ease the pain or discomfort caused by 
+cancer.
+External beam radiation therapy
+External beam radiation therapy (EBRT) is 
+the most commonly used method of radiation 
+therapy. Radiation beams from a large 
+machine are directed at the tumor. The beams 
+overlap at the site of the tumor or cancer cells 
+to target a high dose of radiation to that area. 
+A much lower dose is given to nearby tissue. 
+How often the treatment is given is based 
+on the goal of your treatment and where the 
+melanoma is located.
+Intensity-modulated radiation 
+therapy
+Intensity-modulated radiation therapy (IMRT) 
+uses many small beams of different strengths. 
+This allows a high dose of radiation to be 
+targeted at the tumor while limiting the amount 
+of radiation to the surrounding normal tissue.
+
+[page 50] 48
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+Image-guided radiation therapy
+Image-guided RT (IGRT) uses imaging to 
+deliver radiation to cancer. Imaging can 
+confirm the exact location of the tumor 
+both before and during treatments.
+Radiation therapy for distant cancer
+Other radiation techniques used to treat distant 
+metastatic melanoma are discussed next.
+Stereotactic radiosurgery (SRS) treats small 
+tumors with very precise, high-dose x-ray 
+beams and is usually finished in 1 session. 
+It’s preferred for brain metastases.
+  Stereotactic radiotherapy (SRT) is a form 
+of SRS and is finished in 1 to 5 sessions.
+  SRT is used to treat tumors in the body, 
+not in the brain. It's sometimes called 
+stereotactic body radiation therapy 
+(SBRT) or stereotactic ablative body 
+radiotherapy (SABR).
+Side effects of radiation therapy may include:
+  Sunburn-like skin problems
+  Changes in skin color
+  Hair loss around the area where radiation 
+is given
+  Fatigue
+  Nausea if aimed at the abdomen (belly)
+Clinical trials
+Another treatment option at any stage of 
+cancer is participating in a clinical trial. A 
+clinical trial is a type of medical research study. 
+After being developed and tested in a lab, 
+potential new ways of fighting cancer need to 
+be studied in people.
+If found to be safe and effective in a clinical 
+trial, a drug, device, or treatment approach 
+may be approved by the U.S. FDA.
+Everyone with cancer should carefully consider 
+all of the treatment options available for their 
+cancer type, including standard treatments and 
+clinical trials. Talk to your doctor about whether 
+a clinical trial may make sense for you.
+Phases
+Most cancer clinical trials focus on treatment 
+and are done in phases.
+  Phase 1 trials study the safety and 
+side effects of an investigational drug 
+or treatment approach.
+  Phase 2 trials study how well the drug or 
+approach works against a specific type of 
+cancer.
+  Phase 3 trials test the drug or approach 
+against a standard treatment. If the 
+results are good, it may be approved by 
+the FDA.
+  Phase 4 trials study the safety and 
+benefit of an FDA-approved treatment.
+[page 51] 49
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+Who can enroll?
+It depends on the clinical trial’s rules, called 
+eligibility criteria. The rules may be about age, 
+cancer type and stage, treatment history, or 
+general health. They ensure that participants 
+are alike in specific ways and that the trial is as 
+safe as possible for the participants.
+Informed consent
+Clinical trials are managed by a research 
+team. This group of experts will review the 
+study with you in detail, including its purpose 
+and the risks and benefits of joining. All of this 
+information is also provided in an informed 
+consent form. Read the form carefully and 
+ask questions before signing it. Take time to 
+discuss it with people you trust. Keep in mind 
+that you can leave and seek treatment outside 
+of the clinical trial at any time.
+Will I get a placebo?
+Placebos (inactive versions of real medicines) 
+are almost never used alone in cancer clinical 
+trials. It’s common to receive either a placebo 
+with a standard treatment, or a new drug with 
+a standard treatment. You will be informed, 
+verbally and in writing, if a placebo is part of a 
+clinical trial before you enroll.
+Are clinical trials free?
+There is no fee to enroll in a clinical trial. The 
+study sponsor pays for research-related costs, 
+including the study drug. But you may need 
+to pay for other services, like transportation or 
+childcare, due to extra appointments. During 
+the trial, you will continue to receive standard 
+cancer care. This care is often covered by 
+insurance.
+Finding a clinical trial
+In the United States
+NCCN Cancer Centers
+NCCN.org/cancercenters
+The National Cancer Institute (NCI)
+cancer.gov/about-cancer/treatment/clinical-
+trials/search
+ 
+Worldwide
+The U.S. National Library of Medicine (NLM)
+clinicaltrials.gov
+ 
+Need help finding a clinical trial?
+NCI’s Cancer Information Service (CIS)
+1.800.4.CANCER (1.800.422.6237)
+cancer.gov/contact 
+
+[page 52] 50
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+5 Treatment overview  
+Key points
+  Treatment for melanoma is based on its 
+stage and location.
+  Surgery is usually the primary (first) 
+treatment for melanoma that has not 
+spread.
+  A wide excision surgery removes the 
+melanoma tumor as well as some 
+normal-looking tissue surrounding it.
+  A sentinel lymph node biopsy (SLNB) 
+removes the nodes most likely to have 
+cancer if the cancer has spread. They 
+will be checked for cancer cells by 
+a pathologist.
+  A lymph node dissection (removal) may 
+be done if nearby lymph nodes are larger 
+than normal.
+  Targeted therapy drugs target the 
+activity of a specific or unique feature 
+of melanoma cancer cells.
+  Immunotherapy improves your body’s 
+ability to find and destroy cancer cells. It 
+can be given on its own or combined with 
+other types of treatment.
+Questions to ask
+  How will I be involved in making decisions 
+for my treatment?
+  Should I bring someone with me to my 
+appointments?
+  Can you explain the treatment and side 
+effects as simply as possible?
+  What other health professionals will be a 
+part of my care team?
+  What if I decide to do nothing? What are 
+the risks?
+What’s next
+This chapter explained the types of 
+treatments for melanoma. What treatment 
+you receive will depend on the stage 
+of melanoma. Chapters 6, 7, and 9 
+are specific to the different stages of 
+melanoma. At the end of the book, 
+Chapter 10: Follow-up care describes 
+how you’ll be followed by your care team 
+after treatment. 
+[page 53] 51
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+6
+Treatment for stages 0 to 2: 
+Early stage
+52 Stage 0 in situ
+53 Stage 1
+55 Stage 2
+58 Key points
+58 Questions to ask
+Chapter 6
+[page 54] 52
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+6 Treatment for stages 0 to 2: Early stage  
+This chapter explains the early stages of 
+melanoma—when most melanomas are 
+diagnosed. It provides an overview of the 
+best course of treatment and follow-up care.
+The early stages of melanoma, especially 
+stages 0 and 1, are when the cancer is highly 
+treatable and curable. After your biopsy 
+confirms melanoma and its stage, your doctor 
+will do a physical exam and medical history. 
+You’ll only need imaging tests if you have 
+any unusual symptoms or if it might help with 
+planning for surgery or systemic therapy.
+Keep reading to find out more about how the 
+melanoma's stage reflects what treatment you 
+may receive. See Guide 5.
+Stage 0 in situ
+Stage 0 in situ refers to melanoma found 
+only in the top layer of skin (epidermis). The 
+melanoma at this stage is very unlikely to 
+spread to other parts of the body. It’s cured 
+when completely removed.
+Treatment
+The preferred treatment for stage 0 in situ is 
+wide excision surgery. Wide excision surgery 
+removes the melanoma tumor as well as 
+some normal-looking tissue surrounding it (the 
+surgical margin). Some patients with stage 0 in 
+situ may be offered nonsurgical treatment with 
+the immunotherapy cream imiquimod (5%) 
+or radiation therapy. Still, depending on your 
+health and ability to have surgery, you might 
+not have any treatment but instead will be 
+closely observed by your doctor.
+But surgery is the most common treatment for 
+stage 0 in situ. There are some areas where 
+it’s harder to do surgery, such as on the face, 
+ears, palms of the hands, and soles of the feet. 
+In these cases, your doctor might consider 
+alternative surgical techniques, like Mohs 
+micrographic surgery (also called Mohs surgery) 
+or staged excision with permanent sections.
+Both types of surgery can provide a closer 
+look at the edge of the removed tissue (called 
+the histologic margin). With Mohs surgery, 
+the surgeon removes thin layers of skin—one 
+at a time—and checks each layer for cancer 
+until reaching a layer where no more cancer 
+cells are found. This whole procedure and lab 
+results are done while you wait in the health 
+care center.
+In situ means “in place” in Latin.  
+With melanoma, it means  
+the cancer hasn’t spread.
+Guide 5
+Possible treatments for  
+early-stage melanoma
+Wide excision surgery
+Wide excision surgery with SLNB
+Immunotherapy
+Radiation therapy
+Clinical trials
+[page 55] 53
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+6 Treatment for stages 0 to 2: Early stage  
+Staged excision with permanent sections is 
+similar to Mohs surgery because the surgeon 
+removes one layer at a time, but it's more 
+precise. The sections are sent to a lab for 
+more tests where it typically takes days to get 
+results.
+Other treatment options for certain types of 
+melanoma in situ (specifically the lentigo 
+maligna type) include imiquimod (5% cream). 
+This topical treatment may be used if surgery 
+isn't an option or if the entire tumor can't be 
+removed. While not commonly used, radiation 
+therapy is another possibility for in situ lentigo 
+maligna-type melanoma.
+Follow-up for stage 0
+Recommended steps after treatment for stage 0 
+melanoma include a medical history and skin 
+exams at least once a year to check for other 
+skin cancers. You won’t need imaging tests 
+and blood tests.
+Stage 1
+Stage 1 melanoma has moved into the 
+second layer of skin called the dermis. When 
+melanoma reaches the dermis, it’s described 
+as invasive. Stage 1 is defined as a lesion 
+(tumor) that's 2 mm or thinner (Breslow depth 
+or thickness). Stage 1 melanoma may or may 
+not be ulcerated (broken skin), though most 
+are not. Stage 1 melanoma has 2 subgroups: 
+1A and 1B.
+Stage 1A
+This stage is defined as a tumor less than 
+0.8 mm thick that doesn’t have a break on 
+the skin (ulceration) when examined under a 
+microscope. It’s still considered localized to the 
+skin but is invasive. This means it has gone 
+through the top layer of skin (epidermis) into 
+the next layer of skin (dermis).
+Early-stage melanoma is 
+highly treatable. Be sure to ask 
+questions if you need more 
+information.
+[page 56] 54
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+6 Treatment for stages 0 to 2: Early stage  
+Treatment for stage 1A
+The most common treatment for stage 1A is 
+wide excision surgery. This removes the tumor 
+as well as a margin of healthy tissue, which 
+can help prevent the melanoma from coming 
+back (called recurrence). Sentinel lymph node 
+biopsy (SLNB) is usually not recommended 
+at this stage. After surgery, you‘ll be observed 
+through follow-up care (see "Follow-up for 
+stage 1").
+Stage 1B
+In stage 1B melanoma, the primary tumor has 
+moved into the lower layer of skin but is still 
+curable. Stage 1B includes tumors that are:
+  Less than 0.8 mm thick with ulceration
+  Between 0.8 and 1 mm thick with or 
+without ulceration
+  Between 1 and 2 mm thick without 
+ulceration
+Treatment for stage 1B
+Your doctor will discuss with you whether 
+SLNB is needed at the time of a wide excision 
+surgery. This procedure is considered for stage 
+1B melanoma and higher when no enlarged 
+or abnormal nodes are felt during the physical 
+exam. Your doctor may also consider nodal 
+basin ultrasound imaging before SLNB if 
+results of the physical exam were unclear. The 
+nodal basin is the area of nearby lymph nodes. 
+Even if the nodal basin ultrasound doesn't 
+show cancer in the lymph nodes, you may 
+still need an SLNB. Other imaging might also 
+be ordered if you have signs or symptoms of 
+cancer. See Chapter 5: Treatment overview for 
+more information on SLNB.
+The decision will be based on any health 
+conditions you have, your age and general 
+health, and your personal preferences. If the 
+melanoma meets the criteria for SLNB, the 
+procedure will figure out if cancer cells are 
+in one or more nearby lymph nodes (see 
+Guide 6).
+If it’s decided that you don’t need an SLNB, 
+then you’ll have wide excision surgery 
+and move to observation in follow-up care 
+afterward (see "Follow-up for stage 1").
+But if you need an SLNB, it will likely be done 
+at the time of surgery. If the SLNB shows no 
+cancer in the sentinel nodes (negative for 
+cancer), then you’ll move to follow-up care 
+(see "Follow-up for stage 1").
+Cancer in SLNB
+If cancer is found in the sentinel nodes 
+(positive for cancer), then it could mean that 
+cancer is also in other lymph nodes and 
+your cancer stage will change (be upstaged) 
+to stage 3. For more information on stage 
+3 melanoma treatment, see Chapter 7: 
+Treatment for stage 3: Regional spread.
+Follow-up for stage 1
+Recommended steps after treatment for stage 
+1A or stage 1B melanoma include a physical 
+exam and medical history—with a focus on 
+the skin and regional lymph nodes near the 
+primary melanoma site—every 6 to 12 months 
+for 5 years, and then at least once every year 
+afterward. Imaging tests are done only to 
+check for specific signs and symptoms.
+[page 57] 55
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+6 Treatment for stages 0 to 2: Early stage  
+Stage 2
+Stage 2 refers to tumors that are 1 to 2 mm in 
+thickness and are ulcerated, or tumors that are 
+thicker than 2 mm with or without ulceration. 
+A person with stage 2 melanoma has a 
+higher chance of cancer spreading beyond 
+the primary tumor than a person with stage 1 
+melanoma.
+Stage 2 melanoma is broken down into 3 
+subgroups: 2A, 2B, and 2C.
+Stage 2A
+Stage 2A melanoma includes 2 types of 
+tumors:
+  Between 1 and 2 mm thick with ulceration
+  Between 2 and 4 mm thick without 
+ulceration
+Treatment for stage 2A
+Primary treatment for stage 2A starts with wide 
+excision surgery.
+Guide 6 
+When you might have a sentinel lymph node biopsy (SLNB)
+A sentinel lymph node is the first lymph node where cancer cells spread after leaving a 
+tumor. An SLNB shows if cancer has spread from a tumor. It helps providers tell the stage 
+of the melanoma and can help you and your care team make treatment decisions.
+If your cancer is 
+stage 1A and 
+• The melanoma is less than 0.8 mm deep
+• The melanoma has no breakage 
+(ulceration) or other features
+Your doctor will not 
+likely recommend an 
+SLNB.
+If your cancer is 
+stage 1B and 
+• The melanoma is less than 0.8 mm deep 
+and has ulceration
+• The melanoma is 0.8 to 1 mm deep with or 
+without ulceration
+Your doctor might 
+recommend an SLNB.
+If your cancer is 
+stage 1B or higher 
+and
+• The melanoma is more than 1 mm deep
+• You had an in-transit metastasis or local 
+recurrence of a melanoma but no sign of 
+regional or distant metastases
+Your doctor will likely 
+recommend an SLNB.
+[page 58] 56
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+6 Treatment for stages 0 to 2: Early stage  
+Before wide excision surgery, your provider 
+may discuss with you having an SLNB at the 
+same time as the surgery. They may consider 
+nodal basin ultrasound imaging before the 
+sentinel lymph node biopsy (SLNB), if results 
+of the physical exam were unclear. Even if the 
+nodal basin ultrasound doesn't show cancer 
+in the nodes, you may still need an SLNB. 
+Other imaging might also be ordered if signs or 
+symptoms of cancer.
+If your doctor doesn't think you need an 
+SLNB, then you’ll have standard wide excision 
+surgery to remove the tumor. After surgery, 
+you’ll be observed in follow-up care (see 
+"Follow-up for stage 2A").
+Similarly, if you have the SLNB and cancer is 
+not found in the sentinel nodes (negative for 
+cancer), you’ll be observed in follow-up care, 
+usually by your dermatologist. Generally, no 
+further treatment is needed.
+However, a positive SLNB result shows that 
+cancer is present in the sentinel lymph nodes 
+and that other lymph nodes may be affected.
+Cancer in SLNB
+If you have the SLNB and cancer is in sentinel 
+nodes (positive for cancer), the cancer stage 
+will be changed (upstaged) to stage 3. The 
+cancer will also be upstaged to stage 3 if 
+very tiny tumors called microscopic satellites 
+are found in the surgical margin. For more 
+information on stage 3 melanoma treatment, 
+see Chapter 7: Treatment for stage 3: Regional 
+spread.
+Follow-up for stage 2A
+Recommended steps after treatment for stage 
+2A melanoma include physical exams and 
+medical history, with a focus on the skin and 
+regional lymph nodes. These should be done 
+every 6 to 12 months for 5 years, and then 
+every year afterward as needed. Imaging tests 
+will be done only to evaluate specific signs and 
+symptoms to see if the cancer has recurred 
+(returned).
+Stage 2B or stage 2C
+Stage 2B melanoma is defined as a lesion 
+(tumor) thicker than 2 mm but not thicker than 
+4 mm with ulceration, or thicker than 4 mm 
+without ulceration.
+Stage 2C means the melanoma is thicker than 
+4 mm, and the outermost layer of skin covering 
+the tumor is ulcerated.
+Treatment for stage 2B or stage 2C
+Primary treatment for stage 2B or 2C is the 
+same and involves wide excision surgery 
+and possibly SLNB. Your doctor will discuss 
+SLNB with you and whether or not you need 
+one. Imaging with PET/CT or CT of the chest, 
+abdomen, and pelvis may be done beforehand 
+if it’s needed to plan surgery. You might also 
+need imaging if you have any unusual signs or 
+symptoms that need further workup. Imaging 
+can also help guide shared decision-making 
+between you and your medical oncologist 
+about adjuvant systemic therapy after surgery.
+An SLNB is typically recommended for 
+complete (pathological) staging. It’s also 
+recommended before systemic therapy is 
+started (pembrolizumab or nivolumab). This 
+is because SLNB helps get the most accurate 
+information on the melanoma to help guide 
+treatment.
+[page 59] 57
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+6 Treatment for stages 0 to 2: Early stage  
+If your doctor doesn't think you need an 
+SLNB, then you’ll have standard wide excision 
+surgery to remove the tumor with the option of 
+receiving adjuvant (after surgery) therapy (see 
+3 options below). Similarly, if you have surgery 
+with an SLNB and it shows no cancer in the 
+sentinel nodes, then you also have these 3 
+options after surgery:
+  Observation by your care team in follow-
+up care (see "Follow-up for stage 2B or 
+2C" for description)
+  Systemic therapy with pembrolizumab or 
+nivolumab
+  Radiation therapy at the tumor site (for 
+melanoma at high risk of recurrence)
+Systemic immunotherapies can help reduce 
+the chance of cancer returning. However, you 
+could have long-term immunotherapy-related 
+side effects.
+Your doctor should discuss the pros and 
+cons of pembrolizumab or nivolumab with 
+you. Factors to consider, in addition to the 
+cancer stage, include your age, how active 
+you are, your personal and family history of 
+autoimmune disease, and how toxic systemic 
+therapies might be for you.
+Cancer in SLNB
+If you have stage 2B or 2C melanoma and 
+cancer is found in the sentinel nodes (sentinel 
+node positive) during wide excision surgery 
+with SLNB, your melanoma will be upstaged 
+to stage 3. For more information on stage 3 
+treatment options, see Chapter 7: Treatment 
+for stage 3: Regional spread.
+Follow-up for stage 2B or 2C
+Recommended steps after treatment for stage 
+2B and 2C melanomas include a physical 
+exam and medical history, with a focus on the 
+skin and lymph nodes. Follow-up visits should 
+occur every 3 to 6 months for 2 years, then 
+every 3 to 12 months for 3 years, and then 
+yearly after that.
+Imaging tests are done to evaluate any 
+concerning signs and symptoms and usually 
+after receiving adjuvant treatment. Your doctor 
+may consider imaging tests every 3 to 12 
+months for 2 years, and then every 6 to 12 
+months for another 1 to 3 years to look for the 
+recurrence (return) or metastasis (spread) of 
+melanoma.
+Knowing there is treatment 
+available gave me hope at 
+diagnosis and for the future.”
+“
+[page 60] 58
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+6 Treatment for stages 0 to 2: Early stage  
+Key points
+  Stage 0 through stage 2A melanomas are 
+considered early-stage cancer. They are 
+highly treatable and curable.
+  The standard treatment for stage 0 in situ 
+and stage 1A melanoma is wide excision 
+surgery.
+  A sentinel lymph node biopsy (SLNB) 
+may be done in addition to wide excision 
+surgery for stage 1B and stage 2 
+melanoma.
+  If cancer is found in the SLNB, you’ll be 
+upstaged to stage 3.
+  Adjuvant therapy (after primary treatment) 
+may be used for stage 2B and stage 2C 
+melanoma. It can help reduce the chance 
+of cancer returning.
+  If you’re considered for adjuvant therapy, 
+pretreatment imaging will be needed to 
+help guide treatment.
+  Depending on your signs and symptoms 
+after treatment, you may undergo regular 
+monitoring of your skin and lymph nodes 
+for up to 3 years.
+Questions to ask
+  What are the chances of the melanoma 
+coming back after my treatment?
+  Will insurance cover my treatment?
+  Should I be using a patient portal to get 
+my test results or should I wait to hear 
+from you?
+  How long until I receive test results after 
+an SLNB?
+What’s next
+This chapter explained treatments 
+for early-stage melanoma. At these 
+stages, melanoma is often curable. After 
+successful treatment, regular follow-up 
+care is needed. Be sure to check out 
+Chapter 10 to learn more about follow-up 
+care. 
+Let us know what  
+you think!
+Please take a moment to 
+complete an online survey about 
+the NCCN Guidelines for Patients.
+NCCN.org/patients/response
+[page 61] 59
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+7
+Treatment for stage 3: 
+Regional spread
+60 Features of regional spread
+61 Staging subgroups
+62 Cancer in the sentinel nodes
+63 Cancer in the lymph nodes
+65 Microsatellites
+66 Satellite or in-transit tumors
+70 Follow-up for stage 3
+71 Key points
+71 Questions to ask
+Chapter 7
+[page 62] 60
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+7 Treatment for stage 3: Regional spread  
+Stage 3 melanoma is considered an 
+advanced form of cancer. In this stage, 
+the melanoma has spread to the nearby 
+lymph nodes, lymph vessels, or other 
+parts of the skin but has not spread 
+further than that. There are many 
+treatment options depending on the 
+features of the melanoma.
+Stage 3 melanoma means the cancer has 
+spread from the main skin tumor to nearby 
+areas. This is called regional melanoma 
+because the cancer has spread locally but not 
+to distant parts of the body.
+Features of regional spread
+Stage 3 melanoma has 1 or more of these 4 
+features:
+  Nearby lymph nodes with cancer 
+may be found. (When distant nodes have 
+cancer, the cancer is stage 4.)
+  Microscopic satellites 
+(microsatellites) are tiny skin tumors 
+that are next to or below the main skin 
+tumor and can be seen only with a 
+microscope.
+  Satellite tumors are deposits of 
+melanoma in the lymph vessels no more 
+than 2 cm from the main tumor. They are 
+large enough to be seen or felt during a 
+skin exam.
+  In-transit tumors are lymph vessel 
+deposits that are further than 2 cm from 
+the main tumor but haven’t reached the 
+lymph nodes.
+Satellite and in-transit tumors
+Melanoma cells can spread from the main tumor through the lymph system. This system 
+consists of small vessels and bean-shaped structures called lymph nodes (shown in 
+green). Melanoma may form one or more satellite tumors, which are close to the main 
+tumor. In-transit tumors are farther away but haven’t reached nearby lymph nodes.
+[page 63] 61
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+7 Treatment for stage 3: Regional spread  
+For more information on staging, see Chapter 
+4: Staging for melanoma.
+Staging subgroups
+Stage 3 cancer is further broken down into 
+4 subgroups: 3A, 3B, 3C, and 3D. Each 
+subgroup describes the extent of stage 
+3 melanoma. Stage 3A is less advanced 
+melanoma while stage 3D is more advanced.
+Treatment of stage 3 depends on its features, 
+which help determine the subgroup. This 
+chapter is organized based on the treatment 
+of the main features and then mentions the 
+subgroup within the features.
+Stage 3A
+Stage 3A melanoma includes tumors that may 
+be:
+  1 mm thick or less with or without 
+ulceration (broken skin)
+  2 mm thick or less without ulceration
+This stage also means that between 1 
+to 3 lymph nodes have cancer detected 
+microscopically after a sentinel lymph node 
+biopsy (SLNB).
+Stage 3B
+Stage 3B indicates tumors that have:
+  Thickness less than 1 mm or up to 4 mm 
+with or without ulceration
+  1 to 3 lymph nodes found to have cancer 
+by physical exam or imaging tests
+  Microsatellite, satellite, or in-transit tumors 
+on or under the skin
+Stage 3C
+A stage 3C tumor is identified as:
+  Less than 2 mm thick to no more than 4 
+mm thick, with or without ulceration
+  Involving anywhere from 1 to 4 lymph 
+nodes found by physical exam or imaging 
+tests, and/or any number of lymph nodes 
+clumped (matted) together
+  Having microsatellite, satellite, or in-
+transit tumors on or under the skin
+Stage 3D
+Stage 3D means the tumor is:
+  More than 4 mm thick with ulceration
+  Found with cancer in 4 or more lymph 
+nodes or any number of lymph nodes 
+clumped (matted) together
+  Associated with 2 or more lymph nodes 
+and/or any number of lymph nodes 
+clumped together. There are also 
+microsatellite, satellite, and/or in-transit 
+tumors on or under the skin
+Ask your care team to explain why the 
+melanoma is stage 3. You may also be able to 
+find this information in pathology (lab) reports.
+All follow-up care is the same for stage 3 and 
+mentioned at the end of this chapter.
+[page 64] 62
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+7 Treatment for stage 3: Regional spread  
+Cancer in nearby lymph nodes is a common 
+feature of stage 3 melanoma. Cancer is found 
+in the lymph nodes in 2 ways:
+  The pathologist confirms cancer in 
+abnormal nodes that were first detected 
+by a doctor’s physical exam, or through 
+imaging and a biopsybefore treatment.
+  The pathologist finds cancer in the SLNB.
+Cancer in the sentinel nodes
+A sentinel lymph node is the first lymph node 
+where cancer cells are most likely to spread 
+from a primary tumor. When cancer is found in 
+sentinel lymph nodes, it’s called sentinel node 
+positive. Testing and treatment depend on the 
+number of nodes with cancer.
+Tests
+For stage 3A melanoma, your care team 
+may consider imaging to help with staging. 
+For stages 3B, 3C, or 3D that have cancer 
+in sentinel nodes, imaging for staging is 
+recommended. If melanoma involves the 
+lymph nodes or other parts of the body, BRAF 
+V600 mutation testing is considered to figure 
+out whether targeted therapy is a possibility.
+When cancer is found in sentinel lymph 
+nodes, other nearby nodes may have cancer, 
+too. Cancer care options include a series of 
+imaging tests to check nearby lymph nodes 
+called the nodal basin.
+Treatment
+Active nodal basin ultrasound or other types of 
+imaging (CT, PET/CT, or MRI) without further 
+lymph node removal (called complete lymph 
+node dissection, or CLND) are considered 
+the preferred next step. Active nodal basin 
+ultrasound is the usual imaging to monitor 
+the lymph node location with cancer in the 
+sentinel node, but is done more frequently. 
+See Guide 7.
+CLND should only be used for certain people 
+and circumstances because of its risk of 
+severe side effects like lymphedema (swelling 
+due to buildup of lymph fluid in the fatty tissue 
+just under your skin near the surgery site). 
+CLND also involves extensive surgery, longer 
+recovery time, and hospitalization. If signs of 
+cancer appear, you can have adjuvant (after 
+surgery) treatment at that time.
+For most stage 3A tumors, no further treatment 
+is needed. Instead, observation is preferred. 
+Observation means periodic doctor visits or 
+follow-up care that includes skin and lymph 
+node exams; attention to any concerning signs 
+and symptoms; and/or imaging scans, when 
+needed (see "Follow-up for stage 3").
+But the next step for cancer in the sentinel 
+nodes, especially for stage 3B, 3C, or 3D, 
+could be adjuvant (after surgery) treatment 
+that's either systemic therapy or observation 
+Guide 7 
+Possible treatments for cancer in 
+sentinel lymph nodes
+Active nodal basin ultrasound without CLND
+CLND (for certain people)
+Systemic therapy
+Observation
+[page 65] 63
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+7 Treatment for stage 3: Regional spread  
+in follow-up care. But before choosing one of 
+the systemic therapies, your care team should 
+consider both your risk of cancer recurrence 
+(returning) and how toxic systemic therapies 
+might be for you.
+For example, if the cancer is considered low 
+risk, the toxicity of adjuvant therapy may 
+outweigh any potential benefit. Because 
+of that, adjuvant therapy may not be 
+recommended.
+But if your doctor recommends adjuvant 
+therapy, the preferred options are:
+  Nivolumab
+  Pembrolizumab
+  Dabrafenib/trametinib for people with 
+BRAF V600 mutation
+As mentioned previously, another possibility is 
+undergoing observation in follow-up care.
+After all treatment, you’ll move to follow-up 
+care (see "Follow-up for stage 3").
+Cancer in the lymph nodes
+Your care team may have detected abnormal 
+(enlarged or hard) lymph nodes before 
+you started treatment, possibly during your 
+physical exam or through imaging. Then a 
+biopsy, either core (a thicker needle, which is 
+preferred) or fine-needle aspiration, confirmed 
+cancer in these nodes, which are referred to as 
+clinically positive lymph nodes. Melanoma at 
+this stage could be 3B, 3C, or 3D.
+Tests
+Further recommended tests to guide treatment 
+are:
+  Imaging for staging and to assess signs 
+or symptoms of cancer
+  BRAF V600 mutation testing
+Your care team will discuss and decide if 
+surgery can remove all of the melanoma 
+(meaning it’s resectable). See Guide 8 
+for treatment options.
+Treatment
+Before surgery, you may receive drug 
+treatment (called neoadjuvant systemic 
+therapy), which could help shrink the tumor 
+as well as make drug treatment after surgery 
+more effective. Neoadjuvant therapy may 
+consist of immunotherapy, targeted therapy, 
+or both. This is typically done before a wide 
+excision surgery with therapeutic lymph 
+node dissection (TLND). This surgery 
+consists of wide excision of the tumor while 
+removing nearby lymph nodes. The number 
+of lymph nodes removed depends on the 
+involved lymph node basin (area). TLND is 
+recommended if you had neoadjuvant therapy 
+first, or it can be done without neoadjuvant 
+therapy if neoadjuvant therapy isn't an option 
+for you.
+Important to know: Sometimes other targeted 
+therapy combinations may be considered if the 
+side effects are too much for you (known as 
+toxicity).
+Another option is to have surgery without 
+neoadjuvant therapy first. This would consist of  
+wide excision surgery of the tumor and TLND.
+[page 66] 64
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+7 Treatment for stage 3: Regional spread  
+After surgery, your care team will decide if 
+more treatment may help stop the cancer from 
+returning. Treatment after surgery is called 
+adjuvant therapy.
+If the cancer is likely to return, the preferred 
+adjuvant systemic therapy options include:
+  Nivolumab
+  Pembrolizumab
+  Dabrafenib/trametinib (for people with 
+BRAF V600 mutation)
+You may also receive adjuvant radiation 
+therapy, although its use has mostly been 
+replaced by the cancer drugs listed above. 
+Adjuvant radiation therapy is not usually 
+recommended since it only treats the region 
+where the lymph nodes were removed and not 
+other areas. But it’s sometimes used locally at 
+the skin or lymph node sites for melanoma at 
+high risk of recurrence.
+One other option is observation. The 
+decision to use observation is based on 
+your care team’s assessment of the risk of 
+the melanoma’s recurrence and the risk of 
+treatment side effects (toxicity). Observation 
+in follow-up care involves periodic doctor 
+visits that include skin and lymph node 
+exams; attention to any concerning signs 
+and symptoms; and/or imaging scans, when 
+needed.
+Guide 8 
+Treatment of melanoma with clinically positive nodes
+If cancer can be 
+treated with surgery 
+(resectable)
+Treatment may have 3 phases:
+• Neoadjuvant therapy with immunotherapy, targeted therapy, or both
+• Wide excision surgery and (TLND)
+• Adjuvant therapy with systemic drugs, radiation therapy, or 
+observation
+If cancer can’t be 
+treated with surgery 
+(unresectable)
+• Systemic therapy is the preferred option
+• Radiation therapy (palliative) for symptom relief
+• T-VEC skin injection
+• Best supportive care
+[page 67] 65
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+7 Treatment for stage 3: Regional spread  
+Unresectable melanoma
+If surgery is not an option for you or the tumor 
+is considered unresectable (not removable 
+with surgery), the preferred treatment is 
+systemic therapy mentioned on page 64.
+In addition, you may get relief from one or 
+more of these treatments:
+  Palliative radiation therapy
+  Talimogene laherparepvec (T-VEC), virus 
+is injected into the skin tumor and triggers 
+your body to find and attack nearby 
+cancer cells
+  Best supportive care, also known as 
+palliative care
+For more information about palliative care, see 
+NCCN Guidelines for Patients: Palliative Care, 
+available at NCCN.org/patientguidelines and 
+on the NCCN Patient Guides for Cancer app.
+Microsatellites
+Stage 3 melanoma may involve microscopic 
+satellites (microsatellites), so named because 
+these tiny tumors can only be seen with 
+a microscope. Stage 3A does not involve 
+microsatellites. But if microsatellites are found 
+in the biopsy of a clinical stage 3A melanoma, 
+it can be upstaged to pathological stage 3B 
+melanoma. For all stages, microsatellites are 
+found in either:
+  A skin biopsy sample removed before 
+treatment
+  The tissue removed during surgery
+Possible treatments for microsatellites are 
+listed in Guide 9.
+Tests
+The tests for melanoma with microscopic 
+satellites include:
+  Imaging tests for staging
+  Imaging tests to assess signs or 
+symptoms of cancer
+Adjuvant therapy is sometimes 
+used in addition to primary 
+treatments to boost their 
+effectiveness.
+Guide 9 
+Possible treatments for cancer with 
+microsatellites
+Wide excision surgery
+Wide excision surgery with SLNB
+Observation
+Systemic therapy
+
+[page 68] 66
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+7 Treatment for stage 3: Regional spread  
+  BRAF mutation testing if you might have 
+adjuvant therapy (described on page 66) 
+or if you might enroll in a clinical trial
+Once tests have been completed, your doctor 
+may discuss having a sentinel lymph node 
+biopsy (SLNB) to see if the cancer has spread 
+to the lymph nodes. An SLNB will remove the 
+tissue from the first lymph nodes where fluid 
+from the tumor drains.
+Treatment
+Primary treatment will be wide excision surgery 
+and possibly an SLNB. If you had a wide 
+excision before, your care team may think it’s 
+best to not have an SLNB, which is ideally 
+done at the same time as the wide excision.
+After surgery, you may have more treatment 
+called adjuvant therapy. Adjuvant therapy 
+treats any cancer cells that may have been left 
+behind. If you didn’t have an SLNB or you had 
+one and no cancer was found in lymph nodes, 
+treatment options include participation in a 
+clinical trial or systemic therapy with:
+  Nivolumab
+  Pembrolizumab
+  Dabrafenib and trametinib (for people with 
+BRAF V600 mutation)
+Observation in follow-up care is also a 
+possibility. Observation involves having regular 
+doctor visits that include skin and lymph node 
+exams; attention to any concerning signs 
+and symptoms; and/or imaging scans, when 
+needed (see "Follow-up for stage 3").
+Cancer in SLNB
+If you had wide excision surgery with an SLNB 
+and the SLNB was positive for cancer, you’ll 
+receive the following tests:
+  Imaging for staging
+  Imaging for signs and symptoms of cancer
+  BRAF mutation testing
+For the treatment of SLNB-positive microsatellite 
+melanoma, read the treatment section in 
+"Cancer in the sentinel nodes"  because it’s 
+the same treatment as microsatellites.
+Satellite or in-transit tumors
+Melanoma may spread and form nearby skin 
+tumors called satellite or in-transit tumors. 
+These tumors are seen or felt during the skin 
+exam and then confirmed by biopsy to be 
+cancer. Treatments are listed in Guide 10.
+Guide 10 
+Possible treatments for cancer with 
+satellite or in-transit tumors
+Neoadjuvant systemic therapy
+Surgery (complete excision) to clear margins
+T-VEC/intralesional therapy
+Systemic therapy
+Radiation therapy
+Observation
+[page 69] 67
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+7 Treatment for stage 3: Regional spread  
+Tests
+Other recommended tests to determine if 
+surgery is necessary include:
+  Imaging for staging and to assess signs 
+or symptoms of cancer
+  BRAF mutation testing if not already done
+When the cancer can be removed with surgery, 
+it’s called resectable. Cancer that cannot be 
+treated with surgery is called unresectable. 
+Sometimes satellite or in-transit tumors can be 
+considered either resectable or unresectable/
+borderline resectable. Unresectable/borderline 
+resectable means the tumor is on the border 
+(outside limit) of what surgery might be able 
+to accomplish. Resectable means the tumor 
+could be surgically removed if treatment 
+shrinks the tumor first.
+Treatment: Resectable cancer
+There are 4 options for initial treatment of 
+resectable cancer:
+  Neoadjuvant (before surgery) systemic 
+therapy (see Guide 11)
+  Surgery (complete excision) to clear 
+margins
+  T-VEC injectable intralesional therapy
+  Systemic therapy as the initial treatment 
+(see Guide 16, Chapter 9, for first-line 
+options)
+Guide 11
+Neoadjuvant (before surgery) systemic therapy options
+Preferred options • Pembrolizumab • Nivolumab/ipilimumab* 
+Other 
+recommended 
+options
+• Nivolumab
+• Nivolumab and relatlimab
+Used in some 
+cases • Dabrafenib/trametinib if BRAF V600 mutation positive
+*Only IV nivolumab can be used with ipilimumab, not the injectable form.
+[page 70] 68
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+7 Treatment for stage 3: Regional spread  
+Surgery with neoadjuvant therapy
+If you received neoadjuvant (before surgery) 
+systemic therapy to shrink the tumor and/or 
+to help drug therapy after surgery to be more 
+effective, the next step is surgery. The cancer 
+will be removed with complete excision to 
+clear margins. Clear margins mean there is no 
+evidence (signs) of disease (cancer) on the 
+edges of the surgical excision or elsewhere.
+Following surgery, the preferred options for 
+adjuvant systemic therapy include nivolumab; 
+pembrolizumab; or dabrafenib and trametinib, 
+if you have BRAF V600 mutation.
+One other possibility is observation. This 
+involves regular clinical exams and imaging 
+scans for any new cancer signs or symptoms 
+(see "Follow-up for stage 3").
+Surgery without neoadjuvant therapy
+If you received a complete excision to 
+clear margins as initial treatment without 
+neoadjuvant systemic therapy and there are 
+no signs of remaining cancer cells, you might 
+receive the adjuvant (after surgery) systemic 
+treatment options or observation.
+If cancer cells remain after complete excision, 
+read the "Treatment: Unresectable/borderline 
+resectable cancer" section ahead for treatment 
+options.
+Systemic therapy and T-VEC
+If you had systemic therapy or T-VEC/
+intralesional therapy as your initial treatment, 
+you may receive any combination of clinical 
+exams (skin exam or physical exam), a lab test 
+(like another biopsy), or imaging to determine 
+the cancer’s response to the treatment.
+If cancer that is considered unresectable is 
+still present and has progressed after those 
+therapies, then you’ll be treated following 
+the "Treatment: Unresectable/borderline 
+resectable cancer" discussed below.
+But if the remaining cancer is resectable, you’ll 
+likely have the same treatment (1 of the 4 
+options) for resectable cancer, noted above, or 
+possibly another treatment, like radiation.
+No evidence of cancer after T-VEC
+If there is no evidence of cancer after T-VEC/
+intralesional therapy and further exams, then 
+your provider will likely consider one of these 
+adjuvant therapy options:
+  Nivolumab
+  Pembrolizumab
+  Dabrafenib/trametinib if you have 
+BRAF V600 mutation
+  Observation in follow-up care
+If there’s no evidence of cancer after you’ve 
+had systemic therapy as an initial treatment 
+and further exams, you’ll move to observation 
+as part of follow-up care.
+Treatment: Unresectable/borderline 
+resectable cancer
+Instead of up-front surgery because it’s 
+considered unresectable/borderline resectable, 
+initial treatment options include systemic 
+therapy, which is preferred (see Guide 16, 
+Chapter 9, for first-line therapy options).
+[page 71] 69
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+7 Treatment for stage 3: Regional spread  
+Or you could have the following local therapy 
+options.
+  Intralesional injection options:
+• T-VEC, which is preferred
+• Interleukin-2 (IL-2), which is a type of 
+injectable immunotherapy and only 
+helpful in some cases
+  Radiation therapy might be considered
+  Palliative (limited) surgery or local 
+ablation (minimally invasive) therapy
+Regional chemotherapy is another option for 
+local satellite/in-transit melanoma confined 
+to an arm or a leg. The treatment is called 
+isolated limb infusion/isolated limb perfusion 
+(ILI/ILP) with melphalan and treats just the 
+limb that has the melanoma. This procedure 
+should only be done at centers experienced in 
+providing ILI/ILP.
+After treatment, your doctor may perform 
+another skin exam or biopsy, and you may 
+undergo imaging. The next treatment is based 
+on those test results.
+  If some cancer remains and appears 
+to be unresectable, you may have the 
+same treatment as in the intial treatment 
+section.
+  If there is some resectable melanoma 
+remaining, you’ll have the same treatment 
+as resectable cancer.
+  If there are no signs of cancer after 
+local or regional therapy, you may start 
+adjuvant systemic therapy (nivolumab; 
+pembrolizumab; or dabrafenib/trametinib, 
+if you have BRAF V600 mutation) or start 
+observation as part of follow-up care.
+  If no cancer remains after systemic 
+therapy, you’ll move to observation as 
+part of follow-up care.
+If you need support while 
+dealing with a melanoma 
+diagnosis, find a nearby 
+in-person or online cancer 
+support group.
+[page 72] 70
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+7 Treatment for stage 3: Regional spread  
+Follow-up for stage 3
+For all stage 3 melanomas, follow-up care 
+involves ongoing testing for new signs 
+and symptoms of cancer, also known as 
+observation. It’s further described in Chapter 
+10: Follow-up care. Follow-up starts when 
+there are no signs of cancer after treatment.
+Recommended follow-up tests for stage 3 
+melanoma include:
+  Physical exam and medical history, with a 
+focus on the skin and lymph nodes, every 
+3 to 6 months for 2 years, then every 3 
+to 12 months for 3 years, and then every 
+year as needed.
+  Imaging tests as needed based on cancer 
+signs and symptoms. Imaging might be 
+done every 3 to 12 months for 2 years, 
+then every 6 to 12 months for another 3 
+years.
+  After 3 to 5 years, routine imaging is not 
+recommended.
+Supportive Care
+Supportive care is an important part 
+of cancer care. The goal is to improve 
+your quality of life during and after 
+cancer treatment. Supportive care is for 
+everyone with cancer and their families, 
+not just for those at the end of life. It’s 
+also known as palliative care.
+Supportive care includes a wide range 
+of services. Supportive care prevents or 
+manages the symptoms of cancer and 
+the side effects of cancer treatment, 
+like pain and cancer-related fatigue. 
+It also addresses the mental, social, 
+emotional, and spiritual concerns faced 
+by people with cancer.
+Supportive care provides help with 
+additional needs, such as:
+• Making treatment decisions
+• Coordinating your care
+• Paying for care
+• Planning for advance care and 
+end of life
+[page 73] 71
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+7 Treatment for stage 3: Regional spread  
+Key points
+  Stage 3 melanoma has spread to nearby 
+lymph nodes, lymph vessels, or other 
+areas of the skin.
+  Tests for stage 3 melanoma include 
+imaging and often BRAF mutation testing.
+  Microscopic satellites are tiny tumors that 
+can only be seen with a microscope.
+  When cancer is found in sentinel lymph 
+nodes, signs of cancer in other nodes 
+may be assessed with ultrasound or other 
+imaging, or more nodes may be removed.
+  Melanoma found in enlarged lymph nodes 
+can often be treated with surgery.
+  Neoadjuvant therapy is often 
+recommended to shrink a tumor prior 
+to surgery and then can be followed by 
+adjuvant therapy.
+  Melanoma may spread and form more 
+skin tumors, called satellite or in-transit 
+tumors.
+Questions to ask
+  How far has the cancer spread?
+  Will I need BRAF mutation testing?
+  What are the side effects from systemic 
+therapies?
+  How can you tell that melanoma could be 
+in my lymph nodes?
+  Will I need imaging tests?
+What’s next
+In this chapter, you learned about 
+stage 3 melanoma, which is considered 
+regional—it has spread locally and not 
+far in the body. The next step is regular 
+follow-up care to prevent and find another 
+skin cancer. Read Chapter 2 to learn 
+how you can spot and prevent skin 
+cancers, as well as information about 
+genetic risks. If the melanoma returns, it’s 
+called recurrence. For more information 
+on recurrence, read the next chapter 
+(Chapter 8: Treatment for recurrence).
+[page 74] 72
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+8
+Treatment for recurrence
+73 True scar recurrence
+74 Local satellite and in-transit recurrence
+76 Nodal recurrence
+78 Key points
+79 Questions to ask
+Chapter 8
+[page 75] 73
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+8 Treatment for recurrence  
+When cancer comes back after treatment, 
+it's called recurrent cancer. This chapter 
+reviews the different types of melanoma 
+recurrence as well as testing and 
+treatment options.
+When melanoma recurs, it often doesn't look 
+like the original melanoma. Many times, the 
+melanoma appears as lumps under the skin or 
+in the lymph nodes. Early-stage melanoma is 
+less likely to recur than advanced melanoma. 
+Most recurrences happen within 3 years 
+after treatment. If the recurrence is a distant 
+metastasis, read Chapter 9: Treatment for 
+stage 4: Metastatic melanoma for options.
+True scar recurrence
+True scar recurrence, also known as persistent 
+cancer, is a tumor next to the scar tissue from 
+the melanoma surgery. It occurs because 
+not all of the melanoma was removed during 
+surgery despite best efforts.
+This tumor looks like the original melanoma. 
+It’s often found in the top layers of the skin 
+(epidermis or superficial dermis).
+Tests
+Testing for true scar recurrence includes a 
+skin biopsy to confirm it’s cancer. The next 
+tests you’ll receive are based on the stage 
+and features of the recurrent melanoma. Tests 
+could include lymphatic mapping (the use of 
+dyes and radioactive substances to find cancer 
+in lymph nodes) or sentinel lymph node biopsy 
+(SLNB). Ask your care team about any other 
+testing you may have.
+Treatment
+Treatment options for true scar recurrence are 
+listed in Guide 12. They include:
+  Surgery to remove the tumor, with 
+surgical margins based on the tumor 
+depth (Breslow thickness)
+  SLNB based on lymphatic mapping if the 
+tumor grew near lymph vessels
+Depending on how advanced the recurrence 
+is, your care team might also recommend:
+  Observation with or without surveillance 
+imaging
+  Pembrolizumab or nivolumab for 
+pathologically staged 2B or 2C
+  Primary tumor site radiation therapy
+Guide 12 
+Possible treatments for true scar 
+recurrence
+Re-excision of tumor site
+Lymphatic mapping or SLNB
+Radiation therapy
+Immunotherapy
+Observation
+[page 76] 74
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+8 Treatment for recurrence  
+Local satellite and in-transit 
+recurrence
+Local satellite recurrence and in-transit 
+recurrence both mean the cancer has returned 
+in the lymph vessels. It’s usually found either 
+within or surrounding the primary melanoma 
+scar. Local satellite recurrence can feel like a 
+firm bump in or around that area.
+In-transit recurrence is usually found between 
+the primary site and regional lymph nodes. It 
+means the cancer has returned and formed 
+tumors in the lymph vessels between the 
+melanoma scar site and the regional lymph 
+nodes, but not in the lymph nodes themselves.
+These 2 types of recurrence are tested and 
+treated the same way.
+Tests
+Testing for local satellite or in-transit 
+recurrence includes these options:
+  Core biopsy (the preferred option) or 
+fine-needle aspiration, incisional (partial) 
+biopsy, or excisional (complete) biopsy
+  Imaging to assess cancer signs or 
+symptoms
+  BRAF mutation testing, if not already 
+done
+Treatment
+Treatment of recurrent satellite or in-transit 
+tumors (Guide 13) is almost the same as the 
+treatment for these tumors when they’re found 
+at diagnosis. (For treatment at diagnosis, see 
+Chapter 7: Treatment for stage 3: Regional 
+spread.) Treatment of recurrence depends 
+on if the cancer can be removed with surgery 
+(resectable cancer) or not (unresectable/
+borderline resectable).
+Resectable 
+When the recurrent cancer is classified as 
+resectable, your first treatment options may be:
+  Neoadjuvant systemic therapy (see 
+Guide 11, Chapter 7)
+  Surgery with complete excision to clear 
+margins and removal of all cancer
+  Talimogene laherparepvec (T-VEC)/
+intralesional therapy
+  Systemic therapy (see Guide 16, 
+Chapter 9)
+Guide 13 
+Possible treatments for local satellite 
+and in-transit recurrence
+Neoadjuvant systemic therapy
+Surgery (complete excision) to clear margins
+T-VEC/intralesional therapy
+Systemic therapy
+Adjuvant systemic therapy
+Regional therapy
+Palliation (limited excision or local ablation)
+Observation
+[page 77] 75
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+8 Treatment for recurrence  
+After you’ve had either neoadjuvant systemic 
+therapy before surgery or surgery alone to 
+clear margins and there is no evidence of 
+cancer, you could undergo observation in 
+follow up care (see Chapter 10: Follow-up 
+care) or have one of the preferred systemic 
+therapy options:
+  Nivolumab
+  Pembrolizumab
+  Dabrafenib/trametinib if you have BRAF 
+V600 mutation
+  If you had anti-PD-1 therapy, you might 
+have ipilimumab
+If the surgery cannot completely remove 
+the cancer, you’ll follow the treatment in the 
+"Unresectable/borderline resectable" section.
+But if you received T-VEC or systemic 
+therapy (known as local or regional therapy) 
+as the initial treatment, your provider may 
+recommend another biopsy and more imaging 
+to see if the cancer is responding to treatment.
+At that point, if there is residual/progressive 
+unresectable cancer, you’ll receive the same 
+treatment as discussed in the "Unresectable/
+borderline resectable" section.
+But if there is residual cancer that is 
+resectable, then you might receive 1 of the 
+following 4 treatment options:
+  Neoadjuvant systemic therapy (see 
+Guide 11, Chapter 7)
+  Surgery with complete excision to clear 
+margins and removal of all cancer
+  T-VEC/intralesional therapy
+  Systemic therapy (see Guide 16, 
+Chapter 9)
+Still, if you’ve had T-VEC/intralesional therapy 
+and the testing afterward shows no evidence 
+of cancer, then you could undergo observation 
+(see Chapter 10: Follow-up care) or have one 
+of the preferred adjuvant systemic therapy 
+options:
+  Nivolumab
+  Pembrolizumab
+  Dabrafenib/trametinib if you have 
+BRAF V600 mutation
+  Ipilimumab (if you had anti-PD-1 therapy)
+If no cancer remains after systemic therapy, 
+you can begin observation in follow-up care.
+Unresectable/bordeline resectable 
+When the melanoma can’t be treated with 
+surgery, it’s unresectable/borderline resectable 
+cancer, and there are many other options.
+The preferred initial treatment is systemic 
+therapy, as described in Chapter 9, which 
+discusses metastatic cancer (see Guide 16).
+Neoadjuvant therapy is used to 
+reduce cancer before the main 
+treatment.
+[page 78] 76
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+8 Treatment for recurrence  
+Other treatment includes local therapy options, 
+such as:
+  Intralesional injection options (T-VEC, 
+preferred)
+  IL-2, used in some cases
+  Radiation therapy
+  Symptom relief (palliation), which can 
+include limited excision surgery or local 
+ablation therapy
+Regional therapy, such as isolated limb 
+infusion/perfusion (ILI/ILP) with melphalan-
+based regimens, is another possibility for 
+unresectable/borderline resectable recurrent 
+melanoma. This is a procedure where a high 
+dose of drugs is injected directly into a tumor 
+in an arm or a leg, and the cancer is only in 
+that limb. This therapy should only be done in 
+centers with experience in ILI/ILP.
+After initial treatment, your provider will 
+examine you and may need more information 
+in the form of another biopsy and more 
+imaging to see if your cancer is responding 
+to treatment.
+The next treatment is based on those results.
+  If some cancer remains and appears 
+to be unresectable, you may have the 
+same treatment as mentioned in the initial 
+treatment section (systemic therapy, local 
+therapy, or regional therapy).
+  If there is some resectable melanoma 
+remaining, you’ll have the same treatment 
+options as the resectable cancer 
+mentioned previously.
+  If there are no signs of cancer after local 
+or regional therapy, you may move to 
+observation in follow-up care or start 
+adjuvant systemic therapy that could 
+include:
+• Nivolumab
+• Pembrolizumab
+• Dabrafenib/trametinib if BRAF V600 
+mutation positive
+• Ipilimumab (if you had anti-PD-1 
+therapy)
+If no cancer remains after systemic therapy, 
+you will move to observation in follow-up care. 
+See Chapter 10: Follow-up care.
+Nodal recurrence
+Nodal recurrence means the cancer has 
+returned and is found in your lymph nodes. 
+It often appears as enlarged lymph nodes 
+in the lymph node basin close to where the 
+melanoma was first located.
+Guide 14 
+Possible treatments for nodal 
+recurrence
+Neoadjuvant systemic therapy
+Surgery (excision of recurrence) with TLND
+Surgery (excision recurrence) without TLND
+Adjuvant systemic therapy
+Locoregional therapy
+Observation
+[page 79] 77
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+8 Treatment for recurrence  
+Tests
+Testing for nodal recurrence can include:
+  Core biopsy or fine-needle aspiration are 
+preferred to confirm the diagnosis
+  Imaging to see how much the cancer 
+has spread and to check cancer signs 
+or symptoms
+  BRAF mutation testing (if not already 
+done)
+Results from these tests will show if the cancer 
+is limited to the lymph nodes or if it has spread 
+further, known as metastatic cancer.
+If tests find the melanoma has spread further 
+than nearby lymph nodes, see Chapter 9: 
+Treatment for stage 4: Metastatic melanoma to 
+learn what treatment options are available.
+If you have recurrent melanoma limited to the 
+lymph nodes, treatment depends on whether 
+it’s resectable or unresectable.
+Resectable cancer
+If the cancer is considered resectable, you 
+might first have neoadjuvant systemic therapy, 
+which is preferred (see Guide 11, Chapter 
+6), before surgery to help shrink the tumor and 
+to reduce the risk of recurrence.
+After neoadjuvant therapy, you'll have surgery 
+to remove the enlarged lymph nodes. Other 
+lymph nodes that may have cancer might 
+be removed, too. This is called a therapeutic 
+lymph node dissection (TLND).
+Or you might not have neoadjuvant therapy 
+and instead just have surgery and TLND to 
+remove the cancer recurrence in the lymph 
+nodes if you didn’t have a lymph node removal 
+before.
+After the surgery, you may receive adjuvant 
+systemic therapy, such as:
+  One of the following preferred treatments: 
+Nivolumab; pembrolizumab; dabrafenib/
+trametinib or other BRAF or MEK 
+inhibitors if you have BRAF V600 
+mutation
+  Ipilimumab if you already had anti-PD-1 
+therapy, used in some cases
+You might also have one or both of the 
+following:
+  Regional radiation therapy to nodal 
+basin if you have a higher risk of another 
+recurrence
+  Observation as part of follow-up care
+For more information on follow-up care, see 
+Chapter 10: Follow-up care.
+Palliative options mean they 
+aim to ease the suffering from 
+cancer symptoms.
+[page 80] 78
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+8 Treatment for recurrence  
+Unresectable cancer
+Whether or not you had a lymph node removal 
+before, if the cancer is unresectable then the 
+preferred treatment is the same: systemic 
+therapy (see Guide 16, Chapter 9). Other 
+options include palliative radiation therapy, 
+intralesional T-VEC, and/or best supportive 
+care.
+For more information about palliative care, see 
+NCCN Guidelines for Patients: Palliative Care, 
+available at NCCN.org/patientguidelines and 
+on the NCCN Patient Guides for Cancer app.
+There are also many clinical trials available for 
+unresectable stage 3 and 4 melanoma. Ask 
+your provider about available clinical trials for 
+your stage of cancer.
+Key points
+  When melanoma recurs, it often appears 
+as lumps under the skin or in the lymph 
+nodes.
+  True scar recurrence refers to skin 
+tumors that formed from cancer cells that 
+remained near the surgery scar.
+  Treatment for true scar recurrence 
+consists of surgery to remove the tumor 
+and possibly lymph nodes. After surgery, 
+you may have adjuvant therapy.
+  Local satellite recurrence and in-transit 
+recurrence both mean the cancer has 
+returned in the lymph vessels.
+  Treatment options for local satellite 
+recurrence are based on whether surgery 
+is a possibility. If there are no signs of 
+cancer after treatment, you may receive 
+more treatment to improve outcomes or 
+start observation.
+  Nodal recurrence means melanoma was 
+found in your lymph nodes.
+  Treatment for nodal recurrence depends 
+on whether or not the cancer is removable 
+by surgery. If surgery is not an option, the 
+preferred treatment is systemic therapy.
+  If the recurrent melanoma is considered 
+resectable, you might first have 
+neoadjuvant systemic therapy before the 
+surgery to help shrink the tumor and to 
+reduce risk of recurrence.
+Any time is the right time to bring 
+up clinical trials.”“
+
+[page 81] 79
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+8 Treatment for recurrence  
+Questions to ask
+  Is the cancer considered metastatic?
+  Do my lymph nodes need to be removed?
+  Am I eligible for a clinical trial?
+  What is my risk of another recurrence?
+  Am I a candidate for neoadjuvant 
+systemic therapy?
+What’s next
+In this chapter, you learned about the 
+different types of recurrence, which is 
+when melanoma returns. If the recurrent 
+melanoma is considered metastatic (has 
+spread to distant areas), read the next 
+chapter, Treatment for stage 4: Metastatic 
+melanoma. If it’s not metastatic, then 
+you’ll receive follow-up care. Read 
+Chapter 10: Follow-up care for more 
+information on regular doctor visits and 
+imaging.
+[page 82] 80
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+9
+Treatment for stage 4: 
+Metastatic melanoma
+81 Tests for metastatic melanoma
+82 Limited spread
+84 Widely spread and/or brain metastases
+85 Ask for help
+86 Key points
+86 Questions to ask
+Chapter 9
+[page 83] 81
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+9 Treatment for stage 4: Metastatic melanoma  
+Stage 4 cancer, also called metastatic 
+cancer, is melanoma that has spread 
+far from where it started. Metastatic 
+melanoma most often spreads to distant 
+lymph nodes, the brain, bones, liver, 
+lungs, or gastrointestinal (GI) tract.
+It’s important to know that stage 4 melanoma is 
+treatable (Guide 15). Find a care team that's 
+experienced in treating the type and stage of 
+cancer and explore clinical trial options. Always 
+ask questions. This increases your chances of 
+getting the best possible outcome.
+Metastatic melanoma may be treated with 
+multiple lines of systemic therapy. The first 
+treatment given is referred to as first-line 
+therapy. Second-line therapy is the second 
+treatment used. If more lines of therapy are 
+needed, other second-line options may be 
+tried. See Guide 16 for systemic therapy 
+options for metastatic melanoma.
+Preferred regimens work better, are safer, or 
+cost less than other options. Your medical 
+oncologist may not prescribe a preferred 
+regimen. Ask why because there are different 
+reasons for this decision.
+Non-preferred regimens also have benefits for 
+people with melanoma. They may extend life, 
+delay cancer growth, or reduce symptoms.
+Be sure to ask your care team if you have 
+questions about any of your options.
+Tests for metastatic melanoma
+Tests to evaluate the extent of stage 4 
+melanoma may involve one or more of the 
+following:
+  Core biopsy (preferred) or fine-needle 
+aspiration, incisional (partial) biopsy, or 
+excisional (complete) biopsy
+  Lactate dehydrogenase (LDH) testing
+  Imaging to see how much the cancer 
+has spread and to check cancer signs or 
+symptoms
+  BRAF mutation testing, if not already 
+done
+After you get the test results, your care 
+team will meet to discuss options with you. 
+Melanoma experts recommend that the 
+team include a surgical oncologist, radiation 
+Guide 15 
+Possible treatments for metastatic 
+melanoma
+Surgery (resection)
+Stereotactic ablative radiation therapy
+T-VEC injection therapy
+Systemic therapy
+Palliative resection
+Radiation therapy
+Supportive care
+Observation
+[page 84] 82
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+9 Treatment for stage 4: Metastatic melanoma  
+oncologist, and medical oncologist. A 
+neurosurgeon should also be included if the 
+melanoma has spread to your brain. There 
+are 2 types of metastatic melanoma: limited 
+spread and widely spread (which may include 
+brain metastases).
+Limited spread
+When cancer has spread to only a few distant 
+sites, it’s called limited spread or limited 
+metastatic cancer. It’s also referred to as 
+oligometastatic cancer. Your care team will 
+meet with you to discuss primary treatment, 
+which could include options like:
+  Systemic therapy (preferred for people 
+who have not had systemic therapy 
+before—see Guide 16)
+  Surgery (resection)
+  Stereotactic ablative radiation therapy 
+(also called stereotactic body radiation 
+therapy, or SBRT), which uses special 
+equipment to position the person and 
+precisely deliver radiation to a tumor
+  Talimogene laherparepvec (T-VEC) 
+injections into accessible tumors
+After systemic therapy as primary 
+treatment
+If you received systemic therapy for limited 
+metastases, you’ll have imaging tests to 
+assess whether the therapy worked. With that 
+information, you’ll have the following options:
+  If the cancer has spread, see treatment 
+options in the "Widely spread and/or brain 
+metastases" section.
+  If the cancer stayed the same, you may 
+have surgery. If there are no signs of 
+cancer after surgery, you may receive 
+systemic therapy (see Guide 16). Or 
+you’ll have observation in follow-up care 
+described on page 84 and in more detail 
+in Chapter 10.
+  If there is still cancer after surgery (called 
+residual disease), then you’ll have 
+the same treatment for widely spread 
+metastases (see the "Widely spread and/
+or brain metastases" section).
+After surgery, radiation, or 
+injections
+After treatment for limited spread melanoma, 
+your care team will assess if there are still 
+signs of cancer. If there are none, you may 
+be treated with adjuvant therapy or start 
+observation in follow-up care described in 
+Chapter 10. Preferred adjuvant therapy options 
+are:
+  Nivolumab
+  Pembrolizumab
+  Nivolumab/ipilimumab (only IV nivolumab, 
+not injectable, can be combined with 
+ipilimumab)
+Other recommended therapy if you have BRAF 
+V600 mutation is as follows:
+  Dabrafenib/trametinib
+  Vemurafenib/cobimetinib
+  Encorafenib/binimetinib
+In some cases, ipilimumab might be used as 
+adjuvant therapy if you already had anti-PD-1 
+therapy.
+[page 85] 83
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+9 Treatment for stage 4: Metastatic melanoma  
+Guide 16 
+Systemic therapy for metastatic melanoma
+Regimens First-line therapy Second-line therapy
+Nivolumab/ipilimumab* ● ●
+Nivolumab and relatlimab-rmbw ● ●
+Pembrolizumab** ● ●
+Nivolumab** ● ●
+Dabrafenib/trametinib or vemurafenib/cobimetinib or 
+encorafenib/binimetinib for BRAF V600 mutation ● ●
+Lifileucel (tumor-infiltrating lymphocyte therapy, or TIL) ●
+Pembrolizumab/low-dose ipilimumab ● ●
+Ipilimumab ●
+High-dose IL-2 ●
+Imatinib, dasatinib, nilotinib, or ripretinib for KIT mutations ●
+Crizotinib or entrectinib for ROS1 fusions ●
+Larotrectinib or entrectinib for NTRK fusions ●
+Trametinib for BRAF fusions ●
+Binimetinib for NRAS mutation ●
+Pembrolizumab/lenvatinib ●
+Ipilimumab/intralesional T-VEC ●
+Dabrafenib/trametinib plus pembrolizumab or vemurafenib/
+cobimetinib plus atezolizumab for BRAF V600 mutation ●
+Chemotherapy ●
+● preferred option       ● not a preferred option
+*Only IV nivolumab can be used with ipilimumab, not the injectable form.
+**Injectable forms of this therapy are available to treat melanoma.
+[page 86] 84
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+9 Treatment for stage 4: Metastatic melanoma  
+If cancer remains (called residual cancer) after 
+any treatment, see the next section on widely 
+spread or brain metastases for treatment 
+options. Otherwise, if there is no cancer 
+remaining, you will move to observation in 
+follow-up care.
+Follow-up for limited spread
+Recommended follow-up tests for stage 4 
+melanoma with limited spread include:
+  Physical exam and medical history, with a 
+focus on the skin and lymph nodes, every 
+3 to 6 months for 2 years, then every 3 
+to 12 months for 3 years, and then every 
+year as needed.
+  Imaging tests as needed based on cancer 
+signs and symptoms. Imaging might occur 
+every 3 to 12 months for 2 years, then 
+every 6 to 12 months for another 3 years.
+  After 5 years, routine imaging is not 
+recommended.
+Widely spread and/or brain 
+metastases
+Widely spread (disseminated) refers to 
+melanoma that has spread to many distant 
+sites and/or to the brain as brain metastases. 
+It’s unresectable, which means it cannot be 
+completely removed with surgery.
+Treatment
+The first step in treating widely spread 
+metastases is to learn if the cancer has 
+reached your brain. Brain metastases are 
+often treated first to prevent serious health 
+problems. Your care team will meet with 
+you to discuss treatment options.
+Preferred treatment for widely spread and/or 
+brain metastases includes systemic therapy 
+listed in Guide 16. For skin lesions that have 
+spread to other skin sites, T-VEC injections are 
+a treatment option.
+Otherwise, surgery is an option if large brain 
+metastases are causing symptoms or if 
+there is a single metastasis—this is called 
+a palliative resection (surgery) because it’s 
+intended to relieve symptoms vs. removing the 
+cancer (discussed further below).
+Or you may receive radiation therapy after 
+surgery. The preferred radiation method is 
+stereotactic ablative radiation therapy (SBRT). 
+This is therapy that uses a high dose of 
+radiation directly into the tumor. If SBRT is not 
+an option, whole brain radiation therapy may 
+be considered.
+Sometimes, brain metastases are treated 
+with the goal of relieving symptoms and not 
+removing the cancer. This is called palliative 
+care. Palliative options for brain metastases 
+include:
+  Corticosteroids to relieve swelling
+  Anticonvulsant therapy to control seizures
+  Bevacizumab to help with quality of life
+To summarize, treatment options for widely 
+spread and/or brain metastases include:
+  Systemic therapy (preferred)
+  Palliative surgery
+  Radiation therapy
+  T-VEC injections to treat metastatic skin 
+lesions
+  Best supportive/palliative care
+[page 87] 85
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+9 Treatment for stage 4: Metastatic melanoma  
+For more information about palliative care, see 
+NCCN Guidelines for Patients: Palliative Care, 
+available at NCCN.org/patientguidelines and 
+on the NCCN Patient Guides for Cancer app.
+Ask for help
+Cancer and its treatment can be very 
+overwhelming. Getting help when you’re 
+feeling worried or hopeless is an important part 
+of cancer care. And if you have a caregiver, 
+this could apply to them, too. If you’re both 
+feeling anxious or overwhelmed, ask your 
+care team for help.
+Part of asking for help could also mean talking 
+to other people who have the same type of 
+cancer as you. Often the best advice comes 
+from others who’ve been there. And dozens 
+of online and in-person support groups are 
+available where you can share your feelings 
+and worries or anything on your mind.
+Most cancer centers have patient-to-patient 
+peer support groups. Don’t hesitate to ask your 
+care team (like a social worker or a behavioral 
+health expert) to recommend support groups, 
+or do an online search of groups that meet 
+near you or others that might meet virtually.
+If you’re looking for spiritual help and 
+guidance, ask your care team about any 
+resources for that, too.
+It’s normal to feel worried
+Depression, anxiety, fear, and distress are very common feelings in 
+people with cancer. These feelings can make it harder to deal with 
+cancer and cancer treatment. They can hold you back even when 
+you want to move forward. Getting help when you’re feeling worried 
+is an important part of cancer care. If you’re feeling anxious or 
+overwhelmed, ask your treatment team for help.
+Read more about cancer and distress in NCCN Guidelines for 
+Patients: Distress During Cancer Care, available at NCCN.org/
+patientguidelines and on the NCCN Patient Guides for Cancer app.
+
+[page 88] 86
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+9 Treatment for stage 4: Metastatic melanoma  
+Key points
+  Stage 4 melanoma, also referred to as 
+metastatic cancer, is cancer that has 
+spread from where it started to other 
+parts of the body.
+  Metastatic melanoma is treatable and has 
+many options.
+  Cancer that has spread to only a few 
+distant sites is referred to as limited 
+spread cancer or limited metastases.
+  Limited spread cancer can be considered 
+resectable, which means it can be treated 
+with surgery.
+  Widely spread metastatic cancer refers 
+to cancer that has spread to many distant 
+sites.
+  Brain metastases are often treated 
+with both systemic therapy and local 
+treatment.
+  The preferred treatment for widely spread 
+metastases is systemic therapy.
+Questions to ask
+  What is your experience treating 
+metastatic melanoma?
+  How many of your patients have 
+had complications? What were the 
+complications?
+  Who will manage my day-to-day care?
+  Is a clinical trial an option for me?
+  I would like a second opinion. Is there 
+someone you can recommend?
+What’s next
+In this chapter, you learned about stage 
+4 metastatic melanoma. Cancer that 
+spreads can be treated in a variety of 
+ways. It’s important to ask your care team 
+questions throughout your treatment as 
+well as to ask for support if you need it. 
+The next chapter discusses follow-up 
+care and includes information on the type 
+of exams you might receive on a regular 
+basis. If you need additional resources, 
+be sure to check out Chapter 11: Other 
+resources, which includes many helpful 
+links.
+From a patient’s perspective, 
+having a combination of a 
+supportive team of medical 
+professionals and the experiences 
+from other patients gives one a 
+sense of confidence and control 
+that is invaluable when it comes 
+to making decisions about their 
+treatment options.”
+“
+[page 89] 87
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+10
+Follow-up care
+88 Melanoma tests
+89 Be your own detector
+89 Key points
+89 Questions to ask
+Chapter 10
+[page 90] 88
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+10 Follow-up care  
+After treatment for melanoma, your care 
+team will want to check you for any new 
+skin cancers—often called follow-up, 
+observation, surveillance, or monitoring. 
+This chapter briefly explains ongoing care 
+for everyone who’s had melanoma.
+You’ve gone through your melanoma 
+treatment, so the next step is attending regular 
+visits with your doctor to look for any new 
+lesions and to make sure the melanoma hasn’t 
+spread.
+Melanoma tests
+You may receive more than one type of test for 
+melanoma in follow-up care.
+Skin and lymph node exams
+Your provider may examine your skin 
+and lymph nodes at least once a year, 
+depending on the melanoma stage. Your 
+doctor should also explain how you can do 
+self-exams of your skin and lymph nodes at 
+home. It’s important to regularly look for any 
+new, changing, or unusual spots on both 
+sun-exposed and non–sun-exposed skin.
+What you can do:
+  Examine your skin regularly—If you spot 
+anything that seems out of the ordinary 
+or doesn’t look normal, have it checked 
+as soon as possible. See Chapter 2 for 
+detection information.
+  Visit your health care provider annually 
+and ask for a full-body skin exam by a 
+skin care provider, like a dermatologist, 
+at least once a year. You may want to 
+consider a skin exam more often if you’re 
+at higher risk of skin cancer.
+Skin devices
+Your care team might use medical tools to 
+check for skin cancer, such as:
+  A dermatoscope—a handheld device to 
+provide a closer look at suspicious lesions
+It’s good practice to look at 
+your skin for anything unusual 
+at least once a month.
+[page 91] 89
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+10 Follow-up care  
+  Total-body photography—to help with 
+ongoing monitoring of moles on the skin
+These tools are especially important if you 
+develop atypical-looking moles (moles that are 
+called dysplastic under a microscope) or other 
+concerning skin surfaces. Though atypical 
+moles are usually non-cancerous, they can put 
+you at greater risk of future melanoma.
+Imaging tests
+If you had a lymph node exam that showed 
+cancer in the past, your doctor might consider 
+more imaging scans (for example, an 
+ultrasound or CT scan). This could be followed 
+by more thorough imaging or a biopsy if your 
+doctor feels it’s needed.
+How often you receive follow-up testing 
+depends on how likely it is that the cancer will 
+return. This can depend on your family history 
+of melanoma, if you have a high mole count, or 
+if you have any atypical-looking moles.
+Be your own detector
+You can look for and find any suspicious 
+spots on your own, too. Your doctor will likely 
+encourage you to do so as part of your follow-
+up care about once a month. Be sure to read 
+Chapter 2: Melanoma risk, detection, and 
+prevention for ways to do that.
+Key points
+  Your doctor or other health care provider 
+should examine your skin and lymph 
+nodes at least once a year.
+  How often you receive follow-up testing 
+depends on how likely it is that the cancer 
+will return.
+  Your doctor or other health care provider 
+should also explain how you can do self-
+exams of your skin and lymph nodes.
+  Your care team might use devices to help 
+detect new melanomas early.
+  If you had a past lymph node exam 
+that showed cancer, your doctor might 
+consider more imaging.
+  Your risk of future melanomas is part of 
+the decision of how frequently you should 
+have follow-up testing.
+Questions to ask
+  If I find an unusual spot, what should I do?
+  Should I always let you know about 
+new spots? Is there a way to tell it's 
+suspicious?
+  Will I need imaging tests?
+  What else can I do to prevent another 
+melanoma?
+I was lucky. I had melanoma twice: once on my leg and once on my back. If it 
+weren't for my doctor doing the skin exam, I would not have known about the 
+one on my back.”
+“
+[page 92] 90
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+11
+Other resources
+91 What else to know
+91 What else to do
+91 Where to get help
+92 Questions to ask
+Chapter 11
+[page 93] 91
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+11 Other resources  
+Want to learn more? Here’s how you can 
+get additional help.
+What else to know
+This guide helps you know your options so 
+you can make informed decisions and improve 
+your cancer care. But it’s not the only resource 
+that you have.
+Ask for as much information and help as you 
+need. Many people are interested in learning 
+more about:
+  The details of melanoma treatment and its 
+side effects
+  Being a part of a care team
+  Getting financial help
+  Finding a cancer care professional who’s 
+an expert in melanoma
+  Coping with other health problems
+What else to do
+Your health care center can help you with next 
+steps. It often has on-site resources to help 
+meet your needs and find answers to your 
+questions. Health care centers can also inform 
+you of resources in your community.
+In addition to help from your providers, the 
+resources listed in the next section provide 
+support for many people like yourself.
+Where to get help
+Look through the list below and visit the 
+related websites to learn more about these 
+organizations.
+AIM at Melanoma
+aimatmelanoma.org
+AIM at Skin Cancer
+aimatskincancer.org
+CancerCare
+cancercare.org
+Cancer Hope Network
+cancerhopenetwork.org
+Clear Cell Sarcoma
+clearcellsarcoma.org
+GRACE
+cancergrace.org
+Imerman Angels
+imermanangels.org
+Melanoma Research Alliance
+curemelanoma.org
+Melanoma Research Foundation
+melanoma.org
+My Faulty Gene
+myfaultygene.org
+[page 94] 92
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+11 Other resources  
+PAN Foundation
+panfoundation.org
+Save Your Skin Foundation
+saveyourskin.ca
+The Skin Cancer Foundation
+skincancer.org
+Triage Cancer
+triagecancer.org
+Questions to ask
+  Who can I talk to about help with housing, 
+food, and other basic needs?
+  What assistance is available for 
+transportation, childcare, and home care?
+  How much will I have to pay for 
+treatment?
+  What help is available to pay for 
+medicines and other treatment?
+  What other services are available to me 
+and my caregivers?
+We want your  
+feedback!
+Our goal is to provide helpful 
+and easy-to-understand 
+information on cancer.
+Take our survey to let us know 
+what we got right and what we 
+could do better.
+NCCN.org/patients/feedback
+[page 95] 93
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+
+
+[page 96] 94
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+Words to know
+Words to know
+ABCDE rule
+A memory device to recognize the 
+characteristics of moles or skin lesions that 
+might be cancer.
+adjuvant treatment
+Treatment (usually medicine or radiation) given 
+after the main (primary) treatment.
+advanced melanoma
+Cancer that has spread beyond the area near 
+the main tumor.
+anesthesia
+A drug or other substance that causes a 
+controlled loss of feeling or awareness with or 
+without loss of wakefulness.
+asymmetry
+A characteristic of possible skin cancer in 
+which one half or side of a mole does not 
+match the other half or side.
+best supportive care
+Health care for the symptoms of cancer and 
+the side effects of cancer treatment. Also 
+called palliative care.
+biopsy
+Removal of small amounts of tissue from your 
+body to test for cancer.
+BRAF mutations
+BRAF mutations can cause normal cells to 
+become cancerous. They are most commonly 
+found in melanomas but can occur in other 
+forms of cancer.
+Breslow thickness
+A measure of how deep the melanoma tumor 
+has grown into the skin.
+broad-spectrum sunscreen
+A substance that protects the skin from the sun 
+by blocking 2 types of harmful ultraviolet (UV) 
+rays—UVA and UVB.
+cancer stage
+Rating or description of the growth and spread 
+of cancer in the body.
+chemotherapy
+Drugs that kill fast-growing cells, including 
+normal cells and cancer cells.
+clinical stage
+A rating of the extent of melanoma in the body 
+based on the physical exam and biopsy of the 
+first (primary) tumor.
+clinical trial
+Research on a test or treatment to assess its 
+safety or how well it works.
+complete lymph node dissection (CLND)
+A type of surgery that removes the remaining 
+lymph nodes after a positive sentinel lymph 
+node biopsy. Also called completion lymph 
+node dissection.
+computed tomography (CT) scan
+An imaging scan that uses x-rays from many 
+angles to make detailed pictures of the inside 
+of the body.
+contrast
+A substance put into the body to make clearer 
+pictures during imaging.
+dermal mitotic rate (DMR)
+A measure of how many cancer cells are 
+growing and dividing in the dermis.
+[page 97] 95
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+Words to know
+dermatologist
+A doctor who’s an expert in skin diseases.
+dermis
+The second layer of skin beneath the top layer 
+(epidermis).
+distant metastasis
+Spread of cancer cells to a part of the body far 
+away from the first (primary) melanoma tumor.
+DNA (deoxyribonucleic acid)
+A long molecule that contains our unique 
+genetic code.
+epidermis
+The outer layer of skin.
+excision
+Removal by surgery.
+excisional biopsy
+Surgery that removes the entire skin tumor 
+or abnormal-looking area (lesion) to test for 
+cancer cells.
+fine-needle aspiration
+Use of a thin needle to remove fluid or tissue 
+from the body to be tested for disease.
+follow-up tests
+Tests done after treatment to check for signs 
+of cancer return (recurrence) or spread 
+(metastasis).
+general anesthesia
+A drug-induced, sleep-like state for pain relief.
+genes
+A set of coded instructions in cells for making 
+new cells and controlling how cells behave.
+hypodermis
+Deep skin tissue made of subcutaneous fat, 
+connective tissue, and blood and lymphatic 
+vessels.
+imaging
+Any radiology test that makes pictures 
+(images) of the inside of the body.
+immunotherapy
+Treatment that uses the immune 
+system to kill cancer cells.
+infusion
+A method of putting fluids, including drugs, into 
+the bloodstream.
+in-transit metastases
+The spread of skin cancer through a lymph 
+vessel.
+lentigo maligna
+A slow-growing, early-stage melanoma often 
+found in older adults and appears as brown 
+patches on the face or neck.
+lymphedema
+Swelling due to buildup of lymph fluid in the 
+fatty tissue just under the skin near the surgery 
+site.
+lymph node
+A small, disease-fighting structure located 
+throughout the body.
+lymph node basin
+A group of lymph nodes that receive and filter 
+lymph that flows from a certain area of the 
+body.
+lymph vessels
+Similar to blood vessels, lymph vessels are 
+thin-walled and tube-like but carry a fluid called 
+lymph.
+metastasis
+Spread of cancer cells from the first (primary) 
+tumor to a new site.
+[page 98] 96
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+Words to know
+microsatellites
+Tiny tumor deposits that have spread to 
+lymph vessels in the skin near the first 
+melanoma tumor and can only be seen 
+with a microscope.
+neoadjuvant treatment
+Treatment (usually medicine) given before the 
+main (primary) treatment, usually surgery.
+palliative care
+Specialized medical care aimed at increasing 
+quality of life and reducing pain and discomfort 
+for people with serious, complex illnesses.
+radiation therapy
+Treatment that uses high-energy rays to kill 
+cancer cells.
+recurrence
+Return of cancer after a cancer-free period.
+resectable
+Cancer able to be removed (resected) by 
+surgery.
+sentinel lymph node biopsy (SLNB)
+Surgery to find and remove a sentinel lymph 
+node to see if it contains cancer cells.
+stereotactic radiosurgery (SRS)
+Treatment that gives a single, large dose 
+of radiation concentrated on a tumor, while 
+limiting the dose to surrounding organs.
+sun protection factor (SPF)
+A number that indicates how well the 
+sunscreen filters out UV rays and protects skin 
+against sunburn.
+talimogene laherparepvec (T-VEC)
+Treatment that uses a virus to infect and kill 
+cancer cells while avoiding normal, healthy 
+cells.
+targeted therapy
+Drug treatment that identifies and attacks a 
+specific feature of cancer cells with less harm 
+to normal cells.
+tumor
+An abnormal mass of tissue from cells growing 
+or dividing too much that can be benign (not 
+cancer) or cancer. In melanoma, a lesion or a 
+spot is also called a tumor.
+tumor-infiltrating lymphocyte (TIL) therapy
+Treatment where tumor-infiltrating lymphocytes 
+are removed from the person's tumor, grown in 
+a laboratory, and given back to the person by 
+infusion.
+ulceration
+A break in the skin like an open sore.
+unresectable
+Cancer that can't be surgically removed.
+[page 99] 97
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+NCCN Contributors
+The NCCN Clinical Practice Guidelines in Oncology (NCCN Guidelines®) for Melanoma: Cutaneous, Version 1.2026 
+were developed by the following NCCN Panel Members:
+*Susan M. Swetter, MD/Chair
+Stanford Cancer Institute
+*Douglas Johnson, MD, MSCI/ 
+Vice-Chair
+Vanderbilt-Ingram Cancer Center
+*Mark R. Albertini, MD
+University of Wisconsin
+Carbone Cancer Center
+Christopher A. Barker, MD
+Memorial Sloan Kettering Cancer Center
+Sarah Bateni, MD, MAS
+O'Neal Comprehensive
+Cancer Center at UAB
+Joel Baumgartner, MD
+UC San Diego Moores Cancer Center
+Shailender Bhatia, MD
+Fred Hutchinson Cancer Center
+Christopher Bichakjian, MD
+University of Michigan Rogel Cancer Center
+Genevieve Boland, MD, PhD
+Mass General Cancer Center
+Sunandana Chandra, MD, MS
+Robert H. Lurie Comprehensive Cancer
+Center of Northwestern University
+David Chen, MD, PhD
+Siteman Cancer Center at Barnes-
+Jewish Hospital and Washington
+University School of Medicine
+Bartosz Chmielowski, MD, PhD
+UCLA Jonsson
+Comprehensive Cancer Center
+Jacob Choi, MD, PhD
+Robert H. Lurie Comprehensive Cancer 
+Center of the Northwestern University
+Dominick DiMaio, MD
+Fred & Pamela Buffett Cancer Center
+Roxana Dronca, MD
+Mayo Clinic Comprehensive Cancer Center
+Martin D. Fleming, MD
+The University of Tennessee
+Health Science Center
+Anjela Galan, MD
+Yale Cancer Center/
+Smilow Cancer Hospital
+*Samantha Guild
+AIM at Melanoma
+Siwen Hu-Lieskovan, MD, PhD
+Huntsman Cancer Institute
+at the University of Utah
+Giorgos Karakousis, MD
+Abramson Cancer Center
+at the University of Pennsylvania
+Kari Kendra, MD, PhD
+The Ohio State University
+Comprehensive Cancer Center -
+James Cancer Hospital and
+Solove Research Institute
+Maija Kiuru, MD, PhD
+UC Davis Comprehensive Cancer Center
+Julie R. Lange, MD, ScM
+Johns Hopkins Kimmel Cancer Center
+Ryan Lanning, MD, PhD
+University of Colorado Cancer Center
+Theodore Logan, MD
+Indiana University Melvin and Bren Simon
+Comprehensive Cancer Center
+Miguel Materin, MD  
+Duke Cancer Institute
+Kelly Nelson, MD
+The University of Texas  
+MD Anderson Cancer Center
+Daniel Olson, MD
+The UChicago Medicine
+Comprehensive Cancer Center
+Anthony J. Olszanski, MD, RPh
+Fox Chase Cancer Center
+Patrick A. Ott, MD, PhD
+Dana-Farber/Brigham and  
+Women's Cancer Center
+Igor Puzanov, MD, MSCI
+Roswell Park Comprehensive Cancer Center
+Luke Rothermel, MD, MPH
+Case Comprehensive Cancer Center/
+University Hospitals Seidman Cancer
+Center and Cleveland Clinic Taussig
+Cancer Institute
+April K. Salama, MD
+Duke Cancer Institute
+Rohit Sharma, MD
+UT Southwestern Simmons
+Comprehensive Cancer Center
+Arun Singh, MD  
+Case Comprehensive Cancer Center/
+University Hospitals Seidman Cancer Center 
+and Cleveland Clinic Taussig Cancer Institute
+Andrew Stacey, MD, MS
+Fred Hutchinson Cancer Center
+Katy Tsai, MD
+UCSF Helen Diller Family
+Comprehensive Cancer Center
+Evan Wuthrick, MD
+Moffitt Cancer Center
+Yan Xing, MD, PhD
+City of Hope National Medical Center
+NCCN
+Sara Espinosa, PhD
+Oncology Scientist/Medical Writer
+Nicole McMillian, MS
+Senior Guidelines Coordinator
+NCCN Contributors
+This patient guide is based on the NCCN Clinical Practice Guidelines in Oncology (NCCN Guidelines®) for Melanoma: 
+Cutaneous, Version 1.2026. It was adapted, reviewed, and published with help from the following people:
+Dorothy A. Shead, MS
+Senior Director 
+Patient Information Operations
+Christine McLaughlin
+Medical Writer
+Lisa Diehl
+Production Layout Artist 
+* Reviewed this patient guide. For disclosures, visit NCCN.org/disclosures.
+[page 100] 98
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+NCCN Cancer Centers
+NCCN Cancer Centers
+For contact information, visit NCCN.org/cancercenters.
+Abramson Cancer Center  
+at the University of Pennsylvania
+Philadelphia, Pennsylvania
+Case Comprehensive Cancer Center/ 
+University Hospitals Seidman Cancer Center and  
+Cleveland Clinic Taussig Cancer Institute
+Cleveland, Ohio
+City of Hope National Medical Center
+Duarte, California
+Dana-Farber/Brigham and Women’s Cancer Center | 
+Mass General Cancer Center
+Boston, Massachusetts
+Duke Cancer Institute
+Durham, North Carolina
+Fox Chase Cancer Center
+Philadelphia, Pennsylvania
+Fred & Pamela Buffett Cancer Center
+Omaha, Nebraska
+Fred Hutchinson Cancer Center
+Seattle, Washington
+Huntsman Cancer Institute at the University of Utah
+Salt Lake City, Utah
+Indiana University Melvin and Bren Simon  
+Comprehensive Cancer Center
+Indianapolis, Indiana
+Johns Hopkins Kimmel Cancer Center
+Baltimore, Maryland
+Mayo Clinic Comprehensive Cancer Center
+Phoenix/Scottsdale, Arizona
+Jacksonville, Florida
+Rochester, Minnesota
+Memorial Sloan Kettering Cancer Center
+New York, New York
+Moffitt Cancer Center
+Tampa, Florida
+O’Neal Comprehensive Cancer Center at UAB
+Birmingham, Alabama
+Robert H. Lurie Comprehensive Cancer Center  
+of Northwestern University
+Chicago, Illinois
+Roswell Park Comprehensive Cancer Center
+Buffalo, New York
+Siteman Cancer Center at Barnes-Jewish Hospital  
+and Washington University School of Medicine
+St. Louis, Missouri
+St. Jude Children’s Research Hospital/ 
+The University of Tennessee Health Science Center
+Memphis, Tennessee
+Stanford Cancer Institute
+Stanford, California
+The Ohio State University Comprehensive Cancer Center -  
+James Cancer Hospital and Solove Research Institute
+Columbus, Ohio
+The UChicago Medicine Comprehensive Cancer Center
+Chicago, Illinois
+The University of Texas MD Anderson Cancer Center
+Houston, Texas
+UC Davis Comprehensive Cancer Center
+Sacramento, California
+UC San Diego Moores Cancer Center
+La Jolla, California
+UCLA Jonsson Comprehensive Cancer Center
+Los Angeles, California
+UCSF Helen Diller Family Comprehensive Cancer Center
+San Francisco, California
+University of Colorado Cancer Center
+Aurora, Colorado
+University of Michigan Rogel Cancer Center
+Ann Arbor, Michigan
+University of Wisconsin Carbone Cancer Center
+Madison, Wisconsin
+UT Southwestern Simmons  
+Comprehensive Cancer Center
+Dallas, Texas
+Vanderbilt-Ingram Cancer Center
+Nashville, Tennessee
+Yale Cancer Center/Smilow Cancer Hospital
+New Haven, Connecticut
+[page 101] 99
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+Notes
+Notes
+[page 102] 100
+NCCN Guidelines for Patients® 
+Melanoma, 2026
+Index
+Index
+acral melanoma  6
+biomarker testing  26
+dermatologist  18, 36, 43, 56, 88
+dermatopathologist  21, 23
+lesions  21, 24, 29, 84–85, 88
+immunotherapy  7, 27, 43–46
+melanin  5, 10–11, 15, 19
+nodal basin  25–26, 41
+radiation therapy  47–48, 52–53, 57
+risk factors  10–11, 13
+skin biopsy  20, 28, 37, 65
+surgery  6–7, 21–22, 31–34
+systemic therapy  42–43
+staging  5–6, 17, 19, 21–22, 24, 31–34
+tumor  19, 22–24, 26
+wide excision  38–39, 50, 52, 54–58
+[page 103] 
+[page 104] PAT-N-1946-0626
+3025 Chemical Road, Suite 100
+Plymouth Meeting, PA 19462
+215.690.0300
+NCCN.org/patients – For Patients   |   NCCN.org – For Clinicians
+Melanoma
+To support the NCCN Guidelines for Patients, visit
+NCCNFoundation.org/Donate
+NCCN Guidelines for Patients
+®
+Cancer care recommendations from leading experts at the  
+National Comprehensive Cancer Network® (NCCN®)
