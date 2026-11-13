@@ -1,13 +1,12 @@
 {
   "meta": {
-    "snapshot_sha256": "d2b333706f9fd6ff2192bb39f0963ec693839aa656e3be8255f3b6d379259903",
-    "entry_count": 44,
+    "snapshot_sha256": "439fee411f3fc2c9793c6e4f6df1b8119caffbe24d491b176afd93c6c882dd85",
+    "entry_count": 45,
     "seed_files": [
-      "2026-11-10-melanoma-nci-seed.json"
+      "2026-11-13-melanoma-v2.json"
     ],
     "sources": [
       "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "https://www.cancer.gov/types/skin/hp/melanoma-treatment-pdq",
       "https://www.cancer.gov/types/skin/moles-fact-sheet",
       "https://medlineplus.gov/melanoma.html"
     ],
@@ -15,7 +14,7 @@
   },
   "entries": [
     {
-      "id": "mel-def-01-source-cell",
+      "id": "MEL-001",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
@@ -23,11 +22,12 @@
         "疾病定义"
       ],
       "entry_type": "定义科普",
-      "statement": "黑色素瘤是源自黑色素细胞（生成黑色素的细胞）的恶性肿瘤；多数发生在皮肤，也可发生在黏膜表面或葡萄膜等其他部位。",
+      "public_question": "什么是黑色素瘤？",
+      "statement": "黑色素瘤是源自黑色素细胞（生成黑色素的细胞）的恶性肿瘤；多数发生在皮肤，也可发生在黏膜表面或葡萄膜等部位。",
       "prerequisites": "",
-      "applicability": "皮肤（cutaneous）黑色素瘤与黏膜黑色素瘤的公众科普场景。",
+      "applicability": "面向公众的疾病科普场景。",
       "risk_boundary": "不得据此让观众自行判断是否患病；有可疑皮损应就医。",
-      "audience_note": "皮肤上会生成黑色素的细胞癌变了",
+      "audience_note": "皮肤里会生成黑色素的细胞癌变了",
       "keywords": [
         "黑色素瘤",
         "黑色素细胞",
@@ -36,14 +36,17 @@
         "黏膜",
         "葡萄膜"
       ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Health Professional Version",
-      "source_url": "https://www.cancer.gov/types/skin/hp/melanoma-treatment-pdq",
-      "evidence_level": "权威机构指南摘要",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-def-02-vs-nonmelanoma",
+      "id": "MEL-002",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
@@ -51,54 +54,29 @@
         "与其他皮肤癌区别"
       ],
       "entry_type": "定义科普",
-      "statement": "黑色素瘤与基底细胞癌、鳞状细胞癌（非黑色素瘤皮肤癌）不同：黑色素瘤更易侵犯邻近组织并扩散到身体其他部位。",
+      "public_question": "黑色素瘤和别的皮肤癌有什么不同？",
+      "statement": "黑色素瘤比基底细胞癌、鳞状细胞癌等非黑色素瘤皮肤癌更容易侵犯邻近组织并扩散到身体其他部位。",
       "prerequisites": "",
-      "applicability": "向公众解释不同皮肤癌严重性差异的场景。",
+      "applicability": "向公众解释不同皮肤癌严重性差异。",
       "risk_boundary": "不得引申为非黑色素瘤皮肤癌无需治疗。",
       "audience_note": "同样叫皮肤癌，黑色素瘤是更容易转移的那一种",
       "keywords": [
         "黑色素瘤",
         "基底细胞癌",
         "鳞状细胞癌",
-        "皮肤癌",
-        "转移",
-        "扩散"
+        "转移"
       ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
       "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-def-03-early-detection-prognosis",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "基础",
-        "早发现意义"
-      ],
-      "entry_type": "定义科普",
-      "statement": "黑色素瘤越早发现并切除，治疗成功的机会越大。",
-      "prerequisites": "",
-      "applicability": "强调早筛早诊意义的科普开场。",
-      "risk_boundary": "不得绝对化表述为\"早发现一定治愈\"。",
-      "audience_note": "早发现早处理，效果才好",
-      "keywords": [
-        "早发现",
-        "早期",
-        "切除",
-        "预后",
-        "治疗成功"
-      ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
-      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-def-04-sites-sex",
+      "id": "MEL-003",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
@@ -106,536 +84,178 @@
         "好发部位"
       ],
       "entry_type": "定义科普",
-      "statement": "黑色素瘤可发生在皮肤任何部位；男性常见于躯干（肩至髋）和头颈部，女性常见于手臂和腿部；50岁前女性发病率高于男性，50岁后男性显著更高。",
-      "prerequisites": "",
-      "applicability": "部位与人群分布科普。",
-      "risk_boundary": "部位分布是统计规律，不能反向排除其他部位。",
-      "audience_note": "男的容易长在身上和头颈，女的容易长在手脚",
+      "public_question": "黑色素瘤一般长在身体哪些地方？",
+      "statement": "黑色素瘤可发生在皮肤任何部位；男性常见于躯干和头颈部，女性常见于四肢。",
+      "prerequisites": "部位分布是统计倾向，不是判断依据。",
+      "applicability": "科普场景。",
+      "risk_boundary": "不得以部位推断是否患病。",
+      "audience_note": "男的多的在身上和头脖子，女的多的在胳膊腿",
       "keywords": [
         "好发部位",
         "躯干",
         "头颈",
-        "手臂",
-        "腿部",
-        "发病率"
+        "四肢"
       ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
       "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-dx-01-biopsy-only-way",
+      "id": "MEL-004",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
-        "确诊",
-        "病理活检"
-      ],
-      "entry_type": "诊疗路径-确诊",
-      "statement": "确诊黑色素瘤的唯一方法是切除异常组织并经病理检查癌细胞；通常在门诊即可完成，标本由病理医生显微镜下检查。",
-      "prerequisites": "皮肤检查发现可疑病灶。",
-      "applicability": "确诊流程科普。",
-      "risk_boundary": "不得宣称可凭外观或影像确诊黑色素瘤。",
-      "audience_note": "要切下来一点组织化验，才能确诊",
-      "keywords": [
-        "活检",
-        "病理",
-        "确诊",
-        "化验",
-        "切除组织",
-        "显微镜"
-      ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
-      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-dx-02-excisional-preferred",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "确诊",
-        "活检方式"
-      ],
-      "entry_type": "诊疗路径-确诊",
-      "statement": "可疑病灶应行活检，首选局部完整切除；由有经验的病理医生检查标本以完成显微分期。皮肤活检有刮取、环钻、切取、切除四种主要类型，选择取决于病灶部位与大小。",
-      "prerequisites": "临床怀疑黑色素瘤的皮损。",
-      "applicability": "活检方式科普。",
-      "risk_boundary": "具体活检方式由医生按病灶决定。",
-      "audience_note": "可疑的痣要切下来化验，最好整颗切",
-      "keywords": [
-        "活检",
-        "切除活检",
-        "刮取",
-        "环钻",
-        "切取",
-        "显微分期",
-        "病理医生"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Health Professional Version",
-      "source_url": "https://www.cancer.gov/types/skin/hp/melanoma-treatment-pdq",
-      "evidence_level": "权威机构指南摘要",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-dx-03-never-shave-cauterize",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "确诊",
-        "处理红线"
-      ],
-      "entry_type": "风险边界",
-      "statement": "疑似黑色素瘤的病灶绝不应刮掉或烧灼处理（原文：Suspicious lesions should never be shaved off or cauterized）。",
-      "prerequisites": "病灶尚未经病理确诊。",
-      "applicability": "纠正\"点痣/药水烧掉\"类做法的科普场景。",
-      "risk_boundary": "本条为强边界：任何\"不化验直接点掉\"的内容都应触发风险标注。",
-      "audience_note": "可疑的痣不能随便点掉或烧掉，得先让医生看",
-      "keywords": [
-        "点痣",
-        "烧灼",
-        "刮除",
-        "药水点痣",
-        "激光点痣",
-        "绝对不应"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Health Professional Version",
-      "source_url": "https://www.cancer.gov/types/skin/hp/melanoma-treatment-pdq",
-      "evidence_level": "权威机构指南摘要（强边界条款）",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-dx-04-second-pathologist",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "确诊",
-        "第二病理意见"
-      ],
-      "entry_type": "诊疗路径-确诊",
-      "statement": "良性色素性病变与早期黑色素瘤的病理鉴别可能困难，即使资深皮肤病理医生之间也存在分歧（研究中约14%~38%病例存在不一致）；为降低误诊，应考虑由独立合格病理医生进行第二复核。",
-      "prerequisites": "已获得病理标本。",
-      "applicability": "病理结果解读与第二意见科普。",
-      "risk_boundary": "不得据此渲染\"病理都不可信\"。",
-      "audience_note": "拿不准时可以找另一位病理专家再看一遍切片",
-      "keywords": [
-        "第二意见",
-        "第二病理",
-        "复核",
-        "误诊",
-        "分歧",
-        "会诊"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Health Professional Version",
-      "source_url": "https://www.cancer.gov/types/skin/hp/melanoma-treatment-pdq",
-      "evidence_level": "权威机构指南摘要",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-dx-05-gene-testing-braf",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "确诊",
-        "基因检测"
-      ],
-      "entry_type": "诊疗路径-确诊",
-      "statement": "若病理确诊为癌，标本还可检测特定基因改变（如BRAF突变），以帮助制定治疗方案。",
-      "prerequisites": "病理确诊黑色素瘤。",
-      "applicability": "基因检测意义科普。",
-      "risk_boundary": "基因检测由医生根据分期与治疗需要决定，非人人必检。",
-      "audience_note": "把切下来的组织再查查基因，看看适合哪种药",
-      "keywords": [
-        "基因检测",
-        "BRAF",
-        "突变",
-        "靶向",
-        "方案"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
-      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-dx-06-second-opinion",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "就诊",
-        "第二诊疗意见"
-      ],
-      "entry_type": "患教-随访",
-      "statement": "患者可以寻求第二诊疗意见以确认黑色素瘤诊断与治疗方案；需要携带首次的病理报告、切片与影像资料供第二位医生复核；第二意见可能认同、调整或补充原方案。",
-      "prerequisites": "已有诊断与检查资料。",
-      "applicability": "就诊沟通科普。",
-      "risk_boundary": "第二意见需正规渠道获取，不得引申为质疑一切诊断。",
-      "audience_note": "不放心可以带齐资料找另一位专家再看",
-      "keywords": [
-        "第二意见",
-        "第二诊疗意见",
-        "病理报告",
-        "会诊",
-        "资料"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
-      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-early-01-abcde",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "早期识别",
-        "ABCDE法则"
-      ],
-      "entry_type": "患教-早期识别",
-      "statement": "ABCDE 法则帮助记忆黑色素瘤早期特征：A 不对称（两半形状不一致）、B 边缘不规则（锯齿、缺口、模糊）、C 颜色不均（黑、棕、褐混杂，可伴白/灰/红/粉/蓝）、D 直径（多大于6毫米或近期增大）、E 进展（数周至数月内变化）。",
-      "prerequisites": "",
-      "applicability": "面向公众的皮肤自查科普。",
-      "risk_boundary": "满足部分特征不等于确诊；不得下诊断结论，应建议就医评估。",
-      "audience_note": "看痣的五个信号：不对称、边不齐、色不匀、个头大、还在变",
-      "keywords": [
-        "ABCDE",
-        "不对称",
-        "边缘不规则",
-        "颜色不均",
-        "直径",
-        "6毫米",
-        "进展",
-        "变化",
-        "自查"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
-      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-early-02-see-doctor-signs",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "早期识别",
-        "就医信号"
-      ],
-      "entry_type": "患教-早期识别",
-      "statement": "出现以下情况应告诉医生：痣的大小、形状或颜色改变；边缘不规则；颜色不止一种；不对称；瘙痒；渗出、出血或破溃（溃疡）；色素区外观改变；原有痣附近长出新的卫星痣。",
-      "prerequisites": "",
-      "applicability": "就医提示类科普内容。",
-      "risk_boundary": "这些表现也可能由非肿瘤疾病引起（指南原文即如此声明），不得断言为癌。",
-      "audience_note": "痣有变化、破溃出血、发痒，就要去医院看看",
-      "keywords": [
-        "就医",
-        "看医生",
-        "痣变",
-        "瘙痒",
-        "出血",
-        "渗出",
-        "破溃",
-        "溃疡",
-        "卫星痣"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
-      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-early-03-common-mole-features",
-      "topic_path": [
-        "皮肤科",
-        "痣",
         "基础",
-        "普通痣特征"
+        "人群分布"
       ],
       "entry_type": "定义科普",
-      "statement": "普通痣通常小于5毫米，圆形或椭圆形，边缘清楚，颜色均匀（粉、棕、褐），多数成人有10到40颗普通痣。",
+      "public_question": "黑色素瘤在什么年龄、什么性别更多见？",
+      "statement": "50 岁前男性发病率低于女性，50 岁后男性显著高于女性；多见于成人，儿童青少年偶发。",
       "prerequisites": "",
-      "applicability": "痣与黑色素瘤鉴别科普的对照基准。",
-      "risk_boundary": "形态正常不等于永远安全，仍应关注变化。",
-      "audience_note": "普通的痣一般圆、小、颜色均匀",
+      "applicability": "科普场景。",
+      "risk_boundary": "不得据此认为年轻人不会得黑色素瘤。",
+      "audience_note": "50 岁前女的多，50 岁后男的多",
       "keywords": [
-        "普通痣",
-        "痣",
-        "5毫米",
-        "圆形",
-        "边缘清楚",
-        "颜色均匀"
+        "发病率",
+        "年龄",
+        "性别"
       ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
-      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-early-04-dysplastic-nevus",
+      "id": "MEL-005",
       "topic_path": [
         "皮肤科",
-        "痣",
+        "黑色素瘤",
         "基础",
-        "非典型痣"
+        "早发现意义"
       ],
       "entry_type": "定义科普",
-      "statement": "非典型痣（发育不良痣）通常比普通痣大（常超过5毫米），颜色混杂（粉到深棕），边缘不规则并可能融入周围皮肤；有5颗以上非典型痣者黑色素瘤风险约为无者的10倍。",
-      "prerequisites": "",
-      "applicability": "高危人群识别科普。",
-      "risk_boundary": "非典型痣恶变罕见；不得称其为\"癌前病变必然恶变\"。",
-      "audience_note": "长得大、颜色杂、边不齐的痣要多留心",
+      "public_question": "早发现黑色素瘤重要吗？",
+      "statement": "黑色素瘤越早发现并处理，治疗成功的机会越大。",
+      "prerequisites": "个体结局因分期与病情而异。",
+      "applicability": "强调早筛早诊意义的科普。",
+      "risk_boundary": "不得绝对化表述为\"早发现一定治愈\"。",
+      "audience_note": "早发现早处理，效果才好",
       "keywords": [
-        "非典型痣",
-        "发育不良痣",
-        "5毫米",
-        "风险",
-        "10倍",
-        "高危"
+        "早发现",
+        "早期",
+        "预后"
       ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
       "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
+      "source_section": "What is melanoma?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-early-05-rare-transform",
+      "id": "MEL-006",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
-        "误区澄清",
-        "痣恶变概率"
+        "危险因素",
+        "总述"
       ],
-      "entry_type": "误区澄清",
-      "statement": "普通痣或非典型痣转变为黑色素瘤的情况非常罕见；多数黑色素瘤是新的、出现在外观正常的皮肤上，并非由原有痣变来。",
-      "prerequisites": "",
-      "applicability": "纠正\"有痣迟早变癌\"类误解。",
-      "risk_boundary": "不得反向引申为\"痣都不用管\"——变化仍需就医。",
-      "audience_note": "绝大多数痣不会癌变；很多黑色素瘤是新长出来的",
+      "entry_type": "患教-危险因素",
+      "public_question": "哪些因素会增加黑色素瘤风险？",
+      "statement": "黑色素瘤风险因素分两类：可改变的（如晒黑床使用、紫外线暴露）与不可改变的（如遗传、家族史、肤色）。",
+      "prerequisites": "危险因素只提示概率，不构成诊断。",
+      "applicability": "风险科普场景。",
+      "risk_boundary": "不得将危险因素直接等同于患病。",
+      "audience_note": "有的危险能改（少晒黑床），有的改不了（遗传）",
       "keywords": [
-        "恶变",
-        "癌变",
-        "罕见",
-        "新发",
-        "正常皮肤",
-        "误区"
-      ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
-      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-early-06-dark-skin-sites",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "早期识别",
-        "深肤色人群"
-      ],
-      "entry_type": "患教-早期识别",
-      "statement": "深肤色人群患黑色素瘤概率较低，但更容易被晚期发现；其黑色素瘤常见于手指甲/脚趾甲下（常表现为甲上色素纵纹）、手掌或足底。",
-      "prerequisites": "",
-      "applicability": "深肤色人群与甲/掌跖部位科普。",
-      "risk_boundary": "不得据肤色排除患病可能。",
-      "audience_note": "皮肤黑也会得，而且常长在手掌脚底指甲下",
-      "keywords": [
-        "深肤色",
-        "黑色皮肤",
-        "甲下",
-        "指甲",
-        "手掌",
-        "足底",
-        "色素纵纹",
-        "晚发现"
-      ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
-      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-early-07-self-check-schedule",
-      "topic_path": [
-        "皮肤科",
-        "痣",
-        "患教",
-        "自查与随访检查"
-      ],
-      "entry_type": "患教-早期识别",
-      "statement": "许多医生建议非典型痣携带者每月自查皮肤；多于5颗非典型痣者可每年由医生做一次皮肤检查；合并黑色素瘤家族史者可更频繁（如每3至6个月）。",
-      "prerequisites": "已有非典型痣（或医生如此判断）。",
-      "applicability": "高危人群自查/复查频率科普。",
-      "risk_boundary": "频率需医生按个体风险决定，不得作为通用医嘱。",
-      "audience_note": "痣多的人每个月自己看看，定期找医生查",
-      "keywords": [
-        "自查",
-        "每月",
-        "皮肤检查",
-        "复查频率",
-        "3到6个月",
-        "每年"
-      ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
-      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-early-08-change-checklist",
-      "topic_path": [
-        "皮肤科",
-        "痣",
-        "患教",
-        "变化清单"
-      ],
-      "entry_type": "患教-早期识别",
-      "statement": "痣出现以下变化应告知医生：颜色改变；不均匀地变大或变小；形状、质地或高度改变；表面皮肤干燥或脱屑；变硬或摸到肿块；开始瘙痒；出血或渗出。",
-      "prerequisites": "",
-      "applicability": "自查后就医沟通指引。",
-      "risk_boundary": "单条变化不足以诊断；不得夸大为癌变证据。",
-      "audience_note": "颜色变了、大小变了、破皮出血，记下来告诉医生",
-      "keywords": [
-        "变化",
-        "脱屑",
-        "变硬",
-        "肿块",
-        "瘙痒",
-        "出血",
-        "渗出",
-        "告诉医生"
-      ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
-      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-fu-01-long-term-followup",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "随访",
-        "长期随访"
-      ],
-      "entry_type": "患教-随访",
-      "statement": "长期随访很重要：用于发现复发、管理治疗的长期影响、监测新的皮肤病灶；复发风险随时间推移显著下降，但晚期复发（甚至10年以上）确实存在。",
-      "prerequisites": "已完成治疗。",
-      "applicability": "治疗后随访科普。",
-      "risk_boundary": "随访频率由医生按分期个体化制定。",
-      "audience_note": "治好了也要长期复查，多年后仍有复发可能",
-      "keywords": [
-        "随访",
-        "复查",
-        "复发",
-        "晚期复发",
-        "长期",
-        "监测新病灶"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Health Professional Version",
-      "source_url": "https://www.cancer.gov/types/skin/hp/melanoma-treatment-pdq",
-      "evidence_level": "权威机构指南摘要",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-fu-02-recurrence-possible",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "随访",
-        "复发告知"
-      ],
-      "entry_type": "患教-随访",
-      "statement": "黑色素瘤经治疗后可能复发（come back），因此需要了解自己所处分期并遵医嘱定期检查。",
-      "prerequisites": "黑色素瘤治疗史。",
-      "applicability": "患者随访依从性科普。",
-      "risk_boundary": "不得渲染\"迟早复发\"。",
-      "audience_note": "治疗后有可能复发，所以要按医生说的时间回来查",
-      "keywords": [
-        "复发",
-        "复查",
-        "随访",
-        "定期检查"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
-      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-fu-03-second-primary-risk",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "随访",
-        "再发风险"
-      ],
-      "entry_type": "患教-随访",
-      "statement": "曾患黑色素瘤者再患其他黑色素瘤的风险增加，应持续关注皮肤变化。",
-      "prerequisites": "黑色素瘤病史。",
-      "applicability": "随访自查科普。",
-      "risk_boundary": "不得断言必然再发。",
-      "audience_note": "得过一次的人再长的风险比一般人高，继续观察皮肤",
-      "keywords": [
-        "再发",
-        "第二个原发",
-        "病史",
-        "风险增加"
-      ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
-      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-prev-01-sun-protection",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "预防",
-        "防晒"
-      ],
-      "entry_type": "患教-预防",
-      "statement": "预防黑色素瘤的最好方法是限制日光暴露；晒黑或晒伤都意味着皮肤已被阳光损伤，继续晒黑或晒伤会增加患黑色素瘤的风险。",
-      "prerequisites": "",
-      "applicability": "防晒科普。",
-      "risk_boundary": "不得宣称防晒能完全避免黑色素瘤。",
-      "audience_note": "少晒太阳，晒黑晒伤都是皮肤受伤",
-      "keywords": [
-        "防晒",
-        "日光",
+        "危险因素",
+        "晒黑床",
         "紫外线",
-        "晒伤",
-        "晒黑",
-        "预防"
+        "遗传",
+        "家族史"
       ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
-      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-prev-02-sunburn-history",
+      "id": "MEL-007",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "危险因素",
+        "肤色"
+      ],
+      "entry_type": "患教-危险因素",
+      "public_question": "什么样的人皮肤上更容易长黑色素瘤？",
+      "statement": "肤色白皙（皮肤易雀斑易晒伤、不易晒黑）、浅色眼睛、红色或金色头发的人群风险相对更高。",
+      "prerequisites": "任何人种都可能发生黑色素瘤。",
+      "applicability": "风险科普场景。",
+      "risk_boundary": "不得据此认为深肤色人群不会患病（见 MEL-024）。",
+      "audience_note": "皮肤越白越容易晒伤的，风险相对高",
+      "keywords": [
+        "肤色白皙",
+        "雀斑",
+        "晒伤",
+        "浅色眼睛"
+      ],
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-008",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "危险因素",
+        "紫外线"
+      ],
+      "entry_type": "患教-危险因素",
+      "public_question": "晒太阳和黑色素瘤有关系吗？",
+      "statement": "自然阳光或美黑床等人工紫外线的暴露会增加黑色素瘤风险。",
+      "prerequisites": "",
+      "applicability": "防晒宣教场景。",
+      "risk_boundary": "不得宣称避免日晒即可完全预防。",
+      "audience_note": "晒得多、晒黑床，风险会增加",
+      "keywords": [
+        "紫外线",
+        "日晒",
+        "美黑床",
+        "晒黑"
+      ],
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-009",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
@@ -643,189 +263,575 @@
         "晒伤史"
       ],
       "entry_type": "患教-危险因素",
-      "statement": "有过至少一次严重起疱晒伤者黑色素瘤风险增加；成年期的晒伤同样增加风险（不仅限于儿童期）。",
+      "public_question": "小时候晒伤过对黑色素瘤风险有影响吗？",
+      "statement": "多次起水疱级晒伤史（尤其儿童或青少年时期）会增加黑色素瘤风险。",
       "prerequisites": "",
-      "applicability": "晒伤风险科普。",
-      "risk_boundary": "不得据此判定必然患病。",
-      "audience_note": "小时候或大人时晒到起泡，都算危险因素",
+      "applicability": "风险科普场景。",
+      "risk_boundary": "不得据此对个别晒伤经历作过度推断。",
+      "audience_note": "小时候晒到起泡的那种，要更注意",
       "keywords": [
         "晒伤",
-        "起泡",
         "水疱",
-        "童年晒伤",
-        "成年晒伤"
+        "儿童",
+        "青少年"
       ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
-      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-prev-03-dysplastic-protection",
+      "id": "MEL-010",
       "topic_path": [
         "皮肤科",
-        "痣",
-        "患教",
-        "非典型痣防护"
+        "黑色素瘤",
+        "危险因素",
+        "痣数量"
       ],
-      "entry_type": "患教-预防",
-      "statement": "所有人都应防晒并远离日光灯与晒黑棚；有非典型痣者更应做好防晒、避免晒黑或晒伤，并按建议自查与定期就医检查（医生可能拍照记录对比变化）。",
-      "prerequisites": "有非典型痣。",
-      "applicability": "高危人群防护科普。",
-      "risk_boundary": "拍照记录是随访手段，不替代就医。",
-      "audience_note": "痣长得特别的人更要防晒，还可以拍照记录对比",
+      "entry_type": "患教-危险因素",
+      "public_question": "痣多的人风险更高吗？",
+      "statement": "身上有很多小痣或几颗大痣，会增加黑色素瘤风险。",
+      "prerequisites": "痣多只是风险因素，绝大多数痣终生良性。",
+      "applicability": "风险科普场景。",
+      "risk_boundary": "不得引发\"有痣就危险\"的恐慌。",
+      "audience_note": "痣特别多的人，相对要留心",
       "keywords": [
-        "防晒",
-        "非典型痣",
-        "拍照记录",
-        "自查",
-        "定期检查"
+        "多发痣",
+        "痣数量"
       ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
-      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-prev-04-no-prophylactic-removal",
+      "id": "MEL-011",
       "topic_path": [
         "皮肤科",
-        "痣",
-        "误区澄清",
-        "预防性切除"
+        "黑色素瘤",
+        "危险因素",
+        "发育不良痣"
+      ],
+      "entry_type": "患教-危险因素",
+      "public_question": "发育不良痣（不典型痣）和黑色素瘤什么关系？",
+      "statement": "发育不良痣是黑色素瘤的风险因素：多于 5 颗发育不良痣者患黑色素瘤的风险约为无发育不良痣者的 10 倍。",
+      "prerequisites": "风险倍数来自人群统计，不适用于个体预测。",
+      "applicability": "风险科普场景。",
+      "risk_boundary": "不得表述为\"发育不良痣就是早期黑色素瘤\"。",
+      "audience_note": "不典型的痣多于 5 颗，风险大约高 10 倍",
+      "keywords": [
+        "发育不良痣",
+        "不典型痣",
+        "风险倍数"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "Can a dysplastic nevus turn into melanoma?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-012",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "危险因素",
+        "发育不良痣癌变率"
       ],
       "entry_type": "误区澄清",
-      "statement": "一般不需要为预防恶变而切除非典型痣或普通痣：它们恶变概率很低，且多数黑色素瘤并非从原有痣发展而来；医生通常只切除有变化或可疑的新发色素病灶。",
+      "public_question": "发育不良痣会变成黑色素瘤吗？",
+      "statement": "发育不良痣直接转变为黑色素瘤的情况很少见；它的意义在于风险提示，而非必然癌变。",
       "prerequisites": "",
-      "applicability": "纠正\"痣都点掉以防癌\"类误区。",
-      "risk_boundary": "强边界：科普中不得建议健康人群预防性大面积点痣；具体处理由医生决定。",
-      "audience_note": "没变化的痣不用为了防癌都点掉",
+      "applicability": "缓解焦虑的科普场景。",
+      "risk_boundary": "不得表述为\"发育不良痣都会癌变\"，也不得表述为\"完全无需关注\"。",
+      "audience_note": "不典型的痣直接癌变的很少，但它提示风险更高",
       "keywords": [
-        "预防性切除",
-        "点痣",
-        "去痣",
-        "不需要",
+        "发育不良痣",
+        "癌变",
         "误区"
       ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
       "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页（强边界条款）",
+      "source_section": "Can a dysplastic nevus turn into melanoma?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-risk-01-risk-factors",
+      "id": "MEL-013",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
         "危险因素",
-        "总览"
+        "环境暴露"
       ],
       "entry_type": "患教-危险因素",
-      "statement": "黑色素瘤的危险因素包括：浅肤色（易晒伤、不易晒黑）、浅色眼睛、红/金发；日光或人工紫外线暴露；童年或青少年期起疱性严重晒伤史；多痣或大痣；非典型痣综合征家族史；本人或家族黑色素瘤史；免疫抑制；相关基因改变。",
-      "prerequisites": "",
-      "applicability": "高危人群画像科普。",
-      "risk_boundary": "危险因素只是概率提示，不得据此判定个人必然患病；任何肤色均可患病。",
-      "audience_note": "皮肤白、晒得多、痣多、家里有人得过，风险高一些",
+      "public_question": "环境暴露会增加黑色素瘤风险吗？",
+      "statement": "接触电离辐射、某些溶剂、氯乙烯、多氯联苯（PCB）等环境因素与黑色素瘤风险升高相关。",
+      "prerequisites": "证据来自人群研究。",
+      "applicability": "职业/环境健康科普。",
+      "risk_boundary": "不得据此给出具体职业建议。",
+      "audience_note": "有些化工和辐射接触也会增加风险",
       "keywords": [
-        "危险因素",
-        "浅肤色",
-        "晒伤",
-        "晒黑床",
-        "家族史",
-        "免疫抑制",
-        "基因"
+        "电离辐射",
+        "溶剂",
+        "氯乙烯",
+        "PCB"
       ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
       "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-risk-02-tanning-devices",
+      "id": "MEL-014",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
         "危险因素",
-        "人工紫外"
+        "家族史"
       ],
       "entry_type": "患教-危险因素",
-      "statement": "日光灯、晒黑棚等人工紫外线来源可造成皮肤损伤并可导致黑色素瘤。",
-      "prerequisites": "",
-      "applicability": "美黑行为风险科普。",
-      "risk_boundary": "不得量化\"使用几次就致癌\"。",
-      "audience_note": "美黑灯晒黑棚也是紫外线，伤皮肤",
-      "keywords": [
-        "美黑",
-        "晒黑棚",
-        "日光灯",
-        "人工紫外线",
-        "晒黑床"
-      ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
-      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-risk-03-family-genetics",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "危险因素",
-        "家族与遗传"
-      ],
-      "entry_type": "患教-危险因素",
-      "statement": "黑色素瘤可在家族中聚集：两名及以上一级亲属患黑色素瘤者风险增加；极少数家族性病例由显著升高风险的遗传疾病引起（如着色性干皮病、通常由CDKN2A基因突变导致的家族性非典型多痣黑色素瘤综合征）。",
-      "prerequisites": "",
-      "applicability": "家族史与遗传咨询科普。",
-      "risk_boundary": "不得据此建议未患病者做预防性切除或断言必然遗传。",
-      "audience_note": "直系亲属里有人得过，特别是好几个人得过，要多注意",
+      "public_question": "家里有人得过黑色素瘤，我要担心吗？",
+      "statement": "黑色素瘤家族史是不可改变的风险因素之一；有家族史者更应关注皮肤变化。",
+      "prerequisites": "家族史提示关注，不等于患病。",
+      "applicability": "风险科普场景。",
+      "risk_boundary": "不得给出\"一定遗传\"的表述。",
+      "audience_note": "家里人得过的话，自己要多留意皮肤变化",
       "keywords": [
         "家族史",
-        "一级亲属",
-        "遗传",
-        "CDKN2A",
-        "着色性干皮病"
+        "遗传"
       ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
-      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-risk-04-immunosuppression",
+      "id": "MEL-015",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
-        "危险因素",
-        "免疫抑制"
+        "早期识别",
+        "首要征象"
       ],
-      "entry_type": "患教-危险因素",
-      "statement": "免疫系统减弱者黑色素瘤风险增加，包括器官移植受者和淋巴瘤患者。",
+      "entry_type": "患教-早期识别",
+      "public_question": "黑色素瘤最先出现的表现是什么？",
+      "statement": "黑色素瘤最常见的首发征象是已有痣的形状、颜色、大小或触感发生改变；也可表现为皮肤上新出现的色斑或异常区域。",
       "prerequisites": "",
-      "applicability": "免疫抑制人群患教。",
-      "risk_boundary": "不得推论免疫抑制者患黑色素瘤预后必然如何。",
-      "audience_note": "免疫力低的人群（比如移植后用药的人）要更注意皮肤变化",
+      "applicability": "自查宣教场景。",
+      "risk_boundary": "发现变化应就医评估，不得自行诊断。",
+      "audience_note": "最常见的第一信号：痣的样子变了",
       "keywords": [
-        "免疫抑制",
-        "免疫力低",
-        "器官移植",
-        "淋巴瘤"
+        "首发征象",
+        "痣变化",
+        "新发皮损"
       ],
-      "source_name": "NCI Common Moles, Dysplastic Nevi, and Risk of Melanoma",
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
       "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
-      "evidence_level": "权威机构事实页",
+      "source_section": "What does melanoma look like?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-stg-01-staging-basis",
+      "id": "MEL-016",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "早期识别",
+        "ABCDE总述"
+      ],
+      "entry_type": "患教-早期识别",
+      "public_question": "怎么初步识别可疑的痣？",
+      "statement": "\"ABCDE\"规则描述早期黑色素瘤的常见特征：不对称（Asymmetry）、边缘不规则（Border）、颜色不均（Color）、直径改变/增大（Diameter）、近期演变（Evolving）。",
+      "prerequisites": "ABCDE 是识别线索，不是诊断标准。",
+      "applicability": "自查宣教场景。",
+      "risk_boundary": "不得据 ABCDE 自行确诊或排除（见 MEL-022）。",
+      "audience_note": "看五个字：不对称、边不齐、色不均、径变大、在变化",
+      "keywords": [
+        "ABCDE",
+        "自查",
+        "早期识别"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "What does melanoma look like?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-017",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "早期识别",
+        "不对称"
+      ],
+      "entry_type": "患教-早期识别",
+      "public_question": "痣的形状不对称说明什么？",
+      "statement": "不对称指痣的两半形状不一致，是早期黑色素瘤的特征之一（A, Asymmetry）。",
+      "prerequisites": "单一特征不足以判断。",
+      "applicability": "自查宣教场景。",
+      "risk_boundary": "不得凭单一不对称断定黑色素瘤。",
+      "audience_note": "两半长得不对称",
+      "keywords": [
+        "不对称",
+        "Asymmetry"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "What does melanoma look like?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-018",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "早期识别",
+        "边缘"
+      ],
+      "entry_type": "患教-早期识别",
+      "public_question": "痣的边缘不规则说明什么？",
+      "statement": "边缘参差不齐、有切迹或轮廓模糊、色素向周围扩散，是早期黑色素瘤的特征之一（B, Border）。",
+      "prerequisites": "单一特征不足以判断。",
+      "applicability": "自查宣教场景。",
+      "risk_boundary": "不得凭边缘形态自行确诊。",
+      "audience_note": "边边上毛毛糙糙、模糊",
+      "keywords": [
+        "边缘不规则",
+        "Border"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "What does melanoma look like?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-019",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "早期识别",
+        "颜色"
+      ],
+      "entry_type": "患教-早期识别",
+      "public_question": "痣的颜色不均匀说明什么？",
+      "statement": "颜色不均匀（黑色、棕色、棕褐色混杂，或出现白、灰、红、粉、蓝等）是早期黑色素瘤的特征之一（C, Color）。",
+      "prerequisites": "单一特征不足以判断。",
+      "applicability": "自查宣教场景。",
+      "risk_boundary": "不得凭颜色自行确诊。",
+      "audience_note": "颜色花花搭搭不均匀",
+      "keywords": [
+        "颜色不均",
+        "Color"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "What does melanoma look like?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-020",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "早期识别",
+        "直径"
+      ],
+      "entry_type": "患教-早期识别",
+      "public_question": "痣变大到多少要重视？",
+      "statement": "直径发生变化（通常为增大）是早期黑色素瘤的特征之一（D, Diameter）；多数黑色素瘤直径大于 6 毫米，但也可以很小。",
+      "prerequisites": "\"大于 6 毫米\"是常见特征，不是必要条件。",
+      "applicability": "自查宣教场景。",
+      "risk_boundary": "不得表述为\"小于 6 毫米就安全\"。",
+      "audience_note": "多数超过 6 毫米，但小的也可能有问题",
+      "keywords": [
+        "直径",
+        "6毫米",
+        "变大"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "What does melanoma look like?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-021",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "早期识别",
+        "演变"
+      ],
+      "entry_type": "患教-早期识别",
+      "public_question": "\"痣在变化\"为什么重要？",
+      "statement": "痣在过去数周或数月内发生变化（E, Evolving）是早期黑色素瘤的重要特征。",
+      "prerequisites": "",
+      "applicability": "自查宣教场景。",
+      "risk_boundary": "短期变化应就医评估，不得自行观察拖延。",
+      "audience_note": "最近几个星期或几个月里在变的，要重视",
+      "keywords": [
+        "演变",
+        "Evolving",
+        "变化"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "What does melanoma look like?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-022",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "早期识别",
+        "ABCDEF边界"
+      ],
+      "entry_type": "风险边界",
+      "public_question": "ABCDE 全不符合是不是就没事？",
+      "statement": "许多黑色素瘤呈现全部 ABCDE 特征，但也有些只呈现其中一两条——特征缺失不能作为排除依据。",
+      "prerequisites": "本条是识别规则的边界说明。",
+      "applicability": "自查宣教与医患沟通场景。",
+      "risk_boundary": "不得表述为\"不满足 ABCDE 就不是黑色素瘤\"。",
+      "audience_note": "不是五条全中才是，中一两条也要看医生",
+      "keywords": [
+        "ABCDE",
+        "边界",
+        "排除"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "What does melanoma look like?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-023",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "早期识别",
+        "晚期皮损改变"
+      ],
+      "entry_type": "患教-早期识别",
+      "public_question": "皮损出现破溃、出血、发痒疼痛说明什么？",
+      "statement": "进展期黑色素瘤的皮损质地可能改变：表面破溃似擦伤、变硬或出现结节、渗出或出血，有时发痒、触痛或疼痛。",
+      "prerequisites": "属进展期表现，非早期特征。",
+      "applicability": "就医提示场景。",
+      "risk_boundary": "此类表现应尽快就医，不得拖延观察。",
+      "audience_note": "破皮、流水流血、变硬、发痒疼痛，要赶紧看",
+      "keywords": [
+        "破溃",
+        "出血",
+        "瘙痒",
+        "疼痛"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "What does melanoma look like?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-024",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "早期识别",
+        "深肤色人群"
+      ],
+      "entry_type": "患教-早期识别",
+      "public_question": "皮肤颜色深的人会得黑色素瘤吗？",
+      "statement": "深肤色人群同样可能发生黑色素瘤，典型部位在指甲/趾甲下（常表现为甲色素纵纹）、手掌或足底。",
+      "prerequisites": "",
+      "applicability": "面向所有肤色的宣教。",
+      "risk_boundary": "不得表述为\"皮肤黑就不会得\"。",
+      "audience_note": "皮肤黑也会得，常在指甲下、手掌脚底",
+      "keywords": [
+        "深肤色",
+        "甲下",
+        "掌跖"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "What does melanoma look like?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-025",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "早期识别",
+        "新发皮损"
+      ],
+      "entry_type": "患教-早期识别",
+      "public_question": "新长出来的痣要紧吗？",
+      "statement": "黑色素瘤也可能表现为皮肤上新出现的色斑或其他异常区域，不一定由原有痣演变而来。",
+      "prerequisites": "新发皮损多数为良性痣。",
+      "applicability": "自查宣教场景。",
+      "risk_boundary": "不得称\"新痣就是黑色素瘤\"，也不得完全排除。",
+      "audience_note": "突然新长出来的、看起来怪怪的色斑，也要留意",
+      "keywords": [
+        "新发痣",
+        "新发皮损"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "What does melanoma look like?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-026",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "确诊",
+        "病理金标准"
+      ],
+      "entry_type": "诊疗路径-确诊",
+      "public_question": "怎么才能确诊黑色素瘤？",
+      "statement": "确诊黑色素瘤的唯一方式是切除异常皮肤组织并做病理检查（活检），寻找癌细胞；操作通常只需数分钟。",
+      "prerequisites": "肉眼与影像均不能替代病理。",
+      "applicability": "就诊指导场景。",
+      "risk_boundary": "不得宣称可凭外观或影像确诊。",
+      "audience_note": "确诊只有一条路：切下来做化验",
+      "keywords": [
+        "活检",
+        "病理",
+        "确诊"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "How is melanoma diagnosed?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-027",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "确诊",
+        "皮肤检查"
+      ],
+      "entry_type": "诊疗路径-确诊",
+      "public_question": "医生怎么检查可疑的皮肤病变？",
+      "statement": "检查皮肤的检查手段用于发现和诊断黑色素瘤，包括皮肤视诊等。",
+      "prerequisites": "检查发现异常后仍需病理确认（见 MEL-026）。",
+      "applicability": "就诊指导场景。",
+      "risk_boundary": "不得把体检描述为可确诊。",
+      "audience_note": "医生会先看皮肤，可疑的要取活检",
+      "keywords": [
+        "皮肤检查",
+        "诊断"
+      ],
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-028",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "确诊",
+        "分期检查"
+      ],
+      "entry_type": "诊疗路径-确诊",
+      "public_question": "确诊之后为什么还要做别的检查？",
+      "statement": "确诊黑色素瘤后，可能需要进行检查以判断癌细胞是否已扩散到皮肤以内、淋巴结或身体其他部位（分期检查）。",
+      "prerequisites": "分期检查由医生根据病情决定。",
+      "applicability": "就诊指导场景。",
+      "risk_boundary": "不得列举患者不必做的检查。",
+      "audience_note": "确诊后还要查有没有扩散，才知道是哪一期",
+      "keywords": [
+        "分期检查",
+        "扩散",
+        "淋巴结"
+      ],
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-029",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
@@ -833,284 +839,61 @@
         "分期依据"
       ],
       "entry_type": "诊疗路径-分期",
-      "statement": "黑色素瘤分期（TNM，AJCC第8版）依据：肿瘤厚度（从皮肤表面到肿瘤最深处的测量值）、是否溃疡（突破皮肤表面）、区域淋巴结是否受累（体检/影像/前哨淋巴结活检）、淋巴结是否融合成团、有无卫星灶/微卫星灶/移行转移、有无远处转移。",
-      "prerequisites": "已行活检或切除并获得病理。",
-      "applicability": "分期解读科普。",
-      "risk_boundary": "分期应由医生结合多项检查综合判定。",
-      "audience_note": "分期看四件事：多厚、有没有破皮、淋巴结有没有、有没有转移到别处",
+      "public_question": "黑色素瘤的分期是怎么定的？",
+      "statement": "分期主要取决于：肿瘤厚度（从皮肤表面到肿瘤最深处的测量）、是否溃疡（突破皮肤表面）、淋巴结是否受累、以及是否远处转移；分期用于规划治疗。",
+      "prerequisites": "分期以病理与医生评估为准。",
+      "applicability": "诊疗科普场景。",
+      "risk_boundary": "不得让观众自行分期。",
+      "audience_note": "分期看厚度、有没有破溃、淋巴结和远处有没有转移",
       "keywords": [
         "分期",
+        "厚度",
+        "溃疡",
         "TNM",
-        "AJCC",
-        "厚度",
-        "溃疡",
-        "淋巴结",
-        "卫星灶",
-        "移行转移"
+        "淋巴结"
       ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
       "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
+      "source_section": "Stages of Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-stg-02-breslow",
+      "id": "MEL-030",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
         "分期",
-        "Breslow厚度"
+        "分期体系"
       ],
       "entry_type": "诊疗路径-分期",
-      "statement": "显微分期由病理检查测定：Breslow 厚度（毫米）比 Clark 浸润水平更可重复、对较厚病变行为预测更准，应始终报告。",
-      "prerequisites": "完整病理标本。",
-      "applicability": "病理报告解读（Breslow/Clark）科普。",
-      "risk_boundary": "厚度测量需病理医生完成，患者无法自测。",
-      "audience_note": "病理报告里的厚度（Breslow）是关键数字",
+      "public_question": "黑色素瘤分几期？",
+      "statement": "黑色素瘤通常采用 TNM 分期系统（病理报告可体现），并归为 0 期（原位）、I、II、III、IV 期。",
+      "prerequisites": "分期描述由医生给出。",
+      "applicability": "诊疗科普场景。",
+      "risk_boundary": "不得简化为\"分期越高等于没救\"。",
+      "audience_note": "分 0 到 IV 期，病理报告上会有 TNM",
       "keywords": [
-        "Breslow",
-        "厚度",
-        "Clark",
-        "浸润水平",
-        "病理报告",
-        "显微分期"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Health Professional Version",
-      "source_url": "https://www.cancer.gov/types/skin/hp/melanoma-treatment-pdq",
-      "evidence_level": "权威机构指南摘要",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-stg-03-stage0",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
+        "TNM",
         "分期",
-        "0期"
-      ],
-      "entry_type": "诊疗路径-分期",
-      "statement": "0期又称原位黑色素瘤：异常黑色素细胞仅见于表皮，尚未成为浸润性癌。",
-      "prerequisites": "病理分期。",
-      "applicability": "早分期科普。",
-      "risk_boundary": "原位≠无需处理，处理方案遵医嘱。",
-      "audience_note": "最早的一期，癌细胞还停在皮肤最表层",
-      "keywords": [
-        "0期",
         "原位",
-        "原位黑色素瘤",
-        "表皮"
+        "0期",
+        "IV期"
       ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
       "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
+      "source_section": "Stages of Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-stg-04-stage1-2",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "分期",
-        "I期与II期"
-      ],
-      "entry_type": "诊疗路径-分期",
-      "statement": "I期：IA 为肿瘤不超过1毫米厚（无论是否溃疡）；IB 为超过1毫米但不超过2毫米且无溃疡。II期：IIA 为1~2毫米伴溃疡或2~4毫米无溃疡；IIB 为2~4毫米伴溃疡或超过4毫米无溃疡；IIC 为超过4毫米伴溃疡。I、II期均无淋巴结受累。",
-      "prerequisites": "病理分期。",
-      "applicability": "早中期分期科普。",
-      "risk_boundary": "分期界限以病理报告为准，科普表述不得替代。",
-      "audience_note": "一二期的关键是多厚、有没有破皮，淋巴结还没事",
-      "keywords": [
-        "一期",
-        "二期",
-        "1毫米",
-        "2毫米",
-        "4毫米",
-        "溃疡",
-        "IA",
-        "IB",
-        "IIA",
-        "IIB",
-        "IIC"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
-      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-stg-05-stage3",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "分期",
-        "III期"
-      ],
-      "entry_type": "诊疗路径-分期",
-      "statement": "III期指癌细胞到达附近淋巴结（经前哨淋巴结活检或临床/影像发现）和/或在原发灶附近皮肤出现卫星灶、微卫星灶或移行转移，但无远处转移；分 IIIA~IIID。",
-      "prerequisites": "分期检查完成。",
-      "applicability": "区域进展期科普。",
-      "risk_boundary": "不得将III期表述为终末期。",
-      "audience_note": "三期是跑到附近淋巴结或周边皮肤了，还没到远处",
-      "keywords": [
-        "三期",
-        "III期",
-        "淋巴结",
-        "前哨",
-        "卫星灶",
-        "移行转移"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
-      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-stg-06-stage4-ldh",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "分期",
-        "IV期与LDH"
-      ],
-      "entry_type": "诊疗路径-分期",
-      "statement": "IV期为远处转移（皮肤/软组织/远处淋巴结为M1a、肺为M1b、其他内脏为M1c、中枢神经系统为M1d），并按血LDH是否升高再分层；LDH升高提示转移性疾病对治疗反应可能较差。",
-      "prerequisites": "分期检查（含血液LDH）。",
-      "applicability": "晚期分期与预后解读科普。",
-      "risk_boundary": "IV期仍有系统治疗手段，不得表述为\"没救\"。",
-      "audience_note": "四期是转移到别处了；血里的LDH高，情况更麻烦一些",
-      "keywords": [
-        "四期",
-        "IV期",
-        "远处转移",
-        "LDH",
-        "乳酸脱氢酶",
-        "脑转移",
-        "肺转移"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Health Professional Version",
-      "source_url": "https://www.cancer.gov/types/skin/hp/melanoma-treatment-pdq",
-      "evidence_level": "权威机构指南摘要",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-stg-07-slnb",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "分期",
-        "前哨淋巴结活检"
-      ],
-      "entry_type": "诊疗路径-分期",
-      "statement": "前哨淋巴结活检：在肿瘤附近注射放射性物质或蓝色染料，其随淋巴引流到达的第一站淋巴结被识别并切除，由病理医生镜检；若未发现癌细胞，可能无需切除更多淋巴结。",
-      "prerequisites": "原发灶已处理；复发或转移风险较高（对不大可能扩散者可能无需更多检查）。",
-      "applicability": "分期检查流程科普。",
-      "risk_boundary": "是否行前哨活检由医生按厚度等风险决定。",
-      "audience_note": "打点染料找到第一个可能的\"关卡\"淋巴结，看看有没有癌细胞",
-      "keywords": [
-        "前哨淋巴结",
-        "活检",
-        "蓝染",
-        "示踪",
-        "淋巴结显像"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
-      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-stg-08-staging-tests",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "分期",
-        "分期检查手段"
-      ],
-      "entry_type": "诊疗路径-分期",
-      "statement": "可能用于分期的检查包括：皮肤检查、活检、淋巴结显像与前哨淋巴结活检、CT（颈胸腹盆）、PET、钆增强MRI（如查脑）、超声、血液生化（LDH）；分期检查结果与活检结果共同判定分期。",
-      "prerequisites": "病理确诊或高度可疑。",
-      "applicability": "检查项目科普。",
-      "risk_boundary": "并非每项都要做，由医生按风险选择。",
-      "audience_note": "可能要做CT、PET、核磁或抽血查LDH来看分期",
-      "keywords": [
-        "CT",
-        "PET",
-        "核磁",
-        "MRI",
-        "超声",
-        "LDH",
-        "分期检查"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
-      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-sub-01-mucosal",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "特殊类型",
-        "黏膜黑色素瘤"
-      ],
-      "entry_type": "定义科普",
-      "statement": "黏膜黑色素瘤起源于呼吸道、消化道或泌尿生殖道黏膜的黑色素细胞，约占黑色素瘤的1.4%；因部位隐匿、无症状且可无色素，诊断常被延误；总体预后较差；AJCC第8版TNM分期仅用于头颈部黏膜黑色素瘤。",
-      "prerequisites": "",
-      "applicability": "特殊类型科普（黏膜/鼻腔/妇科黏膜等）。",
-      "risk_boundary": "不得与皮肤黑色素瘤混用分期与治疗结论。",
-      "audience_note": "长在鼻腔、肠道这些黏膜上的黑色素瘤，发现往往更晚",
-      "keywords": [
-        "黏膜",
-        "黑色素瘤",
-        "鼻腔",
-        "直肠",
-        "延误",
-        "预后差"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Health Professional Version",
-      "source_url": "https://www.cancer.gov/types/skin/hp/melanoma-treatment-pdq",
-      "evidence_level": "权威机构指南摘要",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-sub-02-uveal",
-      "topic_path": [
-        "皮肤科",
-        "黑色素瘤",
-        "特殊类型",
-        "葡萄膜黑色素瘤"
-      ],
-      "entry_type": "定义科普",
-      "statement": "葡萄膜（眼部）黑色素瘤与皮肤黑色素瘤在发病率、预后因素、分子特征和治疗上差异显著；其多数携带GNAQ或GNA11体细胞激活突变。",
-      "prerequisites": "",
-      "applicability": "眼部黑色素瘤科普。",
-      "risk_boundary": "皮肤黑色素瘤的治疗结论不适用于眼部黑色素瘤。",
-      "audience_note": "眼睛里的黑色素瘤是另一套规律，不能照搬皮肤的",
-      "keywords": [
-        "葡萄膜",
-        "眼部",
-        "脉络膜",
-        "GNAQ",
-        "GNA11"
-      ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Health Professional Version",
-      "source_url": "https://www.cancer.gov/types/skin/hp/melanoma-treatment-pdq",
-      "evidence_level": "权威机构指南摘要",
-      "status": "approved",
-      "review_status": "pending_review"
-    },
-    {
-      "id": "mel-tx-01-surgery-first",
+      "id": "MEL-031",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
@@ -1118,56 +901,84 @@
         "手术首选"
       ],
       "entry_type": "诊疗路径-治疗",
-      "statement": "手术是各期黑色素瘤的首要治疗；其他治疗还包括化疗、放疗、生物治疗（免疫治疗）和靶向治疗。",
-      "prerequisites": "已明确诊断与分期。",
-      "applicability": "治疗总览科普。",
-      "risk_boundary": "具体方案由医生按分期与个体情况决定。",
-      "audience_note": "不管哪一期，手术都是第一位的，其他治疗配合用",
+      "public_question": "黑色素瘤怎么治？",
+      "statement": "手术切除肿瘤是各分期黑色素瘤的主要治疗。",
+      "prerequisites": "具体方案由医生按分期制定。",
+      "applicability": "诊疗科普场景。",
+      "risk_boundary": "不得替代医生给出个体化治疗方案。",
+      "audience_note": "不管哪一期，手术都是主要治疗",
       "keywords": [
         "手术",
-        "切除",
-        "首选",
-        "化疗",
-        "放疗",
-        "免疫治疗",
-        "靶向治疗"
+        "治疗"
       ],
-      "source_name": "MedlinePlus – Melanoma",
-      "source_url": "https://medlineplus.gov/melanoma.html",
-      "evidence_level": "权威机构患教",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "Treatment Option Overview",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-tx-02-targeted-braf",
+      "id": "MEL-032",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
         "治疗",
-        "靶向治疗"
+        "广泛切除"
       ],
       "entry_type": "诊疗路径-治疗",
-      "statement": "靶向治疗对携带BRAF致病变异的黑色素瘤亚型有效并已获批；BRAF抑制剂联合MEK抑制剂优于单药；但几乎所有患者最终会对该治疗产生耐药并出现疾病复发。",
-      "prerequisites": "经获批检测方法确认BRAF致病变异（前提条件）。",
-      "applicability": "BRAF突变阳性患者的治疗科普。",
-      "risk_boundary": "不得表述为靶向治疗可治愈；无BRAF突变者不适用该类靶向药。",
-      "audience_note": "查到BRAF突变才能用对应的靶向药，一般是两种药一起用，但时间长了大多会耐药",
+      "public_question": "什么是广泛切除？",
+      "statement": "广泛局部切除指切除黑色素瘤及其周围部分正常组织，缺损必要时可行植皮修复。",
+      "prerequisites": "切除范围由医生按分期确定。",
+      "applicability": "诊疗科普场景。",
+      "risk_boundary": "不得引用具体切除宽度作为通用标准。",
+      "audience_note": "把肿瘤连同周围一圈正常皮肤一起切掉",
       "keywords": [
-        "靶向",
-        "BRAF",
-        "MEK",
-        "联合用药",
-        "耐药",
-        "复发"
+        "广泛切除",
+        "植皮"
       ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Health Professional Version",
-      "source_url": "https://www.cancer.gov/types/skin/hp/melanoma-treatment-pdq",
-      "evidence_level": "权威机构指南摘要",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "Treatment Option Overview",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-tx-03-immunotherapy-subtype-independent",
+      "id": "MEL-033",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "治疗",
+        "前哨淋巴结"
+      ],
+      "entry_type": "诊疗路径-治疗",
+      "public_question": "前哨淋巴结活检是做什么的？",
+      "statement": "淋巴结绘图与前哨淋巴结活检用于检查癌细胞是否首先扩散至前哨淋巴结；若仅发现少量癌细胞，可能建议超声主动随访而非再次手术。",
+      "prerequisites": "是否活检由医生评估。",
+      "applicability": "诊疗科普场景。",
+      "risk_boundary": "不得宣称活检必然导致更多手术。",
+      "audience_note": "查第一个可能转移的淋巴结；少量癌细胞也可能先观察",
+      "keywords": [
+        "前哨淋巴结",
+        "活检",
+        "主动随访"
+      ],
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "Treatment Option Overview",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-034",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
@@ -1175,26 +986,116 @@
         "免疫治疗"
       ],
       "entry_type": "诊疗路径-治疗",
-      "statement": "多种免疫治疗已获批用于黑色素瘤治疗，且其获益与特定基因突变或分子亚型无关（与靶向治疗的适用前提不同）。",
-      "prerequisites": "由医生评估免疫治疗适应证。",
-      "applicability": "免疫治疗与靶向治疗的区别科普。",
-      "risk_boundary": "免疫治疗同样存在不良反应，需在医生监测下使用；不得断言无副作用。",
-      "audience_note": "免疫治疗不挑基因型，跟靶向药的使用前提不一样",
+      "public_question": "什么是免疫治疗？",
+      "statement": "免疫治疗通过增强机体自身对抗肿瘤的能力发挥作用，是黑色素瘤的治疗方式之一。",
+      "prerequisites": "适应证由医生评估。",
+      "applicability": "诊疗科普场景。",
+      "risk_boundary": "不得描述为对所有患者有效。",
+      "audience_note": "调动你自己的免疫力去打肿瘤",
       "keywords": [
         "免疫治疗",
-        "亚型无关",
-        "获批",
-        "免疫",
-        "PD1"
+        "生物治疗"
       ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Health Professional Version",
-      "source_url": "https://www.cancer.gov/types/skin/hp/melanoma-treatment-pdq",
-      "evidence_level": "权威机构指南摘要",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "Treatment Option Overview",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-tx-04-trial-option",
+      "id": "MEL-035",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "治疗",
+        "靶向治疗"
+      ],
+      "entry_type": "诊疗路径-治疗",
+      "public_question": "什么是靶向治疗？",
+      "statement": "靶向治疗使用攻击特定癌细胞而不伤害正常细胞的物质（如针对特定基因改变的药物），是黑色素瘤的治疗方式之一。",
+      "prerequisites": "通常需相应基因检测结果支持。",
+      "applicability": "诊疗科普场景。",
+      "risk_boundary": "不得宣称无差别适用。",
+      "audience_note": "只打癌细胞、不打正常细胞的药",
+      "keywords": [
+        "靶向治疗",
+        "基因检测",
+        "BRAF"
+      ],
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "Treatment Option Overview",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-036",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "治疗",
+        "其他治疗"
+      ],
+      "entry_type": "诊疗路径-治疗",
+      "public_question": "黑色素瘤还有哪些治疗方式？",
+      "statement": "除手术外，黑色素瘤的治疗还包括化疗、放疗、免疫治疗、靶向治疗、溶瘤病毒治疗等；疫苗治疗正在临床试验中研究。",
+      "prerequisites": "方案组合由医生按分期与病情决定。",
+      "applicability": "诊疗科普场景。",
+      "risk_boundary": "不得罗列为\"全部都要做\"。",
+      "audience_note": "还有化疗放疗这些，有的在临床试验阶段",
+      "keywords": [
+        "化疗",
+        "放疗",
+        "溶瘤病毒",
+        "疫苗治疗",
+        "临床试验"
+      ],
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "Treatment Option Overview",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-037",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "治疗",
+        "转移灶处理"
+      ],
+      "entry_type": "诊疗路径-治疗",
+      "public_question": "转移了还能手术吗？",
+      "statement": "对扩散至淋巴结、肺、消化道、骨骼或脑的黑色素瘤，有时可行手术以控制症状、改善生活质量。",
+      "prerequisites": "以姑息/控制为目的，非根治承诺。",
+      "applicability": "诊疗科普场景。",
+      "risk_boundary": "不得表述为\"转移手术能治好\"。",
+      "audience_note": "有转移的地方有时也能手术，为的是控制症状、提高生活质量",
+      "keywords": [
+        "转移",
+        "姑息手术",
+        "生活质量"
+      ],
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "Treatment Option Overview",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-038",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
@@ -1202,51 +1103,226 @@
         "临床试验"
       ],
       "entry_type": "诊疗路径-治疗",
-      "statement": "临床试验仍是黑色素瘤患者的重要治疗选择（包括BRAF突变等其他分子亚型患者）。",
-      "prerequisites": "由医生评估入组条件。",
-      "applicability": "治疗选择科普。",
-      "risk_boundary": "不得将临床试验表述为\"当小白鼠\"或保证获益。",
-      "audience_note": "正规的临床试验也是一种治疗选择",
+      "public_question": "什么是黑色素瘤的临床试验治疗？",
+      "statement": "临床试验是研究中的新治疗方式；当试验显示新治疗优于现行标准治疗时，可能成为新的标准治疗。部分临床试验仅纳入未开始治疗的患者。",
+      "prerequisites": "参加与否由患者与医生共同决定。",
+      "applicability": "就诊选择科普。",
+      "risk_boundary": "不得将试验性治疗描述为已证实的标准治疗。",
+      "audience_note": "有些新疗法还在研究验证阶段",
       "keywords": [
         "临床试验",
-        "入组",
-        "新药",
-        "研究"
+        "新治疗"
       ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Health Professional Version",
-      "source_url": "https://www.cancer.gov/types/skin/hp/melanoma-treatment-pdq",
-      "evidence_level": "权威机构指南摘要",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "Treatment Option Overview",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     },
     {
-      "id": "mel-tx-05-prognostic-factors",
+      "id": "MEL-039",
       "topic_path": [
         "皮肤科",
         "黑色素瘤",
         "预后",
-        "预后因子"
+        "影响因素"
       ],
-      "entry_type": "诊疗路径-治疗",
-      "statement": "影响预后与治疗选择的因素包括：肿瘤厚度与部位、有无出血或溃疡、淋巴结内癌细胞负荷、转移部位与数目、血LDH水平、是否携带BRAF突变、年龄与一般健康状况；年轻、女性、肢体部位黑色素瘤者预后总体较好。",
-      "prerequisites": "完成分期评估。",
-      "applicability": "预后解读科普。",
-      "risk_boundary": "群体统计不等于个体结局，不得用预后因子对个人寿命下结论。",
-      "audience_note": "医生看厚度、溃疡、淋巴结、LDH、基因这些来估计情况和定方案",
+      "entry_type": "诊疗路径-分期",
+      "public_question": "黑色素瘤的预后和什么有关？",
+      "statement": "康复几率（预后）与治疗选择取决于多种因素，包括分期、肿瘤厚度等。",
+      "prerequisites": "个体预后由医生综合评估。",
+      "applicability": "诊疗科普场景。",
+      "risk_boundary": "不得给出个体生存率断言。",
+      "audience_note": "预后好坏主要看分期、厚度这些",
       "keywords": [
         "预后",
-        "厚度",
-        "溃疡",
-        "淋巴结",
-        "LDH",
-        "BRAF",
-        "年龄"
+        "分期",
+        "厚度"
       ],
-      "source_name": "NCI Melanoma Treatment (PDQ) – Patient Version",
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
       "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
-      "evidence_level": "权威机构患教",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
       "status": "approved",
-      "review_status": "pending_review"
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-040",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "随访",
+        "随访必要性"
+      ],
+      "entry_type": "患教-随访",
+      "public_question": "治疗后为什么还要随访？",
+      "statement": "黑色素瘤治疗后可能需要随访（定期复查），以监测复发与新的皮肤病变。",
+      "prerequisites": "",
+      "applicability": "治疗后患教场景。",
+      "risk_boundary": "不得以随访替代治疗决策。",
+      "audience_note": "治完了也要定期复查",
+      "keywords": [
+        "随访",
+        "复查",
+        "复发"
+      ],
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "Treatment Option Overview",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-041",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "随访",
+        "复发可能"
+      ],
+      "entry_type": "患教-随访",
+      "public_question": "黑色素瘤会复发吗？",
+      "statement": "黑色素瘤在治疗后可能复发（come back），因此需要按医嘱随访观察。",
+      "prerequisites": "复发风险因分期而异。",
+      "applicability": "治疗后患教场景。",
+      "risk_boundary": "不得表述为\"复发就没救\"。",
+      "audience_note": "有复发的可能，所以要复查",
+      "keywords": [
+        "复发",
+        "随访"
+      ],
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "Stages of Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-042",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "误区",
+        "普通痣"
+      ],
+      "entry_type": "误区澄清",
+      "public_question": "普通痣会变成黑色素瘤吗？",
+      "statement": "大多数成人有 10–40 颗普通痣；普通痣发展为黑色素瘤的情况很少见，绝大多数痣终生保持良性。",
+      "prerequisites": "变化或异常的痣仍应就医评估。",
+      "applicability": "缓解焦虑的科普场景。",
+      "risk_boundary": "不得表述为\"痣都会癌变\"，也不得淡化真实的变化信号。",
+      "audience_note": "普通人身上二三十颗痣，绝大多数一辈子没事",
+      "keywords": [
+        "普通痣",
+        "良性",
+        "误区"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "What is a common mole?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-043",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "误区",
+        "预防性切除"
+      ],
+      "entry_type": "误区澄清",
+      "public_question": "要不要把痣都切掉来预防黑色素瘤？",
+      "statement": "医学上不推荐为预防癌变而切除所有痣；正确做法是关注变化、对可疑皮损就医评估（发育不良痣的处理听医生建议）。",
+      "prerequisites": "具体处置由医生面诊决定。",
+      "applicability": "就诊指导场景。",
+      "risk_boundary": "不得鼓励或否定个体化的医生建议。",
+      "audience_note": "不用把痣全切了防癌，盯变化比切痣重要",
+      "keywords": [
+        "预防性切除",
+        "误区",
+        "痣处理"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "Should people have a doctor remove a dysplastic nevus or a common mole to prevent it from changing into melanoma?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-044",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "预防",
+        "防晒"
+      ],
+      "entry_type": "患教-预防",
+      "public_question": "怎么降低黑色素瘤风险？",
+      "statement": "可改变的风险因素包括紫外线暴露与晒黑床使用：防晒、避免晒伤、远离晒黑床与太阳灯有助于降低风险。",
+      "prerequisites": "降低风险≠完全预防。",
+      "applicability": "预防宣教场景。",
+      "risk_boundary": "不得宣称防晒可完全预防黑色素瘤。",
+      "audience_note": "防晒、别晒伤、别用晒黑床",
+      "keywords": [
+        "防晒",
+        "预防",
+        "晒黑床"
+      ],
+      "source_name": "NCI: Common Moles, Dysplastic Nevi, and Risk of Melanoma (Fact Sheet)",
+      "source_url": "https://www.cancer.gov/types/skin/moles-fact-sheet",
+      "source_section": "What factors increase the risk of melanoma?",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
+    },
+    {
+      "id": "MEL-045",
+      "topic_path": [
+        "皮肤科",
+        "黑色素瘤",
+        "就诊",
+        "第二意见"
+      ],
+      "entry_type": "患教-随访",
+      "public_question": "诊断后想再听听别的医生意见可以吗？",
+      "statement": "寻求第二意见（second opinion）是一些患者的常见合理选择。",
+      "prerequisites": "",
+      "applicability": "就诊指导场景。",
+      "risk_boundary": "不得表述为必要程序，也不得贬低第二意见。",
+      "audience_note": "想再找别的医生看看，很正常",
+      "keywords": [
+        "第二意见",
+        "会诊",
+        "就诊"
+      ],
+      "source_name": "NCI PDQ: Melanoma Treatment (Patient Version)",
+      "source_url": "https://www.cancer.gov/types/skin/patient/melanoma-treatment-pdq",
+      "source_section": "General Information About Melanoma",
+      "evidence_level": "权威机构循证资料（NCI PDQ / NCI Fact Sheet / MedlinePlus）",
+      "license": "Public domain（美国政府作品）；PDQ Permission to Use：可自由作为文本使用，引用需注明出处、不得冒充完整 PDQ 摘要",
+      "status": "approved",
+      "review_status": "pending_review",
+      "extracted_by": "model:glm-2026-11-13（用户授权小闭环，无需人工审核参与）"
     }
   ]
 }
