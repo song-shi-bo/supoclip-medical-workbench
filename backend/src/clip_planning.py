@@ -1204,6 +1204,13 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
                   purify=purify_summary,
                   hook_patterns={**hook_pat.identity(), **hook_pat_summary},
                   callback_calls=len(actual_calls), callback_budget=2)
+    # 医学背景注入审计（2026-11-13，默认 off 时无此字段）：本次规划注入了哪些
+    # 卡片与模板版本——不参与 provenance 指纹，纯事后留痕（供 A/B 与追溯）。
+    if medical_kb.background_config()["inject"]:
+        record["medical_background"] = {
+            "template": medical_kb.BACKGROUND_TPL_VERSION,
+            "injected": bool(_bg_stmts), "entry_ids": list(_bg_ids),
+            "statement_count": len(_bg_stmts)}
     return record
 
 

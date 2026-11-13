@@ -17,10 +17,18 @@
 - **实测（真实转写）**：注入块 +980 字符（24480→25460，+4%），每个主题块命中
   相关卡片（扩切主题→MEL-022 边界卡、淋巴结答疑→MEL-055 活检规范卡）；对比文件
   `tasks/projects/<id>/medical_bg_prompt_diff.txt`。
-- **真模型 A/B 受限**：模型网关凭据仅存在于服务进程环境（不落 .env），临时
-  shell 调规划返回 403（Model not allowed for this application）——真模型对比
-  需经服务环境内任务（或运维在 .env 追加 `MEDICAL_BG_INJECT=on` 后由真实任务
-  触发）。默认 off 下工作台行为零变化。
+- **真模型 A/B 受限→已用诊断任务完成**：模型网关凭据仅存在于服务进程环境
+  （临时 shell 调规划返回 403），故经 stop_after=plan 诊断任务走 worker 环境
+  执行（任务 `15636aee…`，plan_ready）。结果：plan_source=llm 真模型规划、
+  4 切片中闸门按 61 条新库剔除 1 条非医学（密度 0.067）、泄漏告警 0、
+  主题标题与旧 5 条方案不同（新方案见 tasks/plans/15636aee…/clip_plan.json，
+  旧方案对照 tasks/plans/c6cd115b…/clip_plan.json）——质量拍板交用户。
+- **追加审计字段**：plan record 增 `medical_background`（template/entry_ids/
+  statement_count，事后留痕不参与指纹）；默认 off 时无此字段。
+- 差异说明：真模型运行的 prompt sha 离线不可复现（worker 环境变量与临时
+  shell 不同，影响提示词长度类组装项）——注入生效以环境机制
+  （子进程 load_dotenv + .env 行先于 spawn 追加）与 medical_background
+  字段（未来运行）为证。默认 off 下工作台行为零变化。
 
 ## 1. 目标与不变式
 
