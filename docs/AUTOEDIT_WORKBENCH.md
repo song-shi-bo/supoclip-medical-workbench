@@ -119,6 +119,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 ### 4.3 字幕版本与烧录
 - **烧录文本来源（2026-11-09 固化）**：成片硬字幕=精修稿优先（§3.2 第 5 步）——`source=llm` 切片烧精修稿（无语气词），缺失/fallback 如实回退纠错转写；`warnings.json.subtitle_provenance.subtitle_source` 可审计。字幕编辑器人工修订（rev-NNN ASS）只对 sidecar 底片生效，burned 底片以画面为准；要换字幕文本需重新剪辑（渲染指纹 `refined-burn/1` 识别精修/转写变化）。
+- **words 接线与存量成片重烧（2026-11-12）**：words 进入渲染后指纹升至 `words-align/1`，此后所有新渲染自动带词级对齐；存量成片换新字幕必须重编码（字幕烧录在画面里，无法只换文件）。run `c6cd115b` 的 5 条成片已执行**就地字幕重烧维护**（`backend/scripts/subtitle_reburn_inplace_once.py`，用户授权）：同 plan/sub_ranges/源片/编码参数原位重渲 → 抽帧对比确认长停顿留白生效、发布副本原子覆盖、`clips.json.published` 哈希刷新为真实新值；旧副本备份于 `tasks/output/<run>/.pre-subtitle-reburn-*`。**注意两条系统约束**：(1) `studio_artifacts` 行按 (job,kind,clip,object_key) 去重且不更新已有行——同路径重发布时行内 sha/size 保持首次登记值，文件为权威内容；(2) 规划 provenance 冻结含实现文件哈希与闸门/overlay 身份，**任何 skill 实现变更后 reedit/`_plan_cache` 缓存必然失效**（protected resume 路径会硬失败 E_CACHE_CONTEXT_CHANGED）——跨实现变更的「只重渲」只能走直连 render + 原位发布，不能走 reedit（会重新 LLM 规划）。
 - `POST /studio/clips/{p}/{c}/subtitles`：cues→overrides、`clip_config.update_config`（真变化才 bump `render_revision`，`task_history` 记 `UPDATE_SUBTITLE`），生成 `subtitles/rev-00N/{clip}.ass|.srt`。
 - `GET` 返回 cues+config+overrides+版本列表 + **`subtitles_burned_in`**（读成片 `warnings.json`：`subtitle_mode=burned`）——前端据此**关闭播放器实时叠加层防重影**（2026-11-08 修复）；叠加层只服务未烧录（Phase 2 导出）场景。时间线字幕轨不受影响。
 - 字幕合成公式与后端 ASS 生成器一致（`subtitle_compose.py`、`caption_templates.py`、`emoji_captions.py`；默认 44px 金黄 #FFD700、y_pct 78.125）。
@@ -192,7 +193,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 ## 附录 · 代码事实快照（自动生成）
 
-- 生成时间：2026-11-13 01:56 UTC · 代码版本：`35426d3` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
+- 生成时间：2026-11-13 02:47 UTC · 代码版本：`af43b85` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
 
 ### HTTP 端点（backend/src/api/routes）
 
