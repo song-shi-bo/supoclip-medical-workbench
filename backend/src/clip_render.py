@@ -100,7 +100,8 @@ def _srt_ts(ms: int) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d},{millis:03d}"
 
 
-def build_srt(corrected_segments: list[dict[str, Any]], start_ms: int, end_ms: int
+def build_srt(corrected_segments: list[dict[str, Any]], start_ms: int, end_ms: int,
+              words: list[dict[str, Any]] | None = None,
               ) -> tuple[str, list[str], list[str]]:
     """从纠错转写构建切片内字幕：cue 合成层（subtitle_cueing）+ SRT 序列化。
 
@@ -114,11 +115,19 @@ def build_srt(corrected_segments: list[dict[str, Any]], start_ms: int, end_ms: i
     ``SUBTITLE_MAX_LINE_CHARS`` / ``SUBTITLE_MAX_LINES`` /
     ``SUBTITLE_MIN_CUE_SECONDS`` / ``SUBTITLE_STRIP_FILLERS`` /
     ``SUBTITLE_PUNCT_STYLE`` / ``SUBTITLE_SENTENCE_PAUSE_MS``。
+
+    词级对齐（2026-11-12 字幕优化）：``words`` 提供词级时间（秒，绝对值）时，
+    token 时间走真实词对齐——cue 尾部停在最后一个词、长停顿字幕消失；
+    未提供回退段内线性插值（旧行为）。
     """
     duration_ms = max(1, end_ms - start_ms)
     cfg = _subtitle_cueing.config_from_env()
+    words_ms = [{"text": str(w.get("text") or ""),
+                 "start": float(w.get("start") or 0.0) * 1000.0,
+                 "end": float(w.get("end") or 0.0) * 1000.0}
+                for w in (words or [])] or None
     cues, used, warnings = _subtitle_cueing.build_cues_from_segments(
-        corrected_segments, float(start_ms), float(end_ms), cfg)
+        corrected_segments, float(start_ms), float(end_ms), cfg, words_ms=words_ms)
     blocks: list[str] = []
     window_s = duration_ms / 1000.0
     for i, cue in enumerate(cues, start=1):

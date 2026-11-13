@@ -35,6 +35,14 @@ _DEFAULT_MAX_LINE_CHARS = 16
 _DEFAULT_MAX_LINES = 2
 _DEFAULT_MIN_CUE_SECONDS = 0.8
 _DEFAULT_SENTENCE_PAUSE_MS = 500
+# 长停顿字幕消失阈值（2026-11-12 字幕优化）：cue 间空隙超过该时长，前条不再延伸
+# （说完整句就撤，不挂到下一句开始）；≤ 该值的短停顿仍闭合（防闪烁）。
+_DEFAULT_GAP_EXTEND_MS = 800
+# 单条 cue 显示时长硬上限（秒，防挂屏）：超过即按词时间切开。
+# 字幕停留长的根因=ASR 尾部静音 + 整平无限延伸；词间停顿切分(1.5s)+该上限兜底。
+_DEFAULT_MAX_CUE_SECONDS = 12.0
+# 词间停顿切分阈值：相邻词间隔超过该值 → cue 在此切开（真实沉默≠字幕停留）
+_DEFAULT_CUE_GAP_SPLIT_S = 1.5
 
 
 @dataclass(frozen=True)
@@ -45,6 +53,9 @@ class CueConfig:
     strip_fillers: bool = True
     punct_style: str = "omit"          # omit | keep
     sentence_pause_ms: int = _DEFAULT_SENTENCE_PAUSE_MS
+    gap_extend_ms: float = _DEFAULT_GAP_EXTEND_MS
+    max_cue_seconds: float = _DEFAULT_MAX_CUE_SECONDS
+    cue_gap_split_s: float = _DEFAULT_CUE_GAP_SPLIT_S
 
     @property
     def cue_capacity(self) -> int:
@@ -82,6 +93,9 @@ def config_from_env(env: dict | None = None) -> CueConfig:
         strip_fillers=_bool("SUBTITLE_STRIP_FILLERS", True),
         punct_style=style,
         sentence_pause_ms=max(0, _int("SUBTITLE_SENTENCE_PAUSE_MS", _DEFAULT_SENTENCE_PAUSE_MS)),
+        gap_extend_ms=max(0.0, _float("SUBTITLE_GAP_EXTEND_MS", _DEFAULT_GAP_EXTEND_MS)),
+        max_cue_seconds=max(1.0, _float("SUBTITLE_MAX_CUE_SECONDS", _DEFAULT_MAX_CUE_SECONDS)),
+        cue_gap_split_s=max(0.0, _float("SUBTITLE_CUE_GAP_SPLIT_S", _DEFAULT_CUE_GAP_SPLIT_S)),
     )
 
 
@@ -195,12 +209,42 @@ def _atomic_tokens(text: str) -> list[str]:
     return tokens
 
 
-def _tokenize_segment(text: str, seg_start_ms: float, seg_end_ms: float) -> list[Token]:
-    """分段文本 → token 列表；词时间按字符位置段内线性插值。"""
+def _tokenize_segment(text: str, seg_start_ms: float, seg_end_ms: float,
+                      seg_words: list[dict[str, float]] | None = None) -> list[Token]:
+    """分段文本 → token 列表。
+
+    时间实现二选一（2026-11-12 字幕优化）：
+    - ``seg_words`` 提供真实词级时间（窗口相对 ms，{text,start,end}）→
+      **词对齐**：token 时间取自真实词时间曲线——尾部静音自然裁掉、
+      语音停顿真实反映（停留长/与画面不符的根治）；
+    - 未提供 → 段内线性插值（旧行为，无词级数据的回退路径）。
+    """
     span = max(1.0, seg_end_ms - seg_start_ms)
+    curve = None
+    if seg_words and len(seg_words) >= 1:
+        word_widths = [max(1.0, float(len(w.get("text") or ""))) for w in seg_words]
+        total_w = sum(word_widths)
+        scale = len(text) / max(1.0, total_w)
+        curve = []
+        pos = 0.0
+        for w, width in zip(seg_words, word_widths):
+            t0 = float(w.get("start"))
+            t1 = max(t0 + 1.0, float(w.get("end")))
+            curve.append((pos, pos + width * scale, t0, t1))
+            pos += width * scale
 
     def at(offset: float) -> float:
-        return seg_start_ms + span * (offset / len(text))
+        if curve:
+            for a, b, t0, t1 in curve:
+                if a <= offset < b:
+                    frac = (offset - a) / (b - a) if b > a else 0.0
+                    return t0 + frac * (t1 - t0)
+            last = curve[-1]
+            if offset >= last[1]:
+                return last[3]          # 尾部（标点/静音）：停在最后一个词的结束
+            first = curve[0]
+            return first[2]             # 头部越界：钳到首个词的开始
+        return seg_start_ms + span * (offset / max(1, len(text)))
 
     tokens: list[Token] = []
     soft_before = False
@@ -261,11 +305,15 @@ class Clause:
 
 
 def build_clauses(segments: list[dict], start_ms: float, end_ms: float, cfg: CueConfig,
-                  warnings: list[str]) -> tuple[list[Clause], list[str]]:
+                  warnings: list[str],
+                  words_ms: list[dict[str, float]] | None = None,
+                  ) -> tuple[list[Clause], list[str]]:
     """窗口内分段 → 子句列表与使用的分段 id。
 
     硬边界（新句）：强标点（。？！；）之后、分段间隔 ≥ sentence_pause_ms。
     软边界（同句内子句）：，、：。
+    ``words_ms``：词级时间（绝对 ms，{text,start,end}）——提供时 token 时间
+    走词对齐（2026-11-12 字幕优化），未提供回退段内线性插值。
     """
     clauses: list[Clause] = []
     current = Clause()
@@ -291,13 +339,25 @@ def build_clauses(segments: list[dict], start_ms: float, end_ms: float, cfg: Cue
 
         seg_start = max(0.0, rel0)
         seg_end = min(end_ms - start_ms, rel1)
+        # 词级时间（2026-11-12）：中点落在本分段内的词 → 窗口相对时间
+        seg_words: list[dict[str, float]] | None = None
+        if words_ms:
+            seg_words = []
+            for w in words_ms:
+                mid = (float(w["start"]) + float(w["end"])) / 2.0
+                if s0 <= mid <= s1:
+                    seg_words.append({"text": str(w.get("text") or ""),
+                                      "start": max(0.0, float(w["start"]) - start_ms),
+                                      "end": max(0.0, float(w["end"]) - start_ms)})
+            if not seg_words:
+                seg_words = None
         if prev_seg_end is not None and (seg_start - prev_seg_end) >= cfg.sentence_pause_ms:
             if current.tokens:
                 clauses.append(current)
             current = Clause()
         prev_seg_end = seg_end
 
-        for tok in _tokenize_segment(text, seg_start, seg_end):
+        for tok in _tokenize_segment(text, seg_start, seg_end, seg_words):
             current.tokens.append(tok)
             if tok.kind == "punct":
                 current.tail_punct = tok.text
@@ -340,7 +400,12 @@ def _arrange_lines(group: list[Clause], cfg: CueConfig, warnings: list[str]) -> 
             remaining = max_lines - len(lines)
             if remaining <= 0:
                 return None
-            lines.extend(_wrap_tokens(clause.words(), limit, remaining, warnings))
+            wrapped = _wrap_tokens(clause.words(), limit, remaining, warnings)
+            # 折行结果必须每行 ≤limit（预算只剩 1 行时 _wrap_tokens 无法二分，
+            # 会产出超宽行——此时整组不可行，交回装箱切断；2026-11-12 行宽修复）
+            if len(wrapped) > remaining or any(len(ln) > limit for ln in wrapped):
+                return None
+            lines.extend(wrapped)
             continue
         if cur and len(cur) + len(t) <= limit:
             cur += t
@@ -357,20 +422,67 @@ def _arrange_lines(group: list[Clause], cfg: CueConfig, warnings: list[str]) -> 
 
 def _split_overlong_clause(clause: Clause, cfg: CueConfig,
                            warnings: list[str]) -> list[Clause]:
-    """超容量单子句（无标点长句）按词边界二次切分成多个 cue 容量的子句（规则 1）。"""
+    """超容量/超时长单子句二次切分（规则 1 + 2026-11-12 停留优化）。
+
+    - 文字超容量：按词边界切成多个 cue 容量的子句；
+    - 显示时长超 max_cue_seconds：按词时间在时长上限处切开（词级对齐提供的
+      真实词时间让切点落在真实语流上）。"""
+    out: list[Clause] = []
+    for part in _split_clause_at_time_gaps(clause, cfg):
+        out.extend(_split_overlong_by_capacity(part, cfg, warnings))
+    return out
+
+
+def _split_clause_at_time_gaps(clause: Clause, cfg: CueConfig) -> list[Clause]:
+    """词间停顿切分：相邻 token 间隔 > cue_gap_split_s → 在此切开（真实沉默处
+    字幕消失，不挂满整个停顿）。无词时间的 token（插值回退）不产生大间隔。"""
+    toks = clause.tokens
+    if len(toks) < 2:
+        return [clause]
+    parts: list[list[Token]] = []
+    cur: list[Token] = [toks[0]]
+    # token 时间为毫秒，阈值 cue_gap_split_s 为秒 → 统一换算（2026-11-12 单位修复：
+    # 原先 ms 直接与秒阈值比较，>1.5ms 即切分，真实词时间下几乎每个词间都误切）
+    gap_split_ms = cfg.cue_gap_split_s * 1000.0
+    for prev, nxt in zip(toks, toks[1:]):
+        gap = nxt.t_start - prev.t_end
+        if gap > gap_split_ms:
+            parts.append(cur)
+            cur = []
+        cur.append(nxt)
+    if cur:
+        parts.append(cur)
+    if len(parts) <= 1:
+        return [clause]
+    return [Clause(tokens=part, hard_start=(clause.hard_start if i == 0 else False))
+            for i, part in enumerate(parts) if part]
+
+
+def _split_overlong_by_capacity(clause: Clause, cfg: CueConfig,
+                                warnings: list[str]) -> list[Clause]:
+    """文字超容量/显示超时长单子句按词边界二次切分（规则 1 + 停留优化）。
+
+    切分触发（任一）：子句文字超 cue 容量；显示时长（词级时间）超 max_cue_seconds。
+    连续语流没有停顿也会按时长上限切开（解决"一句话停留很长时间"）。"""
     words = clause.words()
     total = sum(len(t.text) for t in words)
-    if total <= cfg.cue_capacity:
+    # token 时间为毫秒，max_cue_seconds 为秒 → 统一换算（2026-11-12 单位修复：
+    # 原先 ms 跨度直接与秒阈值比较，任何 >12ms 的子句都被误判超长、逐词碎裂）
+    span_s = ((words[-1].t_end - words[0].t_start) / 1000.0) if words else 0.0
+    if total <= cfg.cue_capacity and span_s <= cfg.max_cue_seconds:
         return [clause]
-    warnings.append("超长子句无标点边界，已按词边界二次切分（语义边界启发式）")
+    warnings.append("超长子句已按词时间/容量二次切分（停留优化 2026-11-12）")
     parts: list[list[Token]] = []
     cur: list[Token] = []
     cur_len = 0
+    first_start = words[0].t_start if words else 0.0
     for tok in words:
         tl = len(tok.text)
-        if cur and cur_len + tl > cfg.cue_capacity:
+        dur_s = (tok.t_end - first_start) / 1000.0
+        if cur and (cur_len + tl > cfg.cue_capacity or dur_s >= cfg.max_cue_seconds):
             parts.append(cur)
             cur, cur_len = [], 0
+            first_start = tok.t_start
         cur.append(tok)
         cur_len += tl
     if cur:
@@ -380,17 +492,32 @@ def _split_overlong_clause(clause: Clause, cfg: CueConfig,
     return out
 
 
+def _group_over_max_span(run: list[Clause], clause: Clause, cfg: CueConfig) -> bool:
+    """合并该子句后组跨度（token 时间，毫秒）是否超 max_cue_seconds。
+
+    装箱时长约束（2026-11-12 单位修复配套）：容量切分产出的子句是
+    hard_start=False，若装箱只看文字容量会把切开的超时长子句重新合并成
+    一条超长挂屏 cue——合并前必须同查显示时长。"""
+    toks = [t for c in run + [clause] for t in c.tokens]
+    span_s = (max(t.t_end for t in toks) - min(t.t_start for t in toks)) / 1000.0
+    return span_s > cfg.max_cue_seconds
+
+
 def _pack_clauses(clauses: list[Clause], cfg: CueConfig, warnings: list[str]) -> list[list[Clause]]:
-    """子句装箱成 cue：以「可排进 max_lines×limit」为可行性判据；跨硬边界不合并。"""
+    """子句装箱成 cue：以「可排进 max_lines×limit」为可行性判据；跨硬边界
+    不合并；合并后显示时长超 max_cue_seconds 也不合并（防超长挂屏）。"""
     expanded: list[Clause] = []
     for clause in clauses:
-        expanded.extend(_split_overlong_clause(clause, cfg, warnings))
+        for part in _split_clause_at_time_gaps(clause, cfg):
+            expanded.extend(_split_overlong_clause(part, cfg, warnings))
     groups: list[list[Clause]] = []
     run: list[Clause] = []
     for clause in expanded:
         if not clause.words():
             continue
-        if run and (clause.hard_start or _arrange_lines(run + [clause], cfg, warnings) is None):
+        if run and (clause.hard_start
+                    or _group_over_max_span(run, clause, cfg)
+                    or _arrange_lines(run + [clause], cfg, warnings) is None):
             groups.append(run)
             run = [clause]
         else:
@@ -476,15 +603,18 @@ def _cue_text(group: list[Clause], cfg: CueConfig, warnings: list[str]) -> str:
 
 def build_cues_from_segments(segments: list[dict], start_ms: float, end_ms: float,
                              cfg: CueConfig | None = None,
+                             words_ms: list[dict[str, float]] | None = None,
                              ) -> tuple[list[dict], list[str], list[str]]:
     """窗口内转写分段 → (cues, used_segment_ids, warnings)。
 
-    cue: ``{"start": 秒, "end": 秒, "text": "行1\\n行2"}``；相邻条不重叠、无缝隙。
+    cue: ``{"start": 秒, "end": 秒, "text": "行1\\n行2"}``；提供 ``words_ms``
+    （词级时间，绝对 ms）时 token 时间走词对齐——cue 尾部停在最后一个词、
+    停顿处字幕消失（2026-11-12 字幕优化）；未提供回退线性插值（旧行为）。
     """
     cfg = cfg or config_from_env()
     warnings: list[str] = []
-    window = max(1.0, float(end_ms) - float(start_ms))
-    clauses, used_ids = build_clauses(segments, float(start_ms), float(end_ms), cfg, warnings)
+    clauses, used_ids = build_clauses(segments, float(start_ms), float(end_ms), cfg, warnings,
+                                      words_ms=words_ms)
 
     cues: list[dict] = []
     for group in _pack_clauses(clauses, cfg, warnings):
@@ -495,29 +625,38 @@ def build_cues_from_segments(segments: list[dict], start_ms: float, end_ms: floa
         cues.append({"start": t0 / 1000.0, "end": t1 / 1000.0, "text": text})
 
     cues.sort(key=lambda c: (c["start"], c["end"]))
-    _tile_cues(cues, cfg, warnings, window)
+    # window 统一为秒（cue 时间单位）；原先传 ms 与秒 cue 混用，兜底钳制失效
+    window_s = max(1.0, (float(end_ms) - float(start_ms)) / 1000.0)
+    _tile_cues(cues, cfg, warnings, window_s)
     return cues, used_ids, warnings
 
 
 def _tile_cues(cues: list[dict], cfg: CueConfig, warnings: list[str], window: float) -> None:
-    """时间轴整平（规则 5）：去重叠（钳制）、补缝隙（前条延伸）、短条并入相邻条。"""
+    """时间轴整平（规则 5 + 2026-11-12 停留优化）：去重叠（钳制）、补缝隙、
+    短条并入相邻条。补缝隙受 ``gap_extend_ms`` 约束——空隙 ≤ 0.8s 的短停顿
+    仍闭合（防闪烁）；> 0.8s 的长停顿前条最多延伸 0.8s 后消失，剩余留白
+    （说完整句就撤，不再挂到下一句开始）。``window`` 单位秒。"""
     if not cues:
         return
     min_s = cfg.min_cue_seconds
+    max_ext = cfg.gap_extend_ms / 1000.0
     # 1) 去重叠：后条起点钳到前条终点
     for i in range(1, len(cues)):
         if cues[i]["start"] < cues[i - 1]["end"]:
             cues[i]["start"] = cues[i - 1]["end"]
             cues[i]["end"] = max(cues[i]["end"], cues[i]["start"])
-    # 2) 补缝隙：前条终点延伸到后条起点（显示无缝）
+    # 2) 补缝隙：短停顿闭合到后条起点；长停顿最多延伸 gap_extend_ms（留白）
     for i in range(1, len(cues)):
         if cues[i]["start"] - cues[i - 1]["end"] > 0.001:
-            cues[i - 1]["end"] = cues[i]["start"]
+            cues[i - 1]["end"] = min(cues[i]["start"], cues[i - 1]["end"] + max_ext)
 
-    # 3) 短条处理：并入相邻条（文本合并不超容量才并），否则原地延伸
+    # 3) 短条处理：并入相邻条（合并后可排出 ≤max_lines×limit 才并），否则原地延伸
     def cap_ok(a: dict, b: dict) -> bool:
+        # 平铺后字数 ≤ 容量（容量 = max_lines×max_line_chars）→ 保证可重排出
+        # ≤max_lines 行、每行 ≤limit（2026-11-12 行宽修复：原 visible_len+1
+        # 判据配合 _join_texts 盲拼会产出 >16 字超宽行）
         joined = (a["text"] + b["text"]).replace("\n", "")
-        return _visible_len(joined) <= cfg.cue_capacity + 1
+        return len(joined) <= cfg.cue_capacity
 
     i = 0
     while i < len(cues):
@@ -549,7 +688,9 @@ def _tile_cues(cues: list[dict], cfg: CueConfig, warnings: list[str], window: fl
 
 def _join_texts(a: str, b: str, cfg: CueConfig) -> str:
     """合并两条 cue 文本：优先行级拼接（a 末行 + b 首行，不新增行数），
-    其次行堆叠；兜底单行串接。"""
+    其次行堆叠；兜底平铺重排（每行 ≤limit；cap_ok 已保证 ≤容量 → 行数
+    ≤max_lines）。原盲拼 ``a + b`` 会产出 >16 字超宽行（规则 2 违例，
+    2026-11-12 行宽修复）。"""
     la, lb = a.split("\n"), b.split("\n")
     merged = la[:-1] + [la[-1] + lb[0]] + lb[1:]
     if (len(merged) <= cfg.max_lines
@@ -557,6 +698,10 @@ def _join_texts(a: str, b: str, cfg: CueConfig) -> str:
         return "\n".join(merged)
     if len(la) + len(lb) <= cfg.max_lines:
         return "\n".join(la + lb)
+    flat = (a + b).replace("\n", "")
+    if len(flat) <= cfg.cue_capacity:
+        return "\n".join(flat[i:i + cfg.max_line_chars]
+                         for i in range(0, len(flat), cfg.max_line_chars))
     return a + b
 
 

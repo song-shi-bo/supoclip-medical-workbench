@@ -88,7 +88,9 @@ def test_line_shape_invariants(text):
 
 
 def test_pause_creates_sentence_boundary():
-    """规则 1：分段间隔 ≥ pause 阈值 → 硬边界（不跨停顿合并 cue）。"""
+    """规则 1：分段间隔 ≥ pause 阈值 → 硬边界（不跨停顿合并 cue）。
+    2026-11-12 修订：长停顿（> gap_extend 0.8s）→ 前条最多延伸 0.8s 后消失，
+    不再挂到下一句开始（解决"一句话停留很长时间"）。"""
     segs = [
         {"segment_id": "a", "start_ms": 0, "end_ms": 2000, "text": "第一句话。"},
         {"segment_id": "b", "start_ms": 3200, "end_ms": 6000, "text": "第二句话。"},
@@ -96,8 +98,9 @@ def test_pause_creates_sentence_boundary():
     cues, _, _ = _cues(segs, 0, 60_000, _cfg())
     assert len(cues) == 2
     assert cues[0]["text"] == "第一句话" and cues[1]["text"] == "第二句话"
-    # 无缝隙：前条延伸到后条起点
-    assert cues[0]["end"] == pytest.approx(cues[1]["start"], abs=1e-6)
+    # 长停顿：前条延伸不超过 gap_extend_ms（0.8s），剩余留白（字幕消失）
+    assert cues[0]["end"] == pytest.approx(2.0 + 0.8, abs=1e-6)
+    assert cues[1]["start"] - cues[0]["end"] == pytest.approx(0.4, abs=1e-6)
 
 
 def test_small_gap_same_sentence_merges():
