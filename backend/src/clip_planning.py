@@ -60,6 +60,7 @@ from pydantic import BaseModel, Field
 from . import llm_budget
 from . import clip_medical_gate as med_gate
 from . import clip_purify
+from . import medical_kb
 from . import content_analysis as ca
 from . import hierarchical_planning as hp
 from . import hook_patterns as hook_pat
@@ -649,6 +650,47 @@ def _parse_clock_ms(value: str) -> int | None:
     return ((h * 3600 + m * 60 + s) * 1000) + ms_part
 
 
+def _max_common_run(a: str, b: str) -> int:
+    """两字符串最长连续公共子串长度（短文本 DP，O(len_a*len_b)，两者均为短串）。"""
+    if not a or not b:
+        return 0
+    prev = [0] * (len(b) + 1)
+    best = 0
+    for i in range(1, len(a) + 1):
+        cur = [0] * (len(b) + 1)
+        char_a = a[i - 1]
+        for j in range(1, len(b) + 1):
+            if char_a == b[j - 1]:
+                cur[j] = prev[j - 1] + 1
+                if cur[j] > best:
+                    best = cur[j]
+        prev = cur
+    return best
+
+
+def _scan_background_leak(clips: list[dict[str, Any]], statements: list[str],
+                          threshold: int) -> list[str]:
+    """医学背景泄漏扫描（设计稿 §5-2，warn 级）：切片输出字段（主题/标题/钩子/
+    内容摘要/封面文案）与注入卡片正文存在 ≥threshold 字连续相同子串 → 逐切片
+    告警。硬防线在钩子逐字执法与字幕只删不改链路，本扫描只监测供人工核查。"""
+    if not statements:
+        return []
+    fields = ("topic", "title", "hook_first_line", "content_summary", "cover_text")
+    warns: list[str] = []
+    for clip in clips:
+        blob = " ".join(str(clip.get(k) or "") for k in fields).strip()
+        if not blob:
+            continue
+        for statement in statements:
+            hit = _max_common_run(blob, statement)
+            if hit >= threshold:
+                warns.append(
+                    f"medical_background_leak: 切片「{str(clip.get('topic'))[:24]}」输出与注入卡片"
+                    f"正文存在 {hit} 字连续相同片段，请人工核查（不阻断；钩子已逐字执法兜底）")
+                break
+    return warns
+
+
 def _analysis_context_lines(analysis: dict[str, Any], max_clips: int) -> list[str]:
     """分析四产物 → 提示词A用户提示里的背景段（提示词A原文不动，背景走拼装层）。"""
     lines: list[str] = []
@@ -685,6 +727,13 @@ def _analysis_context_lines(analysis: dict[str, Any], max_clips: int) -> list[st
     annotations = analysis.get("medical_annotations") or []
     if annotations:
         lines.extend(med_gate.context_lines({"enabled": True, "unit_annotations": annotations}))
+    # 医学背景注入（2026-11-13 设计稿 docs/medical-background-injection-design.md，
+    # 默认 off）：闸门命中卡片的结论/边界作为理解背景受控注入——块首自带禁止
+    # 复制指令；statement 不进任何输出（钩子逐字执法 + 泄漏扫描双护栏）。
+    if annotations:
+        bg_block, _bg_stmts, _bg_ids = medical_kb.build_background_block(annotations)
+        if bg_block:
+            lines.extend(bg_block.split("\n"))
     # 钩子候选（2026-11-12 钩子模式库）：候选全部为**本片转写逐字原句**（主题块
     # 钩子句/患者提问/金句），经模式库结构打分排序——注入的是排序后的原句清单，
     # 不含任何参考素材文本（「学模式不学内容」纪律）。
@@ -1115,6 +1164,15 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
             hook_pat_summary["replaced_non_verbatim"] += 1
             notes.append(f"钩子逐字执法：hook_first_line「{original[:30]}」非转写原话，"
                          f"已替换为切片内逐字候选「{best['text'][:30]}」")
+    # 医学背景泄漏扫描（2026-11-13 设计稿 §5-2，warn 级；默认 off 时零开销）：
+    # 输出与注入卡片正文 ≥threshold 字连续相同 → medical_background_leak 告警。
+    if medical_kb.background_config()["inject"]:
+        _bg_block, _bg_stmts, _bg_ids = medical_kb.build_background_block(
+            gate_profile.get("unit_annotations") or [])
+        if _bg_stmts:
+            plan_warnings.extend(_scan_background_leak(
+                clips, _bg_stmts,
+                medical_kb.background_config()["leak_threshold"]))
     discarded = _enforce_full_coverage(index, clips, discarded + moved_discarded, plan_warnings)
     warnings = plan_warnings
     if cap_applied or fallback_cap:

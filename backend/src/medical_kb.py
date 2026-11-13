@@ -42,6 +42,122 @@ LEXICAL_WEIGHT = max(0.0, min(1.0, float(os.getenv("MEDICAL_GATE_LEXICAL_WEIGHT"
 # 单条目占比（单条目占比受该条目词表大小影响）。
 LEXICAL_HITS_NORM = max(1.0, float(os.getenv("MEDICAL_GATE_LEXICAL_HITS_NORM", "8")))
 
+# ---------------------------------------------------------------------------
+# 医学背景注入（2026-11-13 设计稿 docs/medical-background-injection-design.md）：
+# 闸门命中卡片的结论/边界以受控背景块注入提示词A用户提示（拼装层），供模型
+# 理解医学主题。默认 off（MEDICAL_BG_INJECT=on 开启）；块首自带「禁止复制到
+# 任何输出」指令；输出侧另有泄漏扫描（clip_planning._scan_background_leak）。
+# ---------------------------------------------------------------------------
+
+BACKGROUND_TPL_VERSION = "medical-bg-tpl/1"
+_BG_STATEMENT_MAX_CHARS = 120
+_BG_BOUNDARY_MAX_CHARS = 60
+_BG_DEFAULT_BUDGET = 1200
+_BG_HEADER = ("【医学背景（仅供理解内容主题与医学逻辑，禁止复制其文字到任何输出；"
+              "主题/钩子/摘要仍只能来自转写原文）】")
+
+
+def background_config(env: dict[str, str] | None = None) -> dict[str, Any]:
+    """背景注入配置：默认 off；非法值一律按 off/默认值处理。"""
+    e = os.environ if env is None else env
+
+    def _bool(raw: Any, default: bool = False) -> bool:
+        if raw is None or str(raw) == "":
+            return default
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _int(raw: Any, default: int) -> int:
+        try:
+            return max(0, int(str(raw)))
+        except (TypeError, ValueError):
+            return default
+
+    return {
+        "inject": _bool(e.get("MEDICAL_BG_INJECT"), False),
+        "max_entries": max(1, _int(e.get("MEDICAL_BG_MAX_ENTRIES"), 9)),
+        "per_unit": max(1, _int(e.get("MEDICAL_BG_PER_UNIT"), 3)),
+        "budget": max(200, _int(e.get("MEDICAL_BG_BUDGET"), _BG_DEFAULT_BUDGET)),
+        "leak_threshold": max(4, _int(e.get("MEDICAL_BG_LEAK_THRESHOLD"), 12)),
+    }
+
+
+def _short_source(source_name: str) -> str:
+    if "卫健委" in source_name:
+        return "国家卫健委2018规范"
+    if "PDQ" in source_name:
+        return "NCI PDQ"
+    if "Moles" in source_name or "fact" in source_name.lower():
+        return "NCI事实页"
+    if "MedlinePlus" in source_name:
+        return "MedlinePlus"
+    return source_name[:12]
+
+
+def build_background_block(annotations: list[dict[str, Any]] | None,
+                           env: dict[str, str] | None = None,
+                           snapshot_path: Path | None = None,
+                           ) -> tuple[str, list[str], list[str]]:
+    """闸门标注 + 快照条目 → 背景块。
+
+    返回 ``(块文本或空串, 注入 statements, 注入 entry_ids)``。每主题块取
+    ``per_unit`` 条命中条目（按闸门排序），全片去重上限 ``max_entries``，
+    顺序装配、预算尽即停（高分单元在前）。关闭/无命中/快照缺失 → 空串。
+    确定性纯函数：同输入（标注+环境）必产同块——expected/actual 两边
+    provenance 的 prompt_sha256 因此逐字节一致。"""
+    cfg = background_config(env)
+    empty = ("", [], [])
+    if not cfg["inject"] or not annotations:
+        return empty
+    try:
+        snap = load_snapshot(snapshot_path) or {}
+    except Exception:
+        return empty
+    entries_by_id = {str(x.get("id") or ""): x for x in (snap.get("entries") or [])}
+    if not entries_by_id:
+        return empty
+
+    seen: list[str] = []
+    ordered: list[tuple[str, str, str, str]] = []   # (unit_title, line, statement, entry_id)
+    for unit in annotations:
+        ids: list[str] = []
+        for m in (unit.get("matched") or []):
+            eid = str(m.get("id") or "")
+            if eid and eid in entries_by_id and eid not in ids and eid not in seen:
+                ids.append(eid)
+            if len(ids) >= cfg["per_unit"]:
+                break
+        title = str(unit.get("title") or "").strip()[:24] or "相关主题"
+        for eid in ids:
+            seen.append(eid)
+            entry = entries_by_id[eid]
+            st = str(entry.get("statement") or "").strip()[:_BG_STATEMENT_MAX_CHARS]
+            rb = str(entry.get("risk_boundary") or "").strip()[:_BG_BOUNDARY_MAX_CHARS]
+            line = f"  - ({eid}/{_short_source(str(entry.get('source_name') or ''))}) {st}"
+            if rb:
+                line += f" 边界提示：{rb}"
+            ordered.append((title, line, st, eid))
+    if not ordered:
+        return empty
+
+    block_lines = [_BG_HEADER]
+    budget = cfg["budget"] - len(_BG_HEADER)
+    statements: list[str] = []
+    used_ids: list[str] = []
+    last_title: str | None = None
+    for title, line, st, eid in ordered:
+        add = [line] if title == last_title else [f"· 主题「{title}」相关背景：", line]
+        cost = sum(len(x) + 1 for x in add)
+        if cost > budget:
+            break
+        block_lines.extend(add)
+        budget -= cost
+        statements.append(st)
+        used_ids.append(eid)
+        last_title = title
+    if len(block_lines) <= 1:
+        return empty
+    return ("\n".join(block_lines), statements, used_ids)
+
 _lock = threading.Lock()
 _cache: dict[str, dict[str, Any]] = {}  # snapshot_path -> {"mtime_ns","identity","state"}
 
