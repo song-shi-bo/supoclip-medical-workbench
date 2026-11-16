@@ -61,6 +61,7 @@ from . import llm_budget
 from . import clip_medical_gate as med_gate
 from . import clip_purify
 from . import medical_kb
+from . import knowledge_context as kc
 from . import content_analysis as ca
 from . import hierarchical_planning as hp
 from .content_analysis import (
@@ -610,14 +611,16 @@ def _record(*, plan_source: str, llm_requested: bool, llm_error: str | None,
     }
 
 
-PLAN_SCHEMA_VERSION = "clip-plan/v3"
-PLAN_PROMPT_VERSION = "clip-plan-prompt/2026-11-05-slice-a3"
-PLAN_ADAPTER_VERSION = "clip-plan-adapter/v2"
+PLAN_SCHEMA_VERSION = "clip-plan/v4"
+PLAN_PROMPT_VERSION = "clip-plan-prompt/2026-11-16-slice-a3-three-libraries"
+PLAN_ADAPTER_VERSION = "clip-plan-adapter/v3"
 
 
 def _analysis_input(analysis: dict[str, Any]) -> dict[str, Any]:
-    return {key: copy.deepcopy(analysis.get(key) or []) for key in
-            ("keywords", "golden_quotes", "topic_units", "candidate_intervals")}
+    result = {key: copy.deepcopy(analysis.get(key) or []) for key in
+              ("keywords", "golden_quotes", "topic_units", "candidate_intervals")}
+    result["knowledge_context"] = copy.deepcopy(analysis.get("knowledge_context") or {})
+    return result
 
 
 def _global_summary(analysis: dict[str, Any]) -> str:
@@ -693,6 +696,9 @@ def _scan_background_leak(clips: list[dict[str, Any]], statements: list[str],
 def _analysis_context_lines(analysis: dict[str, Any], max_clips: int) -> list[str]:
     """分析四产物 → 提示词A用户提示里的背景段（提示词A原文不动，背景走拼装层）。"""
     lines: list[str] = []
+    three_library_block = kc.render_prompt_block(analysis.get("knowledge_context") or {})
+    if three_library_block:
+        lines.extend(three_library_block.split("\n"))
     keywords = analysis.get("keywords") or []
     if keywords:
         lines.append(f"【关键词】{'、'.join(str(k) for k in keywords[:10])}")
@@ -1112,14 +1118,10 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
     plan_warnings.extend(purify_warns[:4])
     if purify_summary.get("purified"):
         plan_warnings.insert(0, f"clip_purify: {purify_summary['purified']} 条切片已净化重组（问答化）")
-    # 钩子唯一规则（2026-11-13 用户拍板）：钩子必须来自转写内容。
-    # 模型产出的 hook_first_line 去标点归一后命中转写 → 保留；未命中（含空）
-    # → 自动替换为本切片窗口内的医生原话：优先分析阶段识别的钩子素材
-    # （主题块钩子句/患者提问/金句），无素材取窗口首句。无模式打分、无淘汰
-    # 规则——每条切片都有钩子，且钩子 100% 是医生原话。
+    # 钩子必须逐字来自当前切片窗口；命中全片其他位置不能通过。
+    # 说话人未被本层可靠标注，因此这里只承诺“原视频转写原话”，不虚称医生原话。
+    transcript_text = "".join(str(s.get("text") or "") for s in corrected_segments)
     if clips:
-        transcript_norm = "".join(_norm(str(s.get("text") or ""))
-                                  for s in corrected_segments)
         pos_of = {e["segment_id"]: pos for pos, e in enumerate(index.entries)}
         hook_material: list[tuple[str, str]] = []
         for unit in (analysis_for_prompt.get("topic_units") or []):
@@ -1133,13 +1135,16 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
                 hook_material.append((_norm(text), text))
         for clip in clips:
             hook_line = str(clip.get("hook_first_line") or "").strip()
-            if hook_line and _norm(hook_line) and _norm(hook_line) in transcript_norm:
-                continue
             start_pos = pos_of.get(str(clip.get("start_segment_id") or ""))
             end_pos = pos_of.get(str(clip.get("end_segment_id") or ""))
-            replacement = ""
+            window_texts: list[str] = []
             if start_pos is not None and end_pos is not None and start_pos <= end_pos:
                 window_texts = [index.entries[i]["text"] for i in range(start_pos, end_pos + 1)]
+            window_joined = "".join(_norm(text) for text in window_texts)
+            hook_valid = bool(hook_line and _norm(hook_line)
+                              and _norm(hook_line) in window_joined)
+            replacement = ""
+            if not hook_valid and window_texts:
                 window_norm = [_norm(w) for w in window_texts]
                 for norm_q, raw_q in hook_material:
                     for wt, wn in zip(window_texts, window_norm):
@@ -1148,17 +1153,36 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
                             break
                     if replacement:
                         break
-                if not replacement and window_texts:
+                if not replacement:
                     replacement = window_texts[0].strip()
             original = hook_line or "（空）"
-            if replacement:
+            if not hook_valid and replacement:
                 clip["hook_first_line"] = replacement
-                notes.append(f"钩子来自转写：hook_first_line「{original[:30]}」非转写原话，"
-                             f"已替换为切片内医生原句「{replacement[:30]}」")
-            elif hook_line:
-                notes.append(f"钩子逐字护栏：hook_first_line「{hook_line[:30]}」非转写原话且"
-                             f"窗口内无可替换原句，已置空")
+                notes.append(f"钩子来自转写：hook_first_line「{original[:30]}」不在切片窗口，"
+                             f"已替换为切片内原句「{replacement[:30]}」")
+            elif not hook_valid and hook_line:
+                notes.append(f"钩子逐字护栏：hook_first_line「{hook_line[:30]}」不在切片窗口且"
+                             f"无可替换原句，已置空")
                 clip["hook_first_line"] = ""
+
+            # 三库只用于理解和排序；发现上下文独有的长文本复制时硬清理。
+            for field in ("topic", "title", "cover_text", "content_summary",
+                          "completeness_note"):
+                if kc.copied_from_context(clip.get(field), analysis.get("knowledge_context"),
+                                          transcript_text):
+                    leaked = str(clip.get(field) or "")
+                    clip[field] = (window_texts[0][:15] if field in {"topic", "title"}
+                                   and window_texts else "")
+                    notes.append(f"{field} 被清理（三库内容复制）：{leaked[:30]}")
+            if isinstance(clip.get("risk_flags"), list):
+                clip["risk_flags"] = [flag for flag in clip["risk_flags"]
+                    if not kc.copied_from_context(flag, analysis.get("knowledge_context"),
+                                                  transcript_text)]
+    for item in discarded:
+        if kc.copied_from_context(item.get("reason"), analysis.get("knowledge_context"),
+                                  transcript_text):
+            item["reason"] = "模型弃用片段"
+            notes.append("discarded reason 被清理（三库内容复制）")
     # 医学背景泄漏扫描（2026-11-13 设计稿 §5-2，warn 级；默认 off 时零开销）：
     # 输出与注入卡片正文 ≥threshold 字连续相同 → medical_background_leak 告警。
     if medical_kb.background_config()["inject"]:
@@ -1187,7 +1211,11 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
         llm_completion_tokens=sum(int(row.get("completion_tokens") or 0) for row in usage_records),
         llm_reasoning_tokens=sum(int(row.get("reasoning_tokens") or 0) for row in usage_records))
     if slice_plan is not None:
-        record["video_summary"] = str(slice_plan.video_summary or "")
+        video_summary = str(slice_plan.video_summary or "")
+        if kc.copied_from_context(video_summary, analysis.get("knowledge_context"), transcript_text):
+            notes.append("video_summary 被清除（三库内容复制）")
+            video_summary = ""
+        record["video_summary"] = video_summary
         record["slice_count_declared"] = int(slice_plan.slice_count or 0)
     record.update(llm_usage=usage, actual_calls=actual_calls, source_provenance=source,
                   cache_verification=ca.verify_analysis_provenance({"source_provenance": source}),
@@ -1196,6 +1224,7 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
                   degradations=hierarchical["degradations"],
                   medical_gate=med_gate.record_summary(gate_profile, gate_decisions,
                                                        len(moved_discarded)),
+                  knowledge_context_summary=kc.summary(analysis.get("knowledge_context") or {}),
                   purify=purify_summary,
                   callback_calls=len(actual_calls), callback_budget=2)
     # 医学背景注入审计（2026-11-13，默认 off 时无此字段）：本次规划注入了哪些

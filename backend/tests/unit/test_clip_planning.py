@@ -117,11 +117,11 @@ def test_llm_plan_validated_deduped_and_sorted(monkeypatch: pytest.MonkeyPatch):
     assert clip["clip_id"].startswith("clip-")
     assert clip["plan_source"] == "llm"
     # 提示词A策划字段透传（第二步精修按 clip_id 消费 theme/hook）
-    # 2026-11-13 钩子唯一规则：非转写原话的钩子自动替换为切片窗口内医生原话
+    # 钩子唯一规则：必须逐字来自当前切片窗口，不能只命中全片其他位置。
     from src.content_analysis import _norm as _ca_norm
-    transcript_norm = "".join(_ca_norm(s["text"]) for s in _segments())
+    window_norm = "".join(_ca_norm(s["text"]) for s in _segments()[1:6])
     assert clip["hook_first_line"], "每条切片必须有钩子"
-    assert _ca_norm(clip["hook_first_line"]) in transcript_norm, "钩子必须是转写原话"
+    assert _ca_norm(clip["hook_first_line"]) in window_norm, "钩子必须是切片窗口原话"
     assert any("钩子来自转写" in n for n in (record.get("notes") or []))
     assert clip["cover_text"] == "规范治疗"
     assert clip["declared_time_range"] == ["00:00:06", "00:01:55"]
@@ -477,4 +477,4 @@ def test_worker_plan_stage_saves_and_stops_before_render(monkeypatch: pytest.Mon
     assert "downloading" not in statuses and "editing" not in statuses and "rendering" not in statuses
     assert plan_calls["transcript_version"] == 9            # 读取指定转写版本
     assert plan_calls["analysis"] is analysis_stub          # 规划输入=分析产物（内存传递）
-    assert posts and posts[0]["kind"] == "clip_plan"
+    assert any(post and post.get("kind") == "clip_plan" for post in posts)

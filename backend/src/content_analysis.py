@@ -43,6 +43,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from . import llm_budget
+from . import knowledge_context as kc
 
 # 单次调用的分段上限；超过才分批（合并结果）。479 段实测单次可完成。
 CONTEXT_SEG_LIMIT = 600
@@ -277,9 +278,13 @@ class _SegIndex:
         return picked[0]["start_ms"], picked[-1]["end_ms"]
 
 
-def _build_user_prompt(index: _SegIndex, slice_entries: list[dict[str, Any]] | None) -> str:
+def _build_user_prompt(index: _SegIndex, slice_entries: list[dict[str, Any]] | None,
+                       knowledge_context: dict[str, Any] | None = None) -> str:
     entries = slice_entries if slice_entries is not None else index.entries
     lines = [f"请分析以下 {len(entries)} 段已纠错转写（全篇共 {len(index.entries)} 段）。只输出结构化 JSON。"]
+    context_block = kc.render_prompt_block(knowledge_context)
+    if context_block:
+        lines.append(context_block)
     if slice_entries is not None:
         head = "".join(e["text"] for e in index.entries[:40])[:1500]
         if head:
@@ -498,7 +503,7 @@ def _merge_llm_result(result: _AnalysisOut, index: _SegIndex, notes: list[str],
 def _analyze_content(corrected_segments: list[dict[str, Any]], *,
                     transcript_version: int | None = None,
                     job_id: str | None = None, project_id: str | None = None,
-                    progress=None) -> dict[str, Any]:
+                    progress=None, knowledge_context: dict[str, Any] | None = None) -> dict[str, Any]:
     """内容分析主入口：优先一次结构化模型调用，失败自动本地回退。
 
     返回记录即需求模板：``llm_requested / plan_source / llm_error /
@@ -541,7 +546,7 @@ def _analyze_content(corrected_segments: list[dict[str, Any]], *,
             if progress and len(batch_slices) > 1:
                 progress(f"内容分析（批次 {number}/{len(batch_slices)}）")
             calls += 1
-            prompt_text = _build_user_prompt(index, slice_entries)
+            prompt_text = _build_user_prompt(index, slice_entries, knowledge_context)
             prompt_est = llm_budget.estimate_reserve(prompt_text, MAX_OUTPUT_TOKENS_RETRY)
             est_reserved_total += prompt_est
             token = _analysis_call_metadata.set(None)
@@ -578,10 +583,37 @@ def _analyze_content(corrected_segments: list[dict[str, Any]], *,
         return fallback
 
     deduped_keywords: list[str] = []
+    transcript_norm = "".join(entry["_norm"] for entry in index.entries)
     for raw in keywords:
         keyword = re.sub(r"\s+", "", str(raw)).strip("，。；：、")
-        if keyword and keyword not in deduped_keywords:
+        if not keyword:
+            continue
+        if _norm(keyword) not in transcript_norm:
+            notes.append(f"关键词被清除（非转写原词）：{keyword[:24]}")
+            continue
+        if keyword not in deduped_keywords:
             deduped_keywords.append(keyword[:24])
+    transcript_text = "".join(entry["text"] for entry in index.entries)
+    for quote in quotes:
+        if kc.copied_from_context(quote.get("reason"), knowledge_context, transcript_text):
+            notes.append("金句理由被清除（三库内容复制）")
+            quote["reason"] = ""
+    for topic in topics:
+        if kc.copied_from_context(topic.get("title"), knowledge_context, transcript_text):
+            picked = index.resolve(list(topic.get("segment_ids") or []))
+            original = str(topic.get("title") or "")
+            topic["title"] = (picked[0]["text"][:18] if picked else "视频主题")
+            notes.append(f"主题标题被替换（三库内容复制）：{original[:24]}")
+        if kc.copied_from_context(topic.get("reason"), knowledge_context, transcript_text):
+            topic["reason"] = ""
+            notes.append("主题理由被清除（三库内容复制）")
+    for interval in intervals:
+        if kc.copied_from_context(interval.get("topic_title"), knowledge_context, transcript_text):
+            interval["topic_title"] = "候选片段"
+            notes.append("候选主题被替换（三库内容复制）")
+        if kc.copied_from_context(interval.get("reason"), knowledge_context, transcript_text):
+            interval["reason"] = ""
+            notes.append("候选理由被清除（三库内容复制）")
     quotes.sort(key=lambda q: q["start_ms"])
     topics.sort(key=lambda t: t["start_ms"])
     intervals.sort(key=lambda i: i["start_ms"])
@@ -659,9 +691,9 @@ def load_analysis_record(job_id: str, *, expected_provenance: dict[str, Any] | N
     return record
 
 
-ANALYSIS_SCHEMA_VERSION = "analysis/v5"
-ANALYSIS_PROMPT_VERSION = "analysis-prompt/2026-11-11"
-ANALYSIS_HELPER_VERSION = "analysis-helper/v5"
+ANALYSIS_SCHEMA_VERSION = "analysis/v6"
+ANALYSIS_PROMPT_VERSION = "analysis-prompt/2026-11-16-three-libraries"
+ANALYSIS_HELPER_VERSION = "analysis-helper/v6"
 
 
 def _digest(value: Any) -> str:
@@ -742,7 +774,8 @@ def _aggregate_usage(records: list[dict[str, Any]]) -> dict[str, Any]:
 def build_current_analysis_provenance(corrected_segments: list[dict[str, Any]], *,
                                       transcript_version: int | None = None,
                                       model: str | None = None,
-                                      rules_snapshot: Any = None) -> dict[str, Any]:
+                                      rules_snapshot: Any = None,
+                                      knowledge_context: dict[str, Any] | None = None) -> dict[str, Any]:
     """模型调用前独立构造缓存identity；实际调用设置仅作审计记录。"""
     if model is None:
         _, model, _ = _model_ready()
@@ -775,6 +808,11 @@ def build_current_analysis_provenance(corrected_segments: list[dict[str, Any]], 
             "kb_embedding": hashlib.sha256(Path(kb_embedding.__file__).read_bytes()).hexdigest(),
         }),
     }
+    rules_snapshot["three_library_context"] = {
+        **kc.summary(knowledge_context),
+        "renderer_sha256": hashlib.sha256(
+            inspect.getsource(kc.render_prompt_block).encode()).hexdigest(),
+    }
     parameters = {"requested": _analysis_model_settings(),
                   "retry_max_tokens": MAX_OUTPUT_TOKENS_RETRY,
                   "timeout_seconds": LLM_CALL_TIMEOUT_SECONDS,
@@ -783,22 +821,27 @@ def build_current_analysis_provenance(corrected_segments: list[dict[str, Any]], 
         transcript_version=transcript_version, model=model,
         parameters=parameters, rules_snapshot=rules_snapshot,
         prompt_text={"system": _GOLDEN_SYSTEM_PROMPT,
-                     "user": [_build_user_prompt(index, group) for group in slices]})
+                     "user": [_build_user_prompt(index, group, knowledge_context) for group in slices]})
 
 
 def analyze_content(corrected_segments: list[dict[str, Any]], *,
                     transcript_version: int | None = None,
                     job_id: str | None = None, project_id: str | None = None,
-                    progress=None, rules_snapshot: Any = None) -> dict[str, Any]:
+                    progress=None, rules_snapshot: Any = None,
+                    knowledge_context: dict[str, Any] | None = None) -> dict[str, Any]:
     """兼容原入口，使用调用前即可独立重建的来源；actual_calls只留审计。"""
     source = build_current_analysis_provenance(corrected_segments,
-        transcript_version=transcript_version, rules_snapshot=rules_snapshot)
+        transcript_version=transcript_version, rules_snapshot=rules_snapshot,
+        knowledge_context=knowledge_context)
     record = _analyze_content(corrected_segments, transcript_version=transcript_version,
-                              job_id=job_id, project_id=project_id, progress=progress)
+                              job_id=job_id, project_id=project_id, progress=progress,
+                              knowledge_context=knowledge_context)
     # A-C 分层：知识库只为原视频贴医学主题标签；分析阶段不产生任何候选淘汰决定。
     from . import clip_medical_gate
     medical_analysis = clip_medical_gate.analyze_topics(corrected_segments, record)
     clip_medical_gate.attach_analysis_annotations(record, medical_analysis)
+    record["knowledge_context"] = json.loads(json.dumps(knowledge_context or {}, ensure_ascii=False))
+    record["knowledge_context_summary"] = kc.summary(knowledge_context)
     record.setdefault("llm_usage", llm_budget.extract_usage_details(None))
     record["source_provenance"] = source
     record["cache_verification"] = verify_analysis_provenance(record)

@@ -80,8 +80,8 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 | # | 阶段 | 实现 | 工具 | 产物 |
 |---|---|---|---|---|
 | 0 | retrieving_rules | 记 `rule_snapshot_id`（剪辑规则只读留痕，QC 永不拦截） | — | rule snapshot |
-| 1 | 内容分析 `extracting_highlights` | **处理链：**①按 `object_key + transcript_id + transcript_version` 读取纠错转写（不读视频画面、不重跑 ASR）→ ②用运行时 `Config.llm` 做结构化分析，提取关键词、金句、主题块、患者问题、医生核心段和候选区间 → ③程序逐字校验引用、清理非法 ID，并用权威分段重算主题时间和 `info_seconds` → ④用本地 `BAAI/bge-small-zh-v1.5` + 词法匹配 `active_snapshot.json`，写入 strong/weak/none 医学标签 → ⑤原子保存、上传对象存储并登记 artifact。<br>**数据库/存储：**PostgreSQL `studio_jobs`（任务状态）、`studio_artifacts`（产物登记）；版本化转写文件库；本地医学知识快照；R2/本地对象存储。主链不查询 `medical_guidelines`。<br>**模型证据：**实际生成模型看分析 JSON 的 `model`；`plan_source=llm` 表示模型成功，`heuristic_fallback` 表示本地回退。 | `content_analysis.analyze_content` → Pydantic AI `_AnalysisOut` → `clip_medical_gate.analyze_topics` → `save_analysis_record` | `tasks/analysis/<job>.json`（analysis/v5；含 `model/plan_source/llm_error/medical_analysis`） |
-| 2 | 切片规划 `planning`（提示词 A） | **处理链：**①读取同版本权威分段和已保存分析 → ②以 Prompt A 为 `system_prompt`，另把全片分段、主题、金句、候选区间及医学标签组成用户提示 → ③运行时 `Config.llm` 一次全局规划，动态决定切片数量、连续区间、主题、Hook、封面文字及 discarded → ④程序把模型时间吸附到分段边界，重算 `start_ms/end_ms/duration_ms`，去高重叠并按综合分执行资源上限 → ⑤全片有 strong 主题时执行医学过滤，仅“医学密度 `<0.2` 且主题级别 none”移入“非医学闲聊” → ⑥既有 Purify 生成 `sub_ranges`，Hook 执行转写逐字护栏，程序补齐未归属分段 → ⑦保存、上传并登记计划。<br>**数据库/存储：**PostgreSQL `studio_jobs`、`studio_artifacts`；版本化转写/说话人 overlay；分析 JSON；可选本地医学背景快照；R2/本地对象存储。规划不查询 `medical_guidelines`，也不重新做医学匹配。<br>**模型证据：**分析与规划共用运行时 `Config.llm`；实际规划模型看 `clip_plan.json.model`，`plan_source` 标明 LLM 或本地回退；模型失败重试一次后使用 `_fallback_plan`，不切换其他模型。 | `clip_planning.plan_clips` → Pydantic AI `_SlicePlanOut` → `planning_profile_from_analysis/enforce_clips` → `clip_purify.purify_clips` → `save_plan_record` | `tasks/plans/<job>/clip_plan.json`（含 `model/plan_source/actual_calls/medical_gate/purify/clips/discarded`） |
+| 1 | 内容分析 `extracting_highlights` | **处理链：**①按 `object_key + transcript_id + transcript_version` 读取纠错转写 → ②根据全片均匀抽样文本，向 PostgreSQL `hot_topics`、`scripts`、`medical_guidelines` 分别做本地 BGE 向量+字词回退的 Top-K 检索，并把结果冻结到当前 generation → ③将三库参考块与纠错转写一起交给运行时 `Config.llm`，提取关键词、金句、主题块、患者问题、医生核心段和候选区间 → ④程序执行转写忠实校验：关键词/金句/Hook 等不得从库中复制，非法结果清理留痕 → ⑤继续用确定性 `active_snapshot.json` 生成 strong/weak/none 医学闸门标签 → ⑥原子保存、上传并登记。<br>**数据库/存储：**直接读取三张业务表；使用 `tasks/knowledge_context/<job>/g<generation>.json` 冻结 Top-K；读版本化转写和本地医学闸门快照；写分析 JSON、R2/本地对象存储和 `studio_artifacts`。三库故障降级为空上下文，不阻断转写主链。<br>**模型证据：**实际生成模型看分析 JSON 的 `model`；`knowledge_context_summary` 记录三库条数、ID、模式和上下文指纹。 | `knowledge_context.retrieve` → `content_analysis.analyze_content` → Pydantic AI `_AnalysisOut` → `clip_medical_gate.analyze_topics` → `save_analysis_record` | `tasks/analysis/<job>.json`（analysis/v6；含 `knowledge_context/model/plan_source/llm_error/medical_analysis`） |
+| 2 | 切片规划 `planning`（提示词 A） | **处理链：**①读取同版本权威分段、分析结果和同一份已冻结三库 Top-K → ②以 Prompt A 为 `system_prompt`，将热点、文稿、医学指南参考块以及全片分段、主题、金句、候选区间和医学标签组成用户提示 → ③运行时 `Config.llm` 一次全局规划，参考三库判断主题价值、Hook/金句潜力与句子取舍，但最终 Hook、引用和保留内容必须来自转写 → ④程序吸附切点、重算时间、去重评分 → ⑤执行医学闸门、Purify、Hook 原话护栏和全片覆盖 → ⑥保存、上传并登记计划。<br>**数据库/存储：**规划不再次查询数据库，直接复用分析工件中冻结的 `knowledge_context`，保证分析与规划看到完全相同的三库条目并可复现；计划指纹绑定上下文内容。<br>**模型证据：**分析与规划共用运行时 `Config.llm`；实际模型看 `clip_plan.json.model`，`knowledge_context_summary` 记录规划使用的三库身份；失败重试一次后走 `_fallback_plan`。 | `clip_planning.plan_clips` → Prompt A/Pydantic AI `_SlicePlanOut` → `planning_profile_from_analysis/enforce_clips` → `clip_purify.purify_clips` → `save_plan_record` | `tasks/plans/<job>/clip_plan.json`（clip-plan/v4；含 `knowledge_context_summary/model/plan_source/medical_gate/purify/clips/discarded`） |
 | 3 | 切片精修 refining（提示词B b2） | 逐切片精修字幕文本 + **逐段说话人（医生/患者/家属）**，失败粒度回退不阻断；**只删不改执法（2026-11-08）**：精修句必须是语气词清理后转写的顺序保持子串，违规段整段回退原纠错转写（`reverted_segments` 留痕；全违规→整片 fallback `delete_only_violation`）；精修窗口（2026-11-11 问答化 P1）：切片带 `sub_ranges` 时窗口取子区间并集，被净化的应答碎片不进提示词B | `clip_refinement.py`（clip-refine-prompt/2026-11-08-b2） + LLM | `tasks/plans/<job>/clip_refinement.json`（`clips[clip_id].segments`：`segment_id/start_ms/end_ms/refined_text/speaker`） |
 | 4 | 封面 cover | realframe_v2：真实视频帧+文字叠加（纯本地，无 AI 生图）；**默认版型 yellow_bold_v5（2026-11-09 P2）**：两行同级黄字（theme 88/hook 110，#FFDD00 纯黑描边 6/8px）锚定胸腹区（top_ratio 0.56）+ 暗底面板 + 角标层（`cover_badge_text`），`build_cover(template=None)` 自动套用（此前 worker 路径无版型走白字默认排版）；均衡断行（优先空格分隔，杜绝单字孤行）；**选帧**：切片内每 2s 抽候选（首帧自 +1.0s 起，上限 40）→ 确定性评分＝人脸数（1 张最佳）+ 面积 + 清晰度 + **亮度项**（灰度 [90,200] 满分）+ 单脸居中项，运动模糊 ×0.6；**文案主题对齐（2026-11-09 P1）**：主题块锚点＝content_analysis `topic_units` 按切片区间重叠最大（并列优先标题与切片规划主题相关者），底料**精修稿优先**；LLM 一次出 3 组候选 → 主题校验（title 覆盖率/钩子原话命中）→ 不合格带反馈**受控重生成一次**（每切片封面文案 LLM ≤2 次）→ 仍不合格走 hint 规则组/主题词直组句兜底（有主题块时 hint 不进初选池）；hook 复述 topic（≥3 字全包含）评分 −2；**人工换帧（P3）**：`build_cover(frame_time_rel_s=)` 指定成片时间线秒，`selection_source=manual` 留痕；可读线校验（≥96px@1080，不过→纯色兜底）；`clip_final` 前 0.8s 替换为封面片头（时长不变契约）；失败只 warning。审计：`cover_copy.json` 的 `topic_unit_used/validation_report/regeneration_count/prompt_version(2026-11-09.2)/transcript_source/frame.selection_source`。规范全文见 `docs/cover-generation-convention.md` | `cover_realframe_v2.py`、`cover_templates.py`、`cover_replace.splice_intro`、ffmpeg | 切片目录四产物 + `cover_revision`（`cover_frames/` 侧目录：候选帧缩略图，仅手动链写）。**自动封面开关 STUDIO_AUTO_COVER（2026-11-09 用户拍板，默认关闭）**：关闭时渲染链不生成封面四产物、不拼接 0.8s 片头；手动制作链（重制封面/版型库/封面微调）不受影响 |
 | 5 | 渲染 rendering | clip_plan 的 `start_ms/end_ms` + 指定版本纠错转写 → **本地 FFmpeg 逐条渲染**：横转竖居中裁切（608×1080→1080×1920）、H.264+AAC、SRT 时间平移、**字幕同遍烧录**（2026-10-29 固化）；**烧录源=精修稿优先（2026-11-09 用户拍板）**：`source=llm` 切片按 segment_id 把烧录文本替换为 `refined_text`（语气词/无价值句已删，`clip_render._apply_refined_segments`），精修缺失/fallback 如实回退纠错转写，`warnings.json.subtitle_provenance.subtitle_source`（`clip_refinement`/`corrected_transcript`）+ `refined_segment_count` 留痕；渲染指纹含精修身份、版本 `purify-concat/1`（2026-11-11 净化重组升级：旧 `refined-burn/1` 缓存全量失效）；**多区间渲染（2026-11-11 问答化 P1）**：切片带合法 `sub_ranges` 时走 filter_complex 逐段 trim+concat（输入侧 `-ss 首段起 -t 末段止` 粗定位，分段/字幕平移到虚拟时间轴，`provenance.purify.ranges` 留痕），sub_ranges 缺失/非法回退单区间老路径；源片本地硬链接不重传；**字幕词级对齐 + 短 cue 纪律（2026-11-12 字幕优化，同日单位/行宽修复后定稿）**：提供词级时间（faster-whisper words，秒→内部 ms）时 cue 起止取真实词首尾——尾部静音不再挂字幕；词间停顿 >`SUBTITLE_CUE_GAP_SPLIT_S`（默认 1.5 秒）作为 cue 内切分边界；cue 间空隙 ≤`SUBTITLE_GAP_EXTEND_MS`（默认 0.8 秒）闭合防闪烁、超过则前条最多延伸 0.8 秒后留白（长停顿字幕消失，说完就撤）；单条显示超 `SUBTITLE_MAX_CUE_SECONDS`（**默认 12 秒**，此前文档误写 5 秒）按词时间/容量二次切分，且装箱合并同受时长上限约束（防切开后按文字容量重新并回超长挂屏 cue）；短条合并/折行全程守住每行 ≤16 字（修复 `_join_texts` 兜底盲拼与 `_arrange_lines` 行预算不足仍折行两处超宽行缺陷）。**2026-11-12 单位修复**：token 层毫秒与配置秒阈值直接比较曾致真实词时间下整句逐词碎裂（验收 case 回归），已统一换算；**words 已接入生产渲染（2026-11-12 人工确认 A/B 后接线）**：`_run_clip_render_stage` 与重新剪辑 `_run_reedit_replace` 两处渲染均传 v2 转写词级时间（秒），`_render_one_reserved` 将其与分段同映射平移到净化 sub_ranges 虚拟时间轴后交给 `build_srt`；渲染指纹版本 words-align/1（无词仍 purify-concat/1）——旧无词缓存自动失效重渲；`warnings.json.subtitle_provenance.words`（used/count/virtual_timeline）留痕；words 缺失/空回退段内线性插值（旧行为）。离线对比脚本 `backend/scripts/subtitle_ab_demo.py`（复刻生产链，words 平移引用同一生产实现） | `clip_render.py`、`subtitle_cueing.py`、ffmpeg（`CONTENT_RENDER_FFMPEG`） | `tasks/output/<job>/clips/<clip_id>/clip_final.mp4` + cover.jpg + ASS/SRT + warnings.json |
@@ -100,28 +100,27 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 数据流：
 
 ```text
-知识与策略配置
-    ↓
-内容分析（事实与标签）
-    ↓
-切片规划（本次取舍决定）
+纠错转写 → 三库语义检索 → generation 冻结上下文
+                         ↓（同一份 Top-K）
+知识与策略配置 ───────→ 内容分析（事实与标签）
+                         ↓
+                    切片规划（本次取舍决定）
     ↓
 切片精修与渲染（执行呈现）
 ```
 
 ##### 3.2.1.1 三个业务知识库分别用在哪里
 
-这里要区分“PostgreSQL 里的业务表”和“自动剪辑主链真正读取的运行时文件”。当前不是把数据库里所有库都塞给规划模型。
+主链不会把整库送入模型。它先从纠错转写均匀抽取最多 80 段、6000 字作为查询，分别检索三库 Top-K，并把有限结果冻结为当前 job/generation 的 `knowledge-context/v1`。分析与规划始终复用同一份冻结上下文。
 
-| 库 | 存放位置 | 当前用途 | 内容分析是否使用 | 切片规划是否使用 |
-|---|---|---|---|---|
-| 热点库 | PostgreSQL `hot_topics` | 通过 `/api/v1/ingest/hot-topics` 入库；通过 `/api/v1/kb/search?table=topics` 做关键词或语义检索，为选题、运营和外部知识工具提供热点资料 | **不使用** | **不使用**；热点标题、摘要不会自动进入 Prompt A |
-| 文案/脚本库 | PostgreSQL `scripts`，可关联 `hot_topics.topic_id` | 通过 `/api/v1/ingest/scripts` 入库；通过 `/api/v1/kb/search?table=scripts` 检索；医生可把 draft 确认为 approved | **不使用** | **不使用**；历史 Hook、正文和 CTA 不会自动进入 Prompt A，也不作为 Hook 模式库 |
-| 医学指南管理库 | PostgreSQL `medical_guidelines` | 医学条目的入库、检索、向量字段保存和医生事后复核 | 主链**不直接查询该表** | 主链**不直接查询该表** |
-| 医学指南运行时快照 | `backend/medical_kb_seed/active_snapshot.json`，可由 `MEDICAL_KB_SNAPSHOT` 改路径 | 自动剪辑实际消费的确定性知识快照；当前物化方向是“种子 JSON → 快照”，可选同时写入 `medical_guidelines`，不是规划时实时查库 | **使用**：内容分析用本地 BGE 向量 + 词法匹配，为主题和分段写 strong/weak/none 标签 | **间接使用**：通常只消费分析 JSON 中已经保存的医学标签，不重新匹配；仅 `MEDICAL_BG_INJECT=on` 时按已命中条目从快照取受控背景加入模型请求 |
-| 医学纠错词库（非上述三张业务表） | `medical_lexicon.py`、`project_glossary.py` | ASR 后的医学同音词、术语纠错 | 分析开始前已经使用完 | 规划不读取 |
+| 库 | 合格数据与默认 Top-K | 内容分析用途 | 切片规划用途 |
+|---|---|---|---|
+| 热点库 `hot_topics` | `status <> disabled`，Top-5 | 辅助识别当前话题热度、受众关注点和主题价值 | 辅助主题排序与切片取舍；不得把热点标题/摘要当视频原话 |
+| 文稿库 `scripts` | `status <> disabled`，Top-5（含 draft） | **只参考**既有钩子形态、内容拼接结构和潜在表达机制 | 辅助 Hook 潜力和语句取舍；不得复制历史 Hook、正文、CTA 或具体表达 |
+| 医学指南库 `medical_guidelines` | `status=approved`，Top-8 | 辅助理解医学主题、边界和关键词 | 辅助判断信息价值与风险；不得引入转写外医学结论 |
+| 医学闸门快照 `active_snapshot.json` | 独立的确定性 strong/weak/none 标签源 | 对主题与分段贴医学标签 | 规划消费已保存标签；不替代三库 Top-K |
 
-因此，当前自动切片主链真正会影响选段的是：**纠错转写、内容分析结果、医学运行时快照产生的标签、规则快照和 Prompt A**。热点库与脚本库目前是独立的采集/检索资产，尚未接入 `content_analysis.py` 或 `clip_planning.py`。
+检索使用本地 `BAAI/bge-small-zh-v1.5` 与字词分数的确定性混合排序；嵌入不可用或异常时退为词法。每库失败只清空该库并留 `errors`。Top-K、查询哈希、完整转写哈希、条目 ID、内容哈希和检索模式写入冻结快照；同一 generation 恢复不得查询当前数据库，显式 replan 才刷新。
 
 #### 3.2.2 内容分析：对视频做了什么
 
@@ -131,12 +130,13 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 | 步骤 | 实际处理 | 程序与结果 |
 |---|---|---|
-| 1. 固定输入版本 | 按 `object_key + transcript_id + transcript_version` 取得纠错后的 `asr_segments`，每段包含权威 `segment_id/start_ms/end_ms/text` | `studio_job_worker._run_content_analysis_stage`；输入来自 `tasks/transcripts/<source_id>/vN.json` |
-| 2. 冻结分析身份 | 对转写版本、分析提示词、模型配置、规则快照、医学知识快照和匹配实现计算 provenance；同一输入才允许复用缓存 | `content_analysis.build_current_analysis_provenance` |
-| 3. 全片结构化分析 | 通常把全片分段一次交给内容分析模型；超过 600 段才按每批 400 段拆批并合并 | 输出 `keywords`、`golden_quotes`、`topic_units`、`candidate_intervals` |
-| 4. 程序校验模型结果 | 金句必须能在全片转写中逐字命中；主题钩子、收尾句和患者问题必须逐字存在于所属主题；医生核心段 ID 必须属于该主题。主题块和引用的时间、`info_seconds` 由原分段重算；模型给出的候选区间只会被裁到全片边界并剔除倒挂区间 | 改写、拼接、虚构、越界时间和非法 ID 被清除并写入 `notes` |
-| 5. 医学主题匹配 | 对每个主题块执行“本地向量 + 词法”混合匹配，并对主题块外分段补做词法标注 | `clip_medical_gate.analyze_topics` 写入 `medical_analysis` 和 `medical_annotations`，只标 strong/weak/none 和证据，不淘汰内容 |
-| 6. 原子保存与登记 | 将完整分析记录原子写盘、上传到当前对象存储，并登记为任务 artifact | `tasks/analysis/<job>.json`；artifact 名为 `content_analysis` |
+| 1. 固定输入版本 | 按 `object_key + transcript_id + transcript_version` 取得纠错后的权威分段 | 输入来自 `tasks/transcripts/<source_id>/vN.json` |
+| 2. 检索并冻结三库 | 对全片均匀抽样，三库分别做全体合格条目的 Top-K；结果写 `tasks/knowledge_context/<job>/g<generation>.json` | 快照绑定查询哈希、完整转写哈希、generation 和内容 identity；已有快照损坏时拒绝静默刷新 |
+| 3. 冻结分析身份 | provenance 同时绑定转写、模型/提示词、规则、医学闸门快照以及三库上下文 identity 和渲染实现 | 同一输入才允许复用缓存；分析内嵌上下文与冻结快照不一致时重新分析 |
+| 4. 全片结构化分析 | 把冻结三库参考块和纠错转写交给模型；超过 600 段才按每批 400 段拆批并合并 | 输出 `keywords`、`golden_quotes`、`topic_units`、`candidate_intervals` |
+| 5. 转写忠实与防复制校验 | 金句/主题引用逐字回查；关键词必须是转写原词；三库独有的长文本若复制到主题标题、理由或候选说明则替换/清空；时间和 ID 回到权威分段重算 | 清理动作写入 `notes`，库内容不能成为视频原话或医学结论 |
+| 6. 医学主题匹配 | 继续使用确定性闸门快照生成 strong/weak/none 标签，不淘汰内容 | 写入 `medical_analysis` / `medical_annotations` |
+| 7. 原子保存与登记 | 保存完整冻结上下文、摘要和分析记录，上传并登记 artifact | `tasks/analysis/<job>.json`（analysis/v6） |
 
 **分析阶段使用的模型**
 
@@ -151,36 +151,33 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 | 数据库/存储 | 本阶段如何使用 |
 |---|---|
-| PostgreSQL `studio_jobs` | worker 所属任务、状态、阶段和租约的事实源；内容分析函数本身不直接执行 SQL |
-| PostgreSQL `studio_artifacts` | 分析 JSON 上传后，由 worker 通过内部 API 登记 `content_analysis` 的对象键、大小等元数据 |
-| PostgreSQL `app_settings` | API 进程的运行时配置层可从这里读取保存的 `LLM` 设置；独立 worker 通常从自己的运行环境读取。文档不把某个型号写死，任务 JSON 的 `model` 才是该次执行证据 |
-| Redis | worker 状态更新后可发布进度事件；不保存分析正文，也不参与主题、金句或医学标签计算 |
-| 版本化转写文件库 | 读取 `STUDIO_TASKS_ROOT/transcripts/<source_id>/vN.json` 中的纠错转写；这是文件事实源，不是 PostgreSQL 表 |
-| 医学知识运行时快照 | 读取 `backend/medical_kb_seed/active_snapshot.json`（或 `MEDICAL_KB_SNAPSHOT` 指定文件），在内存中完成匹配；主链分析时**不查询** `medical_guidelines` 表 |
-| PostgreSQL `medical_guidelines` | 供医学知识入库、检索和复核 API 使用，不是单条视频分析的在线依赖；当前物化脚本是“种子 JSON → active snapshot”，可用 `--db` 同步写表，并非“数据库 → 快照” |
-| LLM 用量台账 | 成功接受的模型调用写入 `STUDIO_TASKS_ROOT/llm_usage/YYYY-MM-DD.json`（或 `LLM_USAGE_DIR`）；这是文件台账，不是 PostgreSQL 表 |
-| 分析文件与对象存储 | 本地原子写入 `tasks/analysis/<job>.json`，随后上传 R2 或本地对象存储并登记 artifact |
+| PostgreSQL `studio_jobs` / `studio_artifacts` | 保存任务租约、阶段和分析 artifact 元数据 |
+| PostgreSQL 三库 | 内部租约保护端点查询非 disabled 热点/文稿（文稿只作结构参考）和 approved 医学指南；只返回有限业务字段，不返回向量或连接信息 |
+| 三库冻结文件 | `tasks/knowledge_context/<job>/g<generation>.json` 是分析与规划共同事实源；恢复优先读它，不再次查询数据库 |
+| 版本化转写文件库 | 读取纠错转写；其完整内容哈希写入三库快照身份，避免抽样查询相同但正文已变时误复用 |
+| 医学闸门快照 | `active_snapshot.json` 继续用于确定性医学标签，与数据库指南 Top-K 是两种不同职责 |
+| LLM 用量台账 | 记录成功接受的模型调用及实际 usage |
+| 分析文件与对象存储 | 原子写 `tasks/analysis/<job>.json`，随后上传并登记 |
 
-分析阶段不读取 Redis 业务数据，也不向切片计划写 `discarded`。分析指纹绑定转写、提示词、知识快照、医学阈值及实现哈希；任何一项变化都会使旧分析缓存失效。
+分析阶段不读取 Redis 业务正文，也不产生 `discarded`。三库仅辅助理解与排序；分析指纹绑定其冻结 identity，任何上下文变化都会使旧分析缓存失效。
 
 #### 3.2.3 切片规划：具体怎么规划
 
-规划输入为“同一版本纠错转写 + 已持久化内容分析 + Prompt A + 规则快照”。**切片规划确实给模型加了提示词 A**：`_PLAN_SYSTEM_PROMPT` 作为 Pydantic AI Agent 的 `system_prompt`；另由 `_slice_plan_prompt` 生成用户提示，放入视频时长、分析结果和全量纠错分段。它不读取视频画面、不重新 ASR/纠错，也不重新做医学主题匹配；只有在 `MEDICAL_BG_INJECT=on` 时，才会按分析中已经命中的条目 ID 从本地快照取受控背景文字加入用户提示。
+规划输入为“同一版本纠错转写 + 已持久化内容分析 + 同 generation 三库冻结上下文 + Prompt A + 规则快照”。`_PLAN_SYSTEM_PROMPT` 仍是未经本轮改写的系统提示；`_slice_plan_prompt` 在用户数据层加入三库参考块、视频时长、分析结果和全量纠错分段。规划不重新查三库、不重新 ASR/纠错，也不重新做医学主题匹配。
 
 **逐步流程**
 
 | 步骤 | 规划动作 | 程序约束与结果 |
 |---|---|---|
-| 1. 读取输入 | 正常主链直接接收上一步分析记录；断点恢复时读取分析 JSON；同时取得同版本权威纠错分段 | 规划只消费保存的 `medical_analysis/medical_annotations`，缺失时医学过滤明确禁用，不现场重算 |
-| 2. 组装提示词 A 请求 | 固定的 Prompt A 原文作为 `system_prompt`；用户提示另行加入实际视频时长、全片带时间分段、关键词、金句、主题块、候选区间和医学标签，组成一次全局规划请求 | 热点库和脚本库内容不在请求中；超过 4000 段时跳过 LLM，防止上下文爆炸；默认最多保留 12 条是资源上限，不是目标数量 |
-| 3. 模型提出方案 | 模型动态决定可独立成立的主题数量，并给出每条的 `time_range/theme/hook_first_line/cover_text/content_summary/completeness_note/risk_flags`，同时列出寒暄、重复、无价值内容的 `discarded_segments` | 单条以 60–180 秒为宜，低于 40 秒会 warning；数量不固定、宁缺毋滥、不凑数 |
-| 4. 吸附切点 | 模型时间只作定位线索，程序把起止点吸附到最近的 `segment_id` 边界，并重新计算 `start_ms/end_ms/duration_ms` | 每条初始切片必须是一个连续源区间，不允许模型制造权威时间戳 |
-| 5. 归一化与排序 | 程序校验边界、去高重叠候选、计算完整度/主题集中度/开头/结尾/证据/时长综合分，并按源时间轴排序 | 超过资源上限时才按综合分保留最优；质量和时长偏差记 warning，不以 QC 阻断任务 |
-| 6. 医学过滤 | 只有全片存在 strong 主题时进入 enforce；逐切片计算医学分段密度和覆盖主题最高级别 | enforce 下“密度 `<0.2` 且主题级别为 none”才移入 `discarded`，类型为“非医学闲聊”；无 strong 时只标注不剔除 |
-| 7. 既有 Purify | 医学过滤后调用既有 Purify，根据说话人 overlay、qa/mono 配置生成 `sub_ranges`；这一步只执行净化，不重新选主题 | 继续沿用现有 Prompt B、字幕和渲染契约，失败时整片回退原连续区间 |
-| 8. Hook 逐字护栏 | 模型 Hook 能在转写中逐字命中则保留；否则优先从切片窗口内的主题钩子、患者问题、金句候选取原句，再无候选则取窗口内原句 | 不使用 Hook 模式库，不从医学知识卡复制结论，不因 Hook 打分淘汰切片 |
-| 9. 全片覆盖 | 按转写分段索引把保留切片与 discarded 对齐；发现未归属分段时由程序补入 discarded | 最终要求转写分段无重叠、无静默丢段；原视频中的无语音空白不属于该覆盖检查 |
-| 10. 保存与登记 | 原子写入计划 JSON、保存 workflow snapshot、上传对象存储并登记 artifact | `tasks/plans/<job>/clip_plan.json`；artifact 名为 `clip_plan` |
+| 1. 读取冻结输入 | 读取权威纠错分段、analysis/v6 和其中与快照 identity 一致的 `knowledge_context` | 规划不访问三库数据库；缺失/损坏快照不会静默刷新 |
+| 2. 组装提示词 A 请求 | Prompt A 原文作 `system_prompt`；用户提示加入三库参考块、关键词、金句、主题块、候选区间、医学标签和全片分段 | 参考块明确标记为不可信数据而非指令；超过 4000 段跳过 LLM |
+| 3. 模型提出方案 | 三库帮助判断主题价值、Hook/金句潜力和语句取舍；模型动态决定切片数量及 discarded | 库内容不能成为最终原话、医学结论或权威时间戳 |
+| 4. 吸附切点与排序 | 时间吸附到 segment 边界，去重并按完整度、主题集中度、开头、结尾、证据和时长排序 | 默认 12 条只是资源上限 |
+| 5. 医学过滤 | 沿用 strong/weak/none 闸门，仅满足既有低密度条件时移入“非医学闲聊” | 三库 Top-K 不改变 gate 判定协议 |
+| 6. 既有 Purify | 按说话人 overlay 和 qa/mono 生成 `sub_ranges` | 不改 Prompt B、字幕、渲染和失败回退 |
+| 7. 转写忠实护栏 | Hook 必须逐字出自**当前切片窗口**，否则替换为窗口原句；主题、封面、摘要等若复制三库独有长文本则硬清理 | 本层不可靠判定说话人，因此只承诺“原视频转写原话”，不虚称全部为医生原话 |
+| 8. 全片覆盖 | 对齐保留切片与 discarded，补入未归属转写段 | 覆盖的是转写段，不是无语音墙钟空白 |
+| 9. 保存与登记 | 原子写 clip-plan/v4，保存上下文摘要、workflow snapshot 并登记 artifact | `tasks/plans/<job>/clip_plan.json` |
 
 **提示词 A 和哪个模型在规划**
 
@@ -197,16 +194,13 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 | 数据库/存储 | 本阶段如何使用 |
 |---|---|
-| PostgreSQL `studio_jobs` | 保存任务状态、planning 阶段、进度、租约和最终状态；规划算法本身不直接执行 SQL |
-| PostgreSQL `studio_artifacts` | 计划 JSON 上传后登记 `clip_plan` artifact 元数据 |
-| PostgreSQL `app_settings` | API 进程可从这里取得模型设置；独立 worker 通常从运行环境读取。规划器与分析器读取同一 `Config.llm`，某次实际值仍以计划 JSON 的 `model` 为准 |
-| Redis | worker 可发布 planning 进度事件；不保存 Prompt A 正文，也不参与切点、评分或医学过滤 |
-| 版本化转写文件库 | 读取同版本纠错分段；还可从同一转写目录读取 `speaker_labels.json` overlay 供既有 Purify 使用 |
-| 内容分析文件库 | 正常主链内存传递，恢复时从 `tasks/analysis/<job>.json` 读取；这是规划的事实输入 |
-| 医学知识快照 | 医学标签来自分析工件，规划不重新匹配；仅在受控背景注入开启时按已命中 ID 读取本地快照正文 |
-| PostgreSQL `medical_guidelines` | 规划主链不查询该表；当前运行时快照来自种子 JSON，数据库条目不会自动流入某次规划 |
-| LLM 用量台账 | 成功规划调用写入 `STUDIO_TASKS_ROOT/llm_usage/YYYY-MM-DD.json`（或 `LLM_USAGE_DIR`）；失败请求仍以计划 JSON 的 `actual_calls/llm_error` 为主要审计线索 |
-| 计划文件与对象存储 | 写入 `tasks/plans/<job>/clip_plan.json`，随后上传 R2 或本地对象存储并登记 artifact |
+| PostgreSQL `studio_jobs` / `studio_artifacts` | 保存 planning 状态、租约和计划 artifact；规划算法不执行三库 SQL |
+| 三库冻结文件 | 从 analysis 内嵌上下文及 `tasks/knowledge_context/<job>/gN.json` 校验 identity 后复用；这是三库事实输入 |
+| 版本化转写与说话人 overlay | 提供权威分段、Hook 窗口校验和 Purify 输入 |
+| 内容分析文件 | 提供关键词、金句、主题、候选区间、医学标签和同一冻结上下文 |
+| 医学闸门快照 | 标签已在分析阶段持久化；可选旧背景注入开关仍独立存在 |
+| LLM 用量台账 | 记录成功规划调用；`actual_calls/llm_error` 留失败与参数证据 |
+| 计划文件与对象存储 | 写 `tasks/plans/<job>/clip_plan.json`，上传并登记 artifact |
 
 > 详细契约：`docs/content-pipeline-layering-optimization.md`、`docs/medical-gate-design.md`、`docs/two-step-planning-design.md`。D 层 Prompt B、字幕和渲染的行为未在本轮文档整理中改变。
 
@@ -316,7 +310,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 ## 附录 · 代码事实快照（自动生成）
 
-- 生成时间：2026-11-16 02:07 UTC · 代码版本：`adaa361` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
+- 生成时间：2026-11-16 07:00 UTC · 代码版本：`2048387` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
 
 ### HTTP 端点（backend/src/api/routes）
 
@@ -325,7 +319,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 - `billing.py`（1）：`POST /subscription-email`
 - `feedback.py`（1）：`POST /feedback`
 - `ingest_kb.py`（4）：`POST /ingest/hot-topics`、`POST /ingest/scripts`、`GET /kb/search`、`POST /kb/scripts/{script_id}/confirm`
-- `jobs.py`（16）：`GET /uploads/capabilities`、`POST /uploads`、`POST /uploads/{session_id}/complete`、`POST /jobs/transcribe`、`POST /jobs/auto-edit`、`POST /jobs/re-edit`、`GET /jobs/{job_id}`、`POST /jobs/{job_id}/retry`、`POST /jobs/{job_id}/cancel`、`GET /jobs/{job_id}/artifacts/{artifact_id}/file`、`POST /internal/heartbeat`、`POST /internal/jobs/claim`、`POST /internal/jobs/{job_id}/state`、`POST /internal/jobs/{job_id}/artifacts`、`GET /internal/jobs/{job_id}/artifacts`、`POST /internal/jobs/{job_id}/activate`
+- `jobs.py`（17）：`GET /uploads/capabilities`、`POST /uploads`、`POST /uploads/{session_id}/complete`、`POST /jobs/transcribe`、`POST /jobs/auto-edit`、`POST /jobs/re-edit`、`GET /jobs/{job_id}`、`POST /jobs/{job_id}/retry`、`POST /jobs/{job_id}/cancel`、`GET /jobs/{job_id}/artifacts/{artifact_id}/file`、`POST /internal/heartbeat`、`POST /internal/jobs/claim`、`POST /internal/jobs/{job_id}/knowledge-context`、`POST /internal/jobs/{job_id}/state`、`POST /internal/jobs/{job_id}/artifacts`、`GET /internal/jobs/{job_id}/artifacts`、`POST /internal/jobs/{job_id}/activate`
 - `media.py`（102）：`GET /fonts`、`GET /fonts/{font_name}`、`POST /fonts/upload`、`DELETE /fonts/{font_name}`、`GET /transitions`、`GET /caption-templates`、`GET /broll/status`、`POST /studio/transcribe`、`POST /studio/transcribe/start`、`GET /studio/transcribe/chunks/{upload_id}`、`POST /studio/transcribe/chunk`、`POST /studio/transcribe/assemble`、`GET /studio/transcribe/jobs/{job_id}`、`POST /studio/insights`、`POST /studio/auto-edit`、`GET /studio/auto-edit/{task_id}`、`POST /studio/auto-edit/{task_id}/rerender`、`GET /studio/auto-edit/{task_id}/artifact`、`POST /studio/auto-edit/{task_id}/clips/{clip_id}/cover`、`POST /studio/auto-edit/{task_id}/clips/{clip_id}/cover-template/apply`、`POST /studio/auto-edit/{task_id}/clips/{clip_id}/cover-template/delete`、`POST /studio/auto-edit/{task_id}/clips/{clip_id}/cover/adopt`、`POST /studio/auto-edit/{task_id}/clips/{clip_id}/cover/restore`、`GET /studio/auto-edit/{task_id}/clips/{clip_id}/cover`、`GET /studio/auto-edit/{task_id}/clips/{clip_id}/cover/frame-candidates`、`GET /studio/auto-edit/{task_id}/clips/{clip_id}/cover/frame-candidates/{filename}`、`GET /studio/auto-edit/{task_id}/clips/{clip_id}/cover/copy-candidates`、`GET /studio/auto-edit/{task_id}/covers`、`PUT /studio/auto-edit/{task_id}/clips/{clip_id}/transform`、`GET /studio/auto-edit/{task_id}/clips/{clip_id}/refined-transcript`、`GET /studio/auto-edit/{task_id}/clips/{clip_id}/refined-copy.md`、`GET /studio/auto-edit/{task_id}/clips/{clip_id}/export-transformed`、`GET /studio/timeline/{project_id}`、`PUT /studio/timeline/{project_id}`、`GET /studio/timeline/{project_id}/preview`、`POST /studio/timeline/{project_id}/preview`、`GET /studio/timeline/{project_id}/source`、`GET /studio/timeline/{project_id}/view`、`PUT /studio/timeline/{project_id}/view`、`GET /studio/timeline/{project_id}/history`、`POST /studio/timeline/{project_id}/undo`、`POST /studio/timeline/{project_id}/redo`、`POST /studio/timeline/{project_id}/revision`、`POST /studio/timeline/{project_id}/tracks`、`DELETE /studio/timeline/{project_id}/tracks/{track_id}`、`GET /studio/timeline/{project_id}/assets/peaks`、`POST /studio/timeline/{project_id}/assets/audio`、`POST /studio/copilot`、`GET /studio/copilot/history`、`POST /studio/copilot/action-result`、`GET /studio/projects/{project_id}/clips`、`POST /studio/projects/{project_id}/sync`、`GET /studio/projects/{project_id}/data`、`POST /studio/projects/{project_id}/data/clear`、`POST /studio/projects/{project_id}/clips/{clip_id}/tasks`、`GET /studio/tasks/{task_id}`、`GET /studio/projects/{project_id}/tasks`、`GET /studio/projects/{project_id}/clips/{clip_id}/cover-history`、`POST /studio/projects/{project_id}/clips/{clip_id}/cover/undo`、`POST /studio/projects/{project_id}/clips/{clip_id}/cover/activate`、`DELETE /studio/projects/{project_id}/clips/{clip_id}/cover/revisions/{revision}`、`GET /studio/workflow`、`GET /studio/workflow/{task_id}/snapshot`、`POST /studio/workflow/skills/{skill_id}/toggle`、`POST /studio/workflow/regenerate/{project_id}/{clip_id}`、`GET /studio/clips/{project_id}/{clip_id}/config`、`PUT /studio/clips/{project_id}/{clip_id}/config`、`GET /studio/clips/{project_id}/{clip_id}/transcript/revisions`、`POST /studio/clips/{project_id}/{clip_id}/transcript/revisions`、`POST /studio/clips/{project_id}/{clip_id}/transcript/rollback`、`GET /studio/clips/{project_id}/{clip_id}/subtitles`、`POST /studio/clips/{project_id}/{clip_id}/subtitles`、`POST /studio/clips/{project_id}/{clip_id}/audio/bgm`、`DELETE /studio/clips/{project_id}/{clip_id}/audio/bgm/{asset_id}`、`GET /studio/clips/{project_id}/{clip_id}/render-config`、`POST /studio/projects/{project_id}/reedit/{run_id}/retry-cleanup`、`GET /studio/projects/{project_id}/transcript-ref`、`PUT /studio/projects/{project_id}/clips/{clip_id}/timeline-image`、`DELETE /studio/projects/{project_id}/clips/{clip_id}/timeline-image`、`GET /studio/tasks/{task_id}/project`、`GET /studio/projects`、`GET /studio/projects/list`、`GET /studio/projects/{project_id}/thumbnail.jpg`、`GET /studio/projects/{project_id}/clips/{clip_id}/first-frame.jpg`、`POST /studio/projects/{project_id}/archive`、`POST /studio/projects/{project_id}/restore`、`GET /studio/projects/{project_id}/delete/preview`、`POST /studio/projects/{project_id}/delete`、`GET /studio/projects/{project_id}/name`、`PUT /studio/projects/{project_id}/active-clip`、`GET /studio/cover-templates`、`GET /studio/cover-templates/{template_id}/example.svg`、`PUT /studio/projects/{project_id}/clips/{clip_id}/cover-template`、`POST /studio/cover-templates/{template_id}/mock-result`、`GET /studio/projects/{project_id}/cover-assets`、`GET /studio/projects/{project_id}/delete/status`、`POST /studio/projects/{project_id}/delete/retry`、`GET /studio/projects/{project_id}/exports`、`POST /studio/projects/{project_id}/clips/{clip_id}/deliver`、`POST /studio/projects/{project_id}/clips/deliver-batch`、`GET /studio/projects/{project_id}/glossary`、`PUT /studio/projects/{project_id}/glossary`
 - `medical_kb.py`（3）：`POST /ingest`、`GET /search`、`POST /entries/{entry_id}/review`
 

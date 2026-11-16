@@ -307,7 +307,7 @@ def test_worker_analysis_only_never_reaches_render(monkeypatch: pytest.MonkeyPat
     assert analysis_calls["transcript_version"] == 7         # 读取已存转写版本
     assert len(analysis_calls["segments"]) == 4
     assert saved_paths == ["autoedit_test01"]                # 分析已落盘
-    assert artifact_posts and artifact_posts[0]["kind"] == "content_analysis"
+    assert any(post and post.get("kind") == "content_analysis" for post in artifact_posts)
 
 
 def test_worker_formal_chain_runs_analysis_plan_render(monkeypatch: pytest.MonkeyPatch, tmp_path):

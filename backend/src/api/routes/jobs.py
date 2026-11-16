@@ -9,13 +9,14 @@ from pathlib import Path
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, ValidationError
 
 from ... import r2
 from ... import studio_job_store as lifecycle_store
 from ...config import get_config
+from ...database import get_db
 from ...studio_job_store import (
     get_upload_session,
     claim_next_job,
@@ -72,6 +73,10 @@ class UploadSessionRequest(BaseModel):
 
 class CompleteRequest(BaseModel):
     parts: list[dict] = Field(min_length=1, max_length=10000)
+
+
+class KnowledgeContextRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=6000)
 
 
 class JobSubmitRequest(BaseModel):
@@ -442,6 +447,21 @@ async def internal_claim(request: Request):
         }
     }
     return payload
+
+
+@router.post("/internal/jobs/{job_id}/knowledge-context")
+async def internal_job_knowledge_context(job_id: str, body: KnowledgeContextRequest,
+                                         request: Request, db=Depends(get_db)):
+    """租约保护的三库 Top-K：只返回有界业务字段，不返回向量或连接信息。"""
+    _require_worker(request)
+    job = await lifecycle_store.check_worker_lease(
+        job_id, request.headers.get("X-Worker-Id", ""),
+        request.headers.get("X-Worker-Lease", ""))
+    if job is None:
+        raise HTTPException(409, "任务租约已失效")
+    from ... import knowledge_context
+
+    return {"knowledge_context": await knowledge_context.retrieve(db, body.query)}
 
 
 @router.post("/internal/jobs/{job_id}/state")

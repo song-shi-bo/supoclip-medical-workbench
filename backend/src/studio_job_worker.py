@@ -28,15 +28,16 @@
 from __future__ import annotations
 
 import asyncio
-import threading
+import inspect
 import json
 import os
 import signal
 import subprocess
-import tempfile
-import traceback
 import sys
+import tempfile
+import threading
 import time
+import traceback
 import urllib.error
 import urllib.request
 import uuid
@@ -147,10 +148,6 @@ def stage_transcribing(video_path: Path, config: dict, project_id: str | None = 
     from src.config import get_config
     from src.video_utils import transcribe_with_faster_whisper
 
-def stage_transcribing(video_path: Path, config: dict, project_id: str | None = None) -> tuple[list[dict], dict]:
-    from src.config import get_config
-    from src.video_utils import transcribe_with_faster_whisper
-
     # 云端转写分支（火山豆包 ASR 录音文件识别 2.0）：TRANSCRIPTION_PROVIDER=volc_cloud 时启用；
     # 默认仍是本地 faster-whisper。云端不受本机 3GB 内存 cgroup 限制，准确率更高。
     if (getattr(config, "transcription_provider", "") or "") == "volc_cloud":
@@ -179,6 +176,21 @@ def stage_transcribing(video_path: Path, config: dict, project_id: str | None = 
     raw_segments = transcript.get("segments", [])
     words = transcript.get("words", [])
     return raw_segments, {"language": transcript.get("language", "zh"), "words": words, "segments": raw_segments}
+
+
+def _accepts_keyword(callable_obj, keyword: str) -> bool:
+    """Keep compatibility with legacy stage replacements used by tests/plugins."""
+    return any(
+        parameter.name == keyword or parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in inspect.signature(callable_obj).parameters.values()
+    )
+
+
+def _call_stage_transcribing(video_path: Path, config: dict,
+                             project_id: str | None) -> tuple[list[dict], dict]:
+    if _accepts_keyword(stage_transcribing, "project_id"):
+        return stage_transcribing(video_path, config, project_id=project_id)
+    return stage_transcribing(video_path, config)
 
 
 def _job_owner_subject(project_id: str) -> str:
@@ -272,6 +284,13 @@ def stage_correcting(raw_segments: list[dict], job_id: str, project_id: str | No
         {"start": round(float(item["start"]), 3), "end": round(float(item["end"]), 3), "text": str(item["text"]).strip()}
         for item in raw_segments
     ], progress=_progress, job_id=job_id or _current_job_id(), glossary_terms=glossary_terms)
+
+
+def _call_stage_correcting(raw_segments: list[dict], job_id: str,
+                           project_id: str | None) -> dict:
+    if _accepts_keyword(stage_correcting, "project_id"):
+        return stage_correcting(raw_segments, job_id, project_id=project_id)
+    return stage_correcting(raw_segments, job_id)
 
 
 def stage_analyzing(corrected_segments: list[dict], job_id: str) -> dict:
@@ -467,12 +486,12 @@ def run_transcribe_only(job: dict) -> None:
     if recovery.get("raw_segments") is not None:
         raw_segments,transcript_meta=recovery["raw_segments"],recovery["transcript_meta"]
     else:
-        raw_segments,transcript_meta=stage_transcribing(video_path,job.get("config") or {},project_id=job.get("project_id"))
+        raw_segments,transcript_meta=_call_stage_transcribing(video_path, job.get("config") or {}, job.get("project_id"))
         recovery.update(raw_segments=raw_segments,transcript_meta=transcript_meta)
         _save_recovery(recovery_path,recovery,identity)
     corrected=recovery.get("corrected")
     if corrected is None:
-        corrected=stage_correcting(raw_segments,job_id,project_id=job.get("project_id"))
+        corrected=_call_stage_correcting(raw_segments, job_id, job.get("project_id"))
         recovery["corrected"]=corrected
         _save_recovery(recovery_path,recovery,identity)
 
@@ -599,11 +618,83 @@ def _rules_version(job):
     return _frozen_rules(job)["manifest"].get("workflow_version")
 
 
-def _analysis_cache(job,job_id,transcript):
+def _knowledge_context_for(job, job_id, transcript):
+    """每个规划 generation 冻结一次三库 Top-K；恢复时不重新查库。"""
     from src import content_analysis as ca
+    from src import knowledge_context as kc
+
+    segments = list(transcript.get("asr_segments") or [])
+    query = kc.canonical_query(kc.build_query_text(segments))
+    query_sha = kc.query_identity(query)
+    transcript_sha = kc.transcript_identity(segments)
+    generation = _generation(job)
+    target = kc.snapshot_path(job_id, generation)
+    existing = kc.load_snapshot(
+        job_id, generation, query_sha256=query_sha,
+        transcript_sha256=transcript_sha)
+    if existing is not None:
+        return existing
+    if target.exists():
+        raise RuntimeError("E_KNOWLEDGE_SNAPSHOT_INVALID: 冻结的三库上下文已损坏或与转写不符")
+
+    # 快照丢失但分析产物存在时绝不能静默查询当前数据库，否则恢复结果会漂移。
+    analysis_path = ca.analysis_root() / f"{job_id}.json"
+    if analysis_path.exists():
+        try:
+            analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+            recovered = analysis.get("knowledge_context") if isinstance(analysis, dict) else None
+        except (OSError, ValueError):
+            recovered = None
+        if not kc.validate_context(recovered, query_sha256=query_sha,
+                                   transcript_sha256=transcript_sha):
+            # 兼容接线前的 analysis：冻结为空上下文而不是查询当前数据库。
+            recovered = kc.disabled_context(query, "knowledge_context:legacy_analysis")
+            recovered["transcript_sha256"] = transcript_sha
+            recovered["identity_sha256"] = kc.context_identity(recovered)
+        kc.save_snapshot(job_id, generation, recovered, create_only=True)
+        return kc.load_snapshot(
+            job_id, generation, query_sha256=query_sha,
+            transcript_sha256=transcript_sha)
+
+    try:
+        payload = _http(
+            "POST", f"{BACKEND_INTERNAL_URL}/internal/jobs/{job_id}/knowledge-context",
+            {"query": query}, timeout=90)
+        context = payload.get("knowledge_context") if isinstance(payload, dict) else None
+        if not kc.validate_context(context, query_sha256=query_sha):
+            context = kc.disabled_context(query, "knowledge_context:invalid_response")
+    except Exception as exc:  # noqa: BLE001 — 三库不可用时保留转写主链
+        context = kc.disabled_context(query, f"knowledge_context:{type(exc).__name__}")
+        _log(f"job {job_id} 三库检索降级：{type(exc).__name__}")
+    context["transcript_sha256"] = transcript_sha
+    context["identity_sha256"] = kc.context_identity(context)
+    try:
+        kc.save_snapshot(job_id, generation, context, create_only=True)
+    except FileExistsError:
+        pass
+    frozen = kc.load_snapshot(
+        job_id, generation, query_sha256=query_sha,
+        transcript_sha256=transcript_sha)
+    if frozen is None:
+        raise RuntimeError("E_KNOWLEDGE_SNAPSHOT_CONFLICT: 三库上下文并发冻结冲突")
+    return frozen
+
+
+def _analysis_cache(job,job_id,transcript,knowledge_context=None):
+    from src import content_analysis as ca
+    from src import knowledge_context as kc
     expected=ca.build_current_analysis_provenance(list(transcript.get("asr_segments") or []),
-        transcript_version=transcript.get("transcript_version"),rules_snapshot=_frozen_rules(job))
+        transcript_version=transcript.get("transcript_version"),rules_snapshot=_frozen_rules(job),
+        knowledge_context=knowledge_context)
     record=ca.load_analysis_record(job_id,expected_provenance=expected,require_verified=True)
+    if (record is not None and knowledge_context is not None
+            and record.get("source_provenance") is not None):
+        embedded = record.get("knowledge_context")
+        expected_identity = kc.context_identity(knowledge_context)
+        if (not isinstance(embedded, dict)
+                or kc.context_identity(embedded) != expected_identity
+                or str(embedded.get("identity_sha256") or "") != expected_identity):
+            record = None
     if record is not None and int(record.get("plan_generation") or 0)==_generation(job):
         _stage_metadata("analysis",record)
         return record
@@ -691,7 +782,8 @@ def _rule_snapshot_id() -> str | None:
         return None
 
 
-def _run_content_analysis_stage(job: dict, job_id: str, transcript: dict) -> dict:
+def _run_content_analysis_stage(job: dict, job_id: str, transcript: dict,
+                                knowledge_context: dict | None = None) -> dict:
     """第三步（2026-10-14）：AUTO_EDIT 的模型内容分析阶段。
 
     * 只读已保存的纠错转写（object_key/transcript_id/transcript_version 定位），
@@ -705,6 +797,8 @@ def _run_content_analysis_stage(job: dict, job_id: str, transcript: dict) -> dic
     from src import content_analysis
     from src import r2
 
+    if knowledge_context is None:
+        knowledge_context = job.get("_knowledge_context")
     started = time.time()
     _state(job_id, "retrieving_rules", "读取剪辑规则（分析阶段只读纠错转写，不重新转写/纠错）", 0.1)
     corrected_segments = list(transcript.get("asr_segments") or [])
@@ -716,15 +810,21 @@ def _run_content_analysis_stage(job: dict, job_id: str, transcript: dict) -> dic
 
     _state(job_id, "extracting_highlights", "模型内容分析（关键词/金句/主题块/候选区间）", 0.3)
     expected=content_analysis.build_current_analysis_provenance(corrected_segments,
-        transcript_version=transcript.get("transcript_version"),rules_snapshot=_frozen_rules(job))
+        transcript_version=transcript.get("transcript_version"),rules_snapshot=_frozen_rules(job),
+        knowledge_context=knowledge_context)
     record = content_analysis.analyze_content(
         corrected_segments,
         transcript_version=transcript.get("transcript_version"),
         job_id=job_id, project_id=job.get("project_id"),
         progress=_progress, rules_snapshot=_frozen_rules(job),
+        knowledge_context=knowledge_context,
     )
     record["rule_snapshot_id"] = _rules_version(job)
     record["plan_generation"] = _generation(job)
+    if "knowledge_context" not in record:
+        from src import knowledge_context as kc
+        record["knowledge_context"] = json.loads(json.dumps(knowledge_context or {}, ensure_ascii=False))
+        record["knowledge_context_summary"] = kc.summary(knowledge_context)
     _stage_metadata("analysis",record)
     if record.get("source_provenance") is not None and record["source_provenance"]!=expected:
         raise RuntimeError("E_CACHE_CONTEXT_CHANGED: 分析调用来源与预先冻结输入不一致")
@@ -1374,7 +1474,9 @@ def _run_reedit_replace(job: dict, job_id: str, transcript: dict) -> None:
     if manifest is None:
         manifest = reedit_replace.build_old_manifest(project_id, run_id)
 
-    analysis_record = _analysis_cache(job,job_id,transcript)
+    knowledge_context = _knowledge_context_for(job, job_id, transcript)
+    job["_knowledge_context"] = knowledge_context
+    analysis_record = _analysis_cache(job,job_id,transcript,knowledge_context)
     if analysis_record is not None:
         analysis_record["_resumed"] = True
         _state(job_id, "extracting_highlights",
@@ -1511,7 +1613,9 @@ def run_auto_edit_only(job: dict) -> None:
         # 只有分析工件确实缺失或损坏（load 返回 None）才重新分析。
         from src import content_analysis
 
-        analysis_record = _analysis_cache(job,job_id,transcript)
+        knowledge_context = _knowledge_context_for(job, job_id, transcript)
+        job["_knowledge_context"] = knowledge_context
+        analysis_record = _analysis_cache(job,job_id,transcript,knowledge_context)
         resumed = analysis_record is not None
         if resumed:
             analysis_record["_resumed"] = True
@@ -1541,7 +1645,9 @@ def run_auto_edit_only(job: dict) -> None:
     from src import clip_planning
     from src import content_analysis
 
-    analysis_record = _analysis_cache(job,job_id,transcript)
+    knowledge_context = _knowledge_context_for(job, job_id, transcript)
+    job["_knowledge_context"] = knowledge_context
+    analysis_record = _analysis_cache(job,job_id,transcript,knowledge_context)
     if analysis_record is not None:
         analysis_record["_resumed"] = True
         _state(job_id, "extracting_highlights",
@@ -1569,8 +1675,8 @@ def run_legacy_full(job: dict) -> None:
     project_id = job["project_id"]
 
     video_path = stage_downloading(object_key, job_id)
-    raw_segments, transcript_meta = stage_transcribing(video_path, job.get("config") or {}, project_id=project_id)
-    corrected = stage_correcting(raw_segments, job_id, project_id=project_id)
+    raw_segments, transcript_meta = _call_stage_transcribing(video_path, job.get("config") or {}, project_id)
+    corrected = _call_stage_correcting(raw_segments, job_id, project_id)
     insights = stage_analyzing(corrected["asr_segments"], job_id)
     timeline = stage_editing(video_path, raw_segments, corrected, job_id, project_id=project_id)
     rendered, auto_edit_task = stage_rendering(project_id, video_path, corrected["asr_segments"], insights, job_id, project_override=project_id)
