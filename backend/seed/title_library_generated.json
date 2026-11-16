@@ -1,0 +1,4 @@
+{
+  "comment": "生成成片标题的人工纠错（2026-11-16 建）。键为 clip_id；hook_tag 必须是六类之一（热点型/流量型/信任型/品牌型/收藏型/问答型），topic_tags 用病种词表。写在这里的值优先于自动判类/自动匹配，重跑 scripts/import_generated_titles.py 生效。自动判定不了（hook_tag 或 topic_tags 为空）的 clip_id 会列在导入结果的 need_manual_tags 里，补到这里即可。",
+  "overrides": {}
+}

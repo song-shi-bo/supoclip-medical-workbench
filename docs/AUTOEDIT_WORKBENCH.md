@@ -118,6 +118,8 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 | 热点库 `hot_topics` | `status <> disabled`，Top-5 | 辅助识别当前话题热度、受众关注点和主题价值 | 辅助主题排序与切片取舍；不得把热点标题/摘要当视频原话 |
 
 热点标题另同步到独立**标题库** `video_titles`（迁移 `20261116_0007`）：每个标题带双标签——标签1=钩子类型（热点型/流量型/信任型/品牌型/收藏型/问答型，取自热点 `tags[0]`），标签2=病种主题（心梗脑梗、体检、高血压等，来自 `backend/seed/title_library_topic_tags.json` 人工标注）。同步用 `scripts/seed_title_library.py`（按 hot_topics.id 幂等 upsert），检索用 `GET /api/v1/titles/search?hook_tag=&topic_tag=&q=`（KB_READ_TOKEN）；两个维度可单独搜，也可逗号分隔多病种取交集。标题库当前只做创作参考检索，不参与自动剪辑检索。
+
+剪辑成片的标题同样可导入标题库（迁移 `20261116_0008` 增加 `source='generated'` 与 `project_id` 列；**手动批量导入**，不挂自动剪辑链——工作台成片质量成熟前不自动导入）：`scripts/import_generated_titles.py` 扫描全部项目台账卡片，标签1 按六类原型自动判类（本地嵌入相似度，词法规则回退），标签2 按病种词表别名/相似度自动匹配；判定不了的 clip_id 会列在导入结果的 `need_manual_tags` 里，人工纠错写 `backend/seed/title_library_generated.json` 的 overrides（优先于自动结果）后重跑导入即可。检索时可加 `source=hot_topic|generated` 区分热点标题与成片标题。
 | 文稿库 `scripts` | `status <> disabled`，Top-5（含 draft） | **只参考**既有钩子形态、内容拼接结构和潜在表达机制 | 辅助 Hook 潜力和语句取舍；不得复制历史 Hook、正文、CTA 或具体表达 |
 | 医学指南库 `medical_guidelines` | `status=approved`，Top-8 | 辅助理解医学主题、边界和关键词 | 辅助判断信息价值与风险；不得引入转写外医学结论 |
 | 医学闸门快照 `active_snapshot.json` | 独立的确定性 strong/weak/none 标签源 | 对主题与分段贴医学标签 | 规划消费已保存标签；不替代三库 Top-K |
