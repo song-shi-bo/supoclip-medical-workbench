@@ -164,14 +164,11 @@ def test_run_result_usage_before_output_zero_and_missing(monkeypatch):
 def test_plan_cache_independent_current_identity_and_each_change_invalidates(tmp_path, monkeypatch):
     source, summary = segments(10), analysis(10)
     monkeypatch.setattr(cp, "plans_root", lambda: tmp_path)
-    # 2026-11-10 医学闸门：plan_clips 的 provenance 记录「含医学标注」的提示词；
-    # 直接构建必须同样先过闸门富化，两条路径才逐字节相等（纯函数语义仍成立：
-    # 同一转写 + 同一快照 → 同一标注 → 同一指纹）。
+    # A-C 分层：医学匹配结果已经是分析工件的一部分；规划只消费并据此构建指纹。
     from src import clip_medical_gate as gate_mod
-    gate_profile = gate_mod.run_gate(source, summary)
     enriched = dict(summary)
-    if gate_profile["enabled"]:
-        enriched["medical_annotations"] = gate_profile["unit_annotations"]
+    gate_mod.attach_analysis_annotations(
+        enriched, gate_mod.analyze_topics(source, enriched))
     before = cp.build_current_plan_provenance(source, enriched, transcript_version=1,
                                             rules_snapshot={"actual_rule": 1})
     def callback(model, prompt):
@@ -179,7 +176,7 @@ def test_plan_cache_independent_current_identity_and_each_change_invalidates(tmp
             {"input_tokens": 10, "output_tokens": 2}), "settings": {"max_tokens": 6144}})
         return out_for(ids_of(prompt))
     monkeypatch.setattr(cp, "_run_plan_agent", callback)
-    record = cp.plan_clips(source, summary, transcript_version=1, rules_snapshot={"actual_rule": 1})
+    record = cp.plan_clips(source, enriched, transcript_version=1, rules_snapshot={"actual_rule": 1})
     assert record["source_provenance"] == before
     assert record["actual_calls"][0]["parameters"] == {"max_tokens": 6144}
     assert "actual_calls" not in before["parameters"]

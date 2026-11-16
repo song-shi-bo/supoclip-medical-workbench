@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 
 from src import clip_medical_gate as gate
@@ -74,6 +76,12 @@ def _chat_only_analysis() -> dict:
     data = _analysis()
     data["topic_units"] = [data["topic_units"][1]]
     return data
+
+
+def _persisted_analysis(data: dict | None = None) -> dict:
+    """模拟内容分析阶段正式落盘的医学标签；规划不得自行重新匹配。"""
+    result = copy.deepcopy(data or _analysis())
+    return gate.attach_analysis_annotations(result, gate.analyze_topics(_segments(), result))
 
 
 def _slice_plan() -> cp._SlicePlanOut:
@@ -230,7 +238,7 @@ def _patch_plan_llm(monkeypatch: pytest.MonkeyPatch, prompts: list[str]) -> None
 def test_plan_clips_attaches_gate_and_discards_chat(monkeypatch: pytest.MonkeyPatch) -> None:
     prompts: list[str] = []
     _patch_plan_llm(monkeypatch, prompts)
-    record = cp.plan_clips(_segments(), _analysis(), job_id="job-gate-test",
+    record = cp.plan_clips(_segments(), _persisted_analysis(), job_id="job-gate-test",
                            project_id="proj-gate-test")
     # 拼装层透传：提示词里有医学标注背景行，但没有条目正文
     assert prompts and "【医学主题匹配" in prompts[0]
@@ -243,18 +251,36 @@ def test_plan_clips_attaches_gate_and_discards_chat(monkeypatch: pytest.MonkeyPa
     assert kept and kept[0]["medical_gate"]["decision"] == "kept"
 
 
-def test_plan_fingerprint_changes_with_gate_identity(monkeypatch: pytest.MonkeyPatch) -> None:
-    segments, analysis = _segments(), _analysis()
+def test_plan_fingerprint_changes_with_persisted_gate_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    segments = _segments()
     monkeypatch.setattr(cp, "_model_ready", lambda: (True, "openai:test-model", ""))
-    identity_a = mkb.snapshot_identity()
-    identity_b = dict(identity_a, snapshot_sha256="0" * 64)
+    analysis_a = _persisted_analysis()
+    analysis_b = copy.deepcopy(analysis_a)
+    identity_a = analysis_a["medical_analysis"]["identity"]
+    analysis_b["medical_analysis"]["identity"]["snapshot_sha256"] = "0" * 64
     provenance_a = cp.build_current_plan_provenance(
-        segments, analysis, model="openai:test-model", medical_gate_identity=identity_a)
+        segments, analysis_a, model="openai:test-model")
     provenance_b = cp.build_current_plan_provenance(
-        segments, analysis, model="openai:test-model", medical_gate_identity=identity_b)
+        segments, analysis_b, model="openai:test-model")
     assert provenance_a["input_fingerprint"] != provenance_b["input_fingerprint"]
     assert provenance_a["rules_snapshot"]["medical_gate"]["snapshot_sha256"] == \
         identity_a["snapshot_sha256"]
+
+
+def test_plan_consumes_persisted_annotations_without_rematching(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    prompts: list[str] = []
+    _patch_plan_llm(monkeypatch, prompts)
+    analysis = _persisted_analysis()
+
+    def _forbidden(*_args, **_kwargs):
+        raise AssertionError("planning stage must not recompute medical topic matching")
+
+    monkeypatch.setattr(gate, "analyze_topics", _forbidden)
+    monkeypatch.setattr(gate, "run_gate", _forbidden)
+    record = cp.plan_clips(_segments(), analysis, job_id="job-persisted-medical")
+    assert record["medical_gate"]["mode"] == "enforce"
+    assert prompts and "【医学主题匹配" in prompts[0]
 
 
 def test_gate_failure_degrades_without_blocking(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -284,14 +310,11 @@ def test_worker_contract_expected_matches_plan_record(monkeypatch: pytest.Monkey
                                                       tmp_path) -> None:
     prompts: list[str] = []
     _patch_plan_llm(monkeypatch, prompts)
-    segments, analysis = _segments(), _analysis()
-    gate_profile = gate.run_gate(segments, analysis)
+    segments, analysis = _segments(), _persisted_analysis()
+    gate_profile = gate.planning_profile_from_analysis(analysis)
     assert gate_profile["enabled"] is True
-    enriched = dict(analysis)
-    enriched["medical_annotations"] = gate_profile["unit_annotations"]
     expected = cp.build_current_plan_provenance(
-        segments, enriched, model="openai:test-model",
-        medical_gate_identity=gate_profile["identity"],
+        segments, analysis, model="openai:test-model",
         purify_identity=pu.identity(None))
-    record = cp.plan_clips(segments, analysis, gate_profile=gate_profile)
+    record = cp.plan_clips(segments, analysis)
     assert record["source_provenance"] == expected

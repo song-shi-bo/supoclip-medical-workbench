@@ -916,14 +916,18 @@ def build_current_plan_provenance(corrected_segments: list[dict[str, Any]],
                                    model: str | None = None,
                                    rule_snapshot_id: str | None = None,
                                    rules_snapshot: Any = None,
-                                   medical_gate_identity: dict[str, Any] | None = None,
                                    purify_identity: dict[str, Any] | None = None
                                    ) -> dict[str, Any]:
     """当前输入独立生成计划缓存identity；不读取旧cache或actual_calls。"""
     if model is None:
         _, model, _ = _model_ready()
-    # 医学闸门身份：未显式传入时现场取（同一快照 → 同一指纹，纯函数语义）。
-    gate_identity = medical_gate_identity or med_gate.current_identity()
+    # 医学匹配身份来自已持久化的分析产物；规划阶段不得现场读取当前知识库身份，
+    # 否则同一 analysis artifact 会因外部快照变化得到不可复现的计划指纹。
+    gate_profile = med_gate.planning_profile_from_analysis(analysis)
+    gate_identity = copy.deepcopy(gate_profile.get("identity") or {})
+    analysis_for_prompt = dict(analysis)
+    analysis_for_prompt["medical_annotations"] = copy.deepcopy(
+        gate_profile.get("unit_annotations") or [])
     # 净化重组身份（2026-11-11 问答化 P1）：说话人标注指纹变化 → 旧计划缓存失效。
     purify_id = purify_identity or clip_purify.identity(None)
     index = _SegIndex(corrected_segments)
@@ -943,6 +947,7 @@ def build_current_plan_provenance(corrected_segments: list[dict[str, Any]],
              # 医学闸门（2026-11-10 第三库）：身份含快照指纹与阈值——库/阈值变了旧计划缓存失效；
              # 闸门与检索模块源码指纹一并进 provenance。
              "medical_gate": gate_identity,
+             "medical_gate_discard_below": med_gate.DISCARD_BELOW,
              "medical_gate_helper_sha256": hashlib.sha256(
                  Path(med_gate.__file__).read_bytes()).hexdigest(),
              "clip_purify": purify_id,
@@ -958,10 +963,10 @@ def build_current_plan_provenance(corrected_segments: list[dict[str, Any]],
                     "llm_call_mode": "single_global_slice_plan"},
         rules_snapshot=rules, prompt_version=PLAN_PROMPT_VERSION,
         prompt_text={"system": _PLAN_SYSTEM_PROMPT,
-                     "root_windows": [_slice_plan_prompt(index, analysis)]},
+                     "root_windows": [_slice_plan_prompt(index, analysis_for_prompt)]},
         schema_version=PLAN_SCHEMA_VERSION,
         helper_version=f"{hp.HELPER_VERSION}/{PLAN_ADAPTER_VERSION}")
-    source["analysis_content_sha256"] = ca._digest(_analysis_input(analysis))
+    source["analysis_content_sha256"] = ca._digest(_analysis_input(analysis_for_prompt))
     source["analysis_source_fingerprint"] = (analysis.get("source_provenance") or {}).get("input_fingerprint")
     source["input_fingerprint"] = ca._digest({key: value for key, value in source.items()
                                              if key != "input_fingerprint"})
@@ -976,8 +981,7 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
                analysis_ref: dict[str, Any] | None = None,
                rules_snapshot: Any = None,
                speaker_labels: dict[str, str] | None = None,
-               speaker_fingerprint: str | None = None,
-               gate_profile: dict[str, Any] | None = None) -> dict[str, Any]:
+               speaker_fingerprint: str | None = None) -> dict[str, Any]:
     """提示词A全局一次规划（两步制第一步）；失败重试一次，仍失败本地回退。
 
     模型输出 time_range 由 :func:`_assemble_slice_plan` 解析吸附到分段边界，
@@ -986,19 +990,17 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
     """
     index = _SegIndex(corrected_segments)
     ready, model_name, reason = _model_ready() if index.entries else (False, "", "纠错转写为空")
-    # 医学闸门（规划前标注）：worker 可预计算传入（gate_profile，单一数据源保证
-    # expected/actual 两边指纹逐字节一致）；未传入则现场计算（独立调用路径）。
-    if gate_profile is None:
-        gate_profile = med_gate.run_gate(corrected_segments, analysis)
+    # 医学主题匹配已在内容分析阶段完成并持久化。规划阶段只根据这些事实决定
+    # 领域激活与候选淘汰，只从 analysis 重建策略画像，不现场重算。
+    gate_profile = med_gate.planning_profile_from_analysis(analysis)
     # 净化重组身份：说话人标注指纹由调用方（worker）解析传入，两边必须一致。
     purify_id = clip_purify.identity(speaker_fingerprint)
     analysis_for_prompt = dict(analysis)
-    if gate_profile.get("enabled"):
-        analysis_for_prompt["medical_annotations"] = gate_profile.get("unit_annotations") or []
+    analysis_for_prompt["medical_annotations"] = copy.deepcopy(
+        gate_profile.get("unit_annotations") or [])
     source = build_current_plan_provenance(corrected_segments, analysis_for_prompt,
         transcript_version=transcript_version, model=model_name,
         rule_snapshot_id=rule_snapshot_id, rules_snapshot=rules_snapshot,
-        medical_gate_identity=gate_profile.get("identity"),
         purify_identity=purify_id)
     notes: list[str] = []
     started = time.monotonic()

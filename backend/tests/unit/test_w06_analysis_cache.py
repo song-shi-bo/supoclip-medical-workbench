@@ -68,6 +68,10 @@ def test_analyze_compatible_entry_freezes_actual_sources(tmp_path, monkeypatch):
     source = record["source_provenance"]
     assert source["complete"] is True
     assert source["model"] == "fixture" and source["rules_snapshot"]["implementation_sha256"]
+    assert source["rules_snapshot"]["content_annotation"]["identity"]
+    assert isinstance(record["medical_annotations"], list)
+    assert isinstance(record["medical_analysis"], dict)
+    assert "mode" not in record["medical_analysis"]  # 分析只贴标签，不做规划执法决定
     assert record["llm_usage"]["usage_status"] == "unknown"
     assert record["cache_verification"]["reusable"] is False
 
@@ -91,3 +95,18 @@ def test_pre_call_source_independently_matches_saved_record(tmp_path, monkeypatc
     monkeypatch.setattr(ca, "MAX_OUTPUT_TOKENS", ca.MAX_OUTPUT_TOKENS + 1)
     current = ca.build_current_analysis_provenance(SEGMENTS, transcript_version=3)
     assert ca.load_analysis_record("j", expected_provenance=current) is None
+
+
+def test_medical_snapshot_identity_change_invalidates_analysis_cache(tmp_path, monkeypatch):
+    from src import clip_medical_gate as gate
+
+    monkeypatch.setattr(ca, "_model_ready", lambda: (True, "fixture", ""))
+    monkeypatch.setattr(ca, "analysis_root", lambda: tmp_path)
+    identity = gate.current_identity()
+    before = ca.build_current_analysis_provenance(SEGMENTS, transcript_version=3)
+    ca.save_analysis_record("j-medical", {"plan_source": "llm"}, provenance=before)
+    changed = dict(identity, snapshot_sha256="0" * 64)
+    monkeypatch.setattr(gate, "current_identity", lambda: changed)
+    after = ca.build_current_analysis_provenance(SEGMENTS, transcript_version=3)
+    assert before["input_fingerprint"] != after["input_fingerprint"]
+    assert ca.load_analysis_record("j-medical", expected_provenance=after) is None

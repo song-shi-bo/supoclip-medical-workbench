@@ -2,7 +2,7 @@
 
 定位：用户点击「开始自动剪辑」后，读取**已保存的纠错转写**（绝不重新上传/
 ASR/纠错），用一次结构化模型调用提取 keywords / golden_quotes / topic_units /
-candidate_intervals，结果落盘即停（本阶段不进入时间线工程与渲染）。
+candidate_intervals，并在同一分析阶段用知识快照补充医学主题匹配标签；结果落盘即停（本阶段不做候选淘汰、不进入时间线工程与渲染）。
 
 硬约束（与需求逐条对应）：
 * 模型只读取「纠错文本 + 时间戳 + 段 id」——不读视频、不逐帧、不联网；
@@ -27,6 +27,7 @@ candidate_intervals，结果落盘即停（本阶段不进入时间线工程与�
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 import hashlib
 import inspect
@@ -658,9 +659,9 @@ def load_analysis_record(job_id: str, *, expected_provenance: dict[str, Any] | N
     return record
 
 
-ANALYSIS_SCHEMA_VERSION = "analysis/v4"
+ANALYSIS_SCHEMA_VERSION = "analysis/v5"
 ANALYSIS_PROMPT_VERSION = "analysis-prompt/2026-11-11"
-ANALYSIS_HELPER_VERSION = "analysis-helper/v4"
+ANALYSIS_HELPER_VERSION = "analysis-helper/v5"
 
 
 def _digest(value: Any) -> str:
@@ -758,6 +759,22 @@ def build_current_analysis_provenance(corrected_segments: list[dict[str, Any]], 
                 inspect.getsource(_heuristic_fallback), inspect.getsource(_merge_llm_result),
                 inspect.getsource(_SegIndex)]),
             "fallback_source_sha256": hashlib.sha256(fallback_file.read_bytes()).hexdigest()}
+    # 医学主题匹配是内容分析增强：知识快照、匹配阈值与实现变化必须使分析缓存
+    # 失效，而不再等到规划阶段临时重算另一份标注。
+    from . import clip_medical_gate, kb_embedding, medical_kb
+    rules_snapshot = copy.deepcopy(rules_snapshot)
+    if not isinstance(rules_snapshot, dict):
+        rules_snapshot = {"editing_rules": rules_snapshot}
+    rules_snapshot["content_annotation"] = {
+        "identity": clip_medical_gate.current_identity(),
+        "profile_version": clip_medical_gate.PROFILE_VERSION,
+        "implementation_sha256": _digest({
+            "clip_medical_gate": hashlib.sha256(
+                Path(clip_medical_gate.__file__).read_bytes()).hexdigest(),
+            "medical_kb": hashlib.sha256(Path(medical_kb.__file__).read_bytes()).hexdigest(),
+            "kb_embedding": hashlib.sha256(Path(kb_embedding.__file__).read_bytes()).hexdigest(),
+        }),
+    }
     parameters = {"requested": _analysis_model_settings(),
                   "retry_max_tokens": MAX_OUTPUT_TOKENS_RETRY,
                   "timeout_seconds": LLM_CALL_TIMEOUT_SECONDS,
@@ -778,6 +795,10 @@ def analyze_content(corrected_segments: list[dict[str, Any]], *,
         transcript_version=transcript_version, rules_snapshot=rules_snapshot)
     record = _analyze_content(corrected_segments, transcript_version=transcript_version,
                               job_id=job_id, project_id=project_id, progress=progress)
+    # A-C 分层：知识库只为原视频贴医学主题标签；分析阶段不产生任何候选淘汰决定。
+    from . import clip_medical_gate
+    medical_analysis = clip_medical_gate.analyze_topics(corrected_segments, record)
+    clip_medical_gate.attach_analysis_annotations(record, medical_analysis)
     record.setdefault("llm_usage", llm_budget.extract_usage_details(None))
     record["source_provenance"] = source
     record["cache_verification"] = verify_analysis_provenance(record)

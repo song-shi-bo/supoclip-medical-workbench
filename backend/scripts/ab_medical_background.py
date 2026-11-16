@@ -38,9 +38,11 @@ def main() -> None:
         if (TASKS / "analysis" / RUN / "analysis.json").is_file() else \
         json.loads((TASKS / "analysis" / f"{RUN}.json").read_text(encoding="utf-8"))
     analysis_for_plan = dict(analysis)
-    profile = gate.run_gate(segments, analysis_for_plan)
-    if profile.get("enabled"):
-        analysis_for_plan["medical_annotations"] = profile.get("unit_annotations") or []
+    # 历史分析工件兼容：脚本先显式补成“分析阶段产物”，规划本身不再现场匹配。
+    if not isinstance(analysis_for_plan.get("medical_analysis"), dict):
+        gate.attach_analysis_annotations(
+            analysis_for_plan, gate.analyze_topics(segments, analysis_for_plan))
+    profile = gate.planning_profile_from_analysis(analysis_for_plan)
     print(f"gate: enabled={profile.get('enabled')} units={len(analysis_for_plan.get('medical_annotations') or [])}")
 
     results = {}
@@ -49,7 +51,7 @@ def main() -> None:
         t0 = time.time()
         record = cp.plan_clips(
             segments, analysis_for_plan, transcript_version=2,
-            rule_snapshot_id=None, gate_profile=profile)
+            rule_snapshot_id=None)
         elapsed = time.time() - t0
         clips = [{"topic": c.get("topic"), "title": c.get("title") or "",
                   "start": c.get("start_ms"), "end": c.get("end_ms"),

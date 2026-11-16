@@ -111,7 +111,7 @@ def main() -> None:
     from src import clip_medical_gate as gate
     analysis_path = TASKS / "analysis" / "c6cd115b51e348e89ec6aa8a13f9e583.json"
     analysis = json.loads(analysis_path.read_text(encoding="utf-8")) if analysis_path.is_file() else {}
-    profile = gate.run_gate(segments, analysis)
+    profile = gate.analyze_topics(segments, analysis)
     unit_context: dict[str, list[dict]] = {}
     for unit in profile.get("unit_annotations") or []:
         seg_ids = [str(s) for s in (unit.get("segment_ids") or [])]

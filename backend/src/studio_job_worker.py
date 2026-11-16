@@ -757,7 +757,6 @@ def _run_clip_planning_stage(job: dict, job_id: str, transcript: dict,
     * 返回计划记录；``plan_ready`` 终态由调用方按 stop_after 决定是否发射。
     """
     from src import clip_planning
-    from src import clip_medical_gate
     from src import clip_purify
     from src import r2
     from src import studio_transcript_store
@@ -768,14 +767,9 @@ def _run_clip_planning_stage(job: dict, job_id: str, transcript: dict,
         _state(job_id, "planning", message, 0.6)
 
     corrected_for_plan = list(transcript.get("asr_segments") or [])
-    # 医学闸门（单一数据源）：worker 预计算一次 gate_profile，富化分析（医学标注
-    # 进拼装层背景）后同时喂给 expected 与 plan_clips——两边指纹逐字节一致，
-    # E_CACHE_CONTEXT_CHANGED 契约才能放行（2026-11-11 修复：此前 expected 用
-    # 原始分析、plan_clips 内部注入标注，两边必然不一致）。
-    gate_profile = clip_medical_gate.run_gate(corrected_for_plan, analysis_record)
-    analysis_for_plan = dict(analysis_record)
-    if gate_profile.get("enabled"):
-        analysis_for_plan["medical_annotations"] = gate_profile.get("unit_annotations") or []
+    # A-C 分层：把持久化分析工件原样交给规划。领域激活与候选淘汰由
+    # clip_planning 从 medical_analysis 重建，planning stage 不重新匹配主题。
+    analysis_for_plan = analysis_record
 
     # 净化重组（2026-11-11 问答化 P1）：源级说话人标注 overlay 由 worker 显式
     # 解析并传给 expected/plan_clips 两边（identity 一致性契约）；加载失败降级
@@ -803,7 +797,6 @@ def _run_clip_planning_stage(job: dict, job_id: str, transcript: dict,
     }
     expected=clip_planning.build_current_plan_provenance(corrected_for_plan, analysis_for_plan,
         transcript_version=transcript.get("transcript_version"),rule_snapshot_id=_rules_version(job),rules_snapshot=_frozen_rules(job),
-        medical_gate_identity=gate_profile.get("identity"),
         purify_identity=clip_purify.identity(speaker_fingerprint))
     record = clip_planning.plan_clips(
         corrected_for_plan, analysis_record,
@@ -813,7 +806,6 @@ def _run_clip_planning_stage(job: dict, job_id: str, transcript: dict,
         rule_snapshot_id=_rules_version(job),
         analysis_ref=analysis_ref, rules_snapshot=_frozen_rules(job),
         speaker_labels=speaker_labels, speaker_fingerprint=speaker_fingerprint,
-        gate_profile=gate_profile,
     )
     record["plan_generation"]=_generation(job)
     _stage_metadata("planning",record)

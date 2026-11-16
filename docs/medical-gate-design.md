@@ -1,8 +1,7 @@
 # 医学指南库（第三库）与切片医学闸门设计
 
-状态：**阶段一已实施（2026-11-10）**——种子条目入库、medical_gate 闸门、规划后硬剔除执法、
-指纹接线、单测全绿。
-日期：2026-11-10 决策与实施
+状态：**阶段一已实施（2026-11-10）；A-C 分层接线已优化（2026-11-16）**——医学主题匹配正式归入内容分析产物，规划只消费持久化标注并负责领域激活与规划后硬剔除；D 层切片精修与渲染不变。
+日期：2026-11-10 决策与实施；2026-11-16 分层优化
 关联：`docs/two-step-planning-design.md`（两步制规划）、`docs/AUTOEDIT_WORKBENCH.md` §3.2
 
 ## 背景与目标
@@ -25,26 +24,28 @@
 | 指南来源 | 从公开权威来源（NCI PDQ 患教/指南摘要等）获取**黑色素瘤**材料整理成结构化条目 |
 | 生效策略 | **直接生效 + 事后复核**（条目 `review_status=pending_review`，复核 API 回填） |
 
-## 架构（阶段一）
+## 架构（2026-11-16 A-C 分层后）
 
 ```
-内容分析 content_analysis（不动）
+内容分析 content_analysis
     ↓
-【医学闸门·规划前标注】clip_medical_gate.run_gate（纯本地，不调 LLM、不连库）
-    输入：纠错分段 + topic_units
+【分析增强】clip_medical_gate.analyze_topics（纯本地，不调 LLM）
+    输入：纠错分段 + topic_units + 知识快照
     匹配：主题块（标题+钩子/收尾引用+首末分段）→ 向量(bge-small-zh) × 指南条目
           + 全库去重关键词命中（LEXICAL_HITS_NORM 归一）→ score = max(向量, 词法)
-    输出：medical_profile（逐主题块 strong/weak/none + 命中条目 + 医学分段集合）
+    输出并落盘：medical_analysis（完整匹配事实）+ medical_annotations（提示词兼容别名）
+    边界：只贴 strong/weak/none、命中条目和医学分段标签，不产生 discarded 决定
     ↓
 切片规划 clip_planning（提示词A 一字不动，防混契约不变）
-    拼装层 _analysis_context_lines 透出【医学主题匹配】背景行（只标注标签与匹配度，
-    条目正文绝不进提示词——提示词A「信息忠实」约束）
+    planning_profile_from_analysis 只读取持久化标注，不重新加载知识库、不重新匹配
+    拼装层透出【医学主题匹配】背景行；条目正文绝不进提示词
+    领域激活：存在 strong 才 enforce，否则 annotate_only
     ↓
-【医学闸门·规划后执法】enforce_clips（硬剔除，2026-11-10 用户拍板）
+【规划后执法】enforce_clips（硬剔除，2026-11-10 用户拍板）
     切片医学分段密度 < DISCARD_BELOW(0.2) 且覆盖主题块最强级别 = none
     → 移入 discarded（type=非医学闲聊，附证据）；缺口由全覆盖契约程序补齐
     ↓
-切片精修 clip_refinement（提示词B 不动，只删不改契约无交集）
+切片精修 / Purify / 渲染（D 层，本轮不改）
 ```
 
 ### 领域激活规则（防误伤，重要）
@@ -99,15 +100,13 @@ content_hash(唯一) / embedding_json`。风格与热点双库一致（fastembed
 
 ## 指纹与缓存契约
 
-`clip_planning.build_current_plan_provenance.rules` 新增：
-- `medical_gate`：闸门身份 = `{enabled, gate_version, snapshot_sha256, entry_count,
-  strong/weak/lexical 阈值}`——**库内容或阈值变了，旧计划缓存自动失效**；
-- `medical_gate_helper_sha256`：闸门模块源码指纹；
-- 未显式传身份时由 `med_gate.current_identity()` 现场取（同一快照 → 同一指纹，
-  保持 provenance 纯函数语义，w06 直接构建 == plan_clips 内嵌，逐字节相等）。
+分层后的指纹契约：
 
-provenance 的 `prompt_text.root_windows` 记录**含医学标注**的提示词——直接构建方
-需同样先过闸门富化（见 `test_w06_planning_wiring.py` 内注释）。
+- analysis provenance 记录医学快照身份以及 `clip_medical_gate.py`、`medical_kb.py`、`kb_embedding.py` 实现哈希；知识内容、匹配阈值或实现变化时，旧分析缓存失效并重新生成医学标注；
+- plan provenance 的 `medical_gate` 身份只取自已持久化的 `medical_analysis.identity`，禁止调用 `current_identity()` 读取规划时的外部快照；
+- plan provenance 另记 `medical_gate_discard_below`，因为它是规划取舍阈值；
+- `prompt_text.root_windows` 记录含持久化医学标注的提示词，同一 analysis artifact 可稳定复现同一规划输入；
+- 旧分析工件缺少 `medical_analysis` 时，规划明确进入 disabled 并留痕，不静默重算。
 
 ## 产物与消费
 

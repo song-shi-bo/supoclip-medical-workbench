@@ -1,4 +1,4 @@
-"""医学闸门（2026-11-10 第三库阶段一）：规划前医学标注 + 规划后硬剔除执法。
+"""医学知识匹配与规划闸门：分析阶段贴标签，规划阶段做取舍。
 
 用户 2026-11-10 三项拍板：
 - 执法强度：**硬剔除**——医学密度不达标的切片（如医生患者聊家常）规划后由程序
@@ -42,10 +42,9 @@ DISCARD_TYPE = "非医学闲聊"
 
 
 def current_identity() -> dict[str, Any]:
-    """现场闸门身份（供 build_current_plan_provenance 未显式传入时取）。
+    """当前医学知识匹配身份，供内容分析 provenance 冻结。
 
-    纯函数语义：同一快照文件 + 同一阈值环境 → 同一身份，保证「直接构建
-    provenance」与「plan_clips 内嵌 provenance」逐字节相等（w06 缓存契约）。
+    规划 provenance 不调用本函数，只读取分析工件中已持久化的 identity。
     """
     try:
         return medical_kb.snapshot_identity()
@@ -66,15 +65,18 @@ def _unit_text(unit: dict[str, Any], segment_text_of: dict[str, str]) -> str:
     return "\n".join(p for p in parts if p.strip())[:2000]
 
 
-def run_gate(corrected_segments: list[dict[str, Any]],
-             analysis: dict[str, Any]) -> dict[str, Any]:
-    """规划前闸门：逐主题块医学匹配 + 逐分段词法标注。绝不抛异常（失败=禁用降级）。"""
+def analyze_topics(corrected_segments: list[dict[str, Any]],
+                   analysis: dict[str, Any]) -> dict[str, Any]:
+    """分析增强：逐主题块医学匹配 + 逐分段词法标注。
+
+    这里只描述原视频中的医学相关性，不决定候选切片的保留、淘汰或发布。
+    任何失败均降级为 disabled，绝不阻断内容分析。
+    """
     profile: dict[str, Any] = {
         "profile_version": PROFILE_VERSION,
         "gate_version": medical_kb.GATE_VERSION,
         "identity": {"enabled": False, "gate_version": medical_kb.GATE_VERSION},
         "enabled": False,
-        "mode": "disabled",
         "unit_annotations": [],
         "medical_segment_ids": [],
         "notes": [],
@@ -119,21 +121,76 @@ def run_gate(corrected_segments: list[dict[str, Any]],
             if ratio > 0:
                 medical_segment_ids.append(sid)
         profile["unit_annotations"] = annotations
-        profile["medical_segment_ids"] = medical_segment_ids
-        # 领域激活（2026-11-10 收紧）：只有 **strong** 主题块才触发执法——
-        # weak 向量命中可能只是库外领域的语义邻近（bge 无关对常见 0.45~0.55），
-        # weak 单独出现时无把握，保持只标注不剔除。
-        profile["mode"] = "enforce" if any(
-            ann["level"] == "strong" for ann in annotations) else "annotate_only"
-        if profile["mode"] == "annotate_only":
-            profile["notes"].append(
-                "全片无 strong 级主题块命中（库未覆盖或证据不足），闸门仅标注不剔除（防误伤）")
+        profile["medical_segment_ids"] = sorted(set(medical_segment_ids))
         return profile
-    except Exception as exc:  # noqa: BLE001 — 闸门绝不阻断规划
-        profile.update({"enabled": False, "mode": "disabled",
+    except Exception as exc:  # noqa: BLE001 — 标注失败绝不阻断内容分析
+        profile.update({"enabled": False,
                         "error": f"{type(exc).__name__}: {str(exc)[:200]}"})
-        profile["notes"].append("medical_gate 异常禁用（不阻断）")
+        profile["notes"].append("medical_gate 医学标注异常禁用（不阻断内容分析）")
         return profile
+
+
+def attach_analysis_annotations(analysis: dict[str, Any],
+                                medical_analysis: dict[str, Any]) -> dict[str, Any]:
+    """把医学匹配事实写入正式内容分析产物，不写任何淘汰决定。"""
+    analysis["medical_annotations"] = list(medical_analysis.get("unit_annotations") or [])
+    analysis["medical_analysis"] = medical_analysis
+    return analysis
+
+
+def planning_profile_from_analysis(analysis: dict[str, Any]) -> dict[str, Any]:
+    """由已持久化的分析标注构造本次规划策略画像。
+
+    规划阶段只消费分析事实，不重新加载知识库或重新匹配主题。领域激活属于本次
+    规划决策：存在 strong 主题才 enforce，否则 annotate_only；分析缺失或禁用时
+    明确降级为 disabled。
+    """
+    stored = analysis.get("medical_analysis")
+    if not isinstance(stored, dict):
+        return {
+            "profile_version": PROFILE_VERSION,
+            "gate_version": medical_kb.GATE_VERSION,
+            "identity": {"enabled": False, "gate_version": medical_kb.GATE_VERSION},
+            "enabled": False,
+            "mode": "disabled",
+            "unit_annotations": [],
+            "medical_segment_ids": [],
+            "notes": ["内容分析产物缺少 medical_analysis，规划医学过滤禁用（不现场重算）"],
+        }
+    profile = {
+        "profile_version": stored.get("profile_version") or PROFILE_VERSION,
+        "gate_version": stored.get("gate_version") or medical_kb.GATE_VERSION,
+        "identity": dict(stored.get("identity") or {}),
+        "enabled": bool(stored.get("enabled")),
+        "unit_annotations": list(stored.get("unit_annotations") or []),
+        "medical_segment_ids": list(stored.get("medical_segment_ids") or []),
+        "notes": list(stored.get("notes") or []),
+    }
+    if stored.get("error"):
+        profile["error"] = stored["error"]
+    if not profile["enabled"]:
+        profile["mode"] = "disabled"
+        return profile
+    # 领域激活是规划策略，不回写分析事实：只有 strong 主题才执行医学淘汰。
+    profile["mode"] = "enforce" if any(
+        ann.get("level") == "strong" for ann in profile["unit_annotations"]
+        if isinstance(ann, dict)) else "annotate_only"
+    if profile["mode"] == "annotate_only":
+        profile["notes"].append(
+            "全片无 strong 级主题块命中（库未覆盖或证据不足），本次规划仅标注不剔除（防误伤）")
+    return profile
+
+
+def run_gate(corrected_segments: list[dict[str, Any]],
+             analysis: dict[str, Any]) -> dict[str, Any]:
+    """兼容入口：分析匹配后构造规划画像。
+
+    新主链必须在内容分析阶段调用 :func:`analyze_topics` 并持久化结果；规划阶段应
+    调用 :func:`planning_profile_from_analysis`，不得通过本入口重新匹配。
+    """
+    enriched = dict(analysis)
+    attach_analysis_annotations(enriched, analyze_topics(corrected_segments, analysis))
+    return planning_profile_from_analysis(enriched)
 
 
 _LEVEL_LABEL = {"strong": "医学", "weak": "弱相关", "none": "非医学"}
