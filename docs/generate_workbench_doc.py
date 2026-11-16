@@ -137,8 +137,10 @@ def update_doc(check: bool = False) -> int:
             return 0
         print("doc snapshot STALE — 运行 python3 docs/generate_workbench_doc.py 更新", file=sys.stderr)
         return 1
-    # 就地更新：按原文精确比较，连「代码版本」哈希/时间戳也保持新鲜
-    if new_text == text:
+    # 就地更新：归一化易变字段（生成时间/HEAD 哈希）后比较——只有真实内容变化
+    # 才写文件。旧逻辑按原文精确比较，导致每次 pre-push 钩子都因「时间戳/HEAD
+    # 哈希变了」而刷新并多产出一个提交（跑步机效应，2026-11-13 修复）。
+    if _normalize(new_text) == _normalize(text):
         print("doc snapshot up-to-date")
         return 0
     DOC.write_text(new_text, encoding="utf-8")
