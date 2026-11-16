@@ -109,77 +109,90 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 切片精修与渲染（执行呈现）
 ```
 
-#### 3.2.2 内容分析：只描述原视频
+#### 3.2.2 内容分析：对视频做了什么
 
-**输入**
+内容分析实际分析的是**指定版本的纠错转写**，不是原始视频画面或音频。进入本阶段前，视频已经完成 ASR 和医学纠错；本阶段不重新上传、不重新转写、不逐帧看画面，也不联网检索资料。
 
-- 指定版本的纠错转写；
-- 权威 `segment_id/start_ms/end_ms`；
-- 内容分析提示词和知识快照。
+**逐步流程**
 
-**输出**
+| 步骤 | 实际处理 | 程序与结果 |
+|---|---|---|
+| 1. 固定输入版本 | 按 `object_key + transcript_id + transcript_version` 取得纠错后的 `asr_segments`，每段包含权威 `segment_id/start_ms/end_ms/text` | `studio_job_worker._run_content_analysis_stage`；输入来自 `tasks/transcripts/<source_id>/vN.json` |
+| 2. 冻结分析身份 | 对转写版本、分析提示词、模型配置、规则快照、医学知识快照和匹配实现计算 provenance；同一输入才允许复用缓存 | `content_analysis.build_current_analysis_provenance` |
+| 3. 全片结构化分析 | 通常把全片分段一次交给内容分析模型；超过 600 段才按每批 400 段拆批并合并 | 输出 `keywords`、`golden_quotes`、`topic_units`、`candidate_intervals` |
+| 4. 程序校验模型结果 | 金句必须能在全片转写中逐字命中；主题钩子、收尾句和患者问题必须逐字存在于所属主题；医生核心段 ID 必须属于该主题。主题块和引用的时间、`info_seconds` 由原分段重算；模型给出的候选区间只会被裁到全片边界并剔除倒挂区间 | 改写、拼接、虚构、越界时间和非法 ID 被清除并写入 `notes` |
+| 5. 医学主题匹配 | 对每个主题块执行“本地向量 + 词法”混合匹配，并对主题块外分段补做词法标注 | `clip_medical_gate.analyze_topics` 写入 `medical_analysis` 和 `medical_annotations`，只标 strong/weak/none 和证据，不淘汰内容 |
+| 6. 原子保存与登记 | 将完整分析记录原子写盘、上传到当前对象存储，并登记为任务 artifact | `tasks/analysis/<job>.json`；artifact 名为 `content_analysis` |
 
-- `keywords`：全片关键词；
-- `golden_quotes`：逐字来自原转写的金句候选；
-- `topic_units`：主题簇及其 `segment_ids`；
-- 每个主题簇的 `mechanism`、`hook_quote`、`ending_quote`、`patient_question`、`doctor_core_segment_ids`；
-- `info_seconds`：程序按原分段时长计算，模型无权填写；
-- `candidate_intervals`：供规划参考的候选区间；
-- `medical_analysis`：医学匹配完整事实，包括知识快照身份、主题块 strong/weak/none、命中条目和医学分段；
-- `medical_annotations`：供规划提示拼装使用的兼容字段。
+**分析阶段使用的模型**
 
-**硬约束**
+| 用途 | 模型与调用方式 | 失败处理 |
+|---|---|---|
+| 主题/金句/候选区间抽取 | Pydantic AI 结构化调用，实际生成模型读取运行时 `Config.llm`；不是在分析代码中写死一个专用模型。温度 `0.2`，默认请求关闭思考，输出预算先 4096、token 上限不足时升到 6144 | 模型未配置、超时、配额不足或结构化输出非法时，改走本地 heuristic；`plan_source=heuristic_fallback` |
+| 医学语义匹配 | 本地嵌入模型 `BAAI/bge-small-zh-v1.5`（fastembed）叠加关键词匹配；它不是生成式规划模型 | 向量模型不可用时退化为词法匹配；快照不可用时医学标注禁用，但分析任务继续 |
 
-- 引用句必须逐字存在于对应主题块，改写、拼接或发明的内容会被清除；
-- `doctor_core_segment_ids` 必须是主题块 `segment_ids` 的子集，非法 ID 会被清理；
-- 时间戳、分段 ID 和信息时长均以程序计算为准；
-- 分析可以发现、标记和警告，但不能生成 `discarded`、不能决定最终成片；
-- 模型失败时走 heuristic 回退并如实记录，不阻断任务。
+某次任务究竟用了哪个生成模型，以该任务 `tasks/analysis/<job>.json` 中的 `model` 为准；同时查看 `plan_source`、`llm_calls`、`llm_error` 和 `llm_usage` 可判断是否真正走了模型。分析与规划默认读取同一份运行时 `LLM` 配置，不是两个固定型号。
 
-**缓存**
+**内容分析连接了哪些数据库或存储**
 
-分析指纹绑定转写、提示词、知识快照、医学匹配阈值及匹配实现。知识库或匹配实现变化时，旧分析缓存失效；规划阶段不会临时生成另一份医学标签。
+| 数据库/存储 | 本阶段如何使用 |
+|---|---|
+| PostgreSQL `studio_jobs` | worker 所属任务、状态、阶段和租约的事实源；内容分析函数本身不直接执行 SQL |
+| PostgreSQL `studio_artifacts` | 分析 JSON 上传后，由 worker 通过内部 API 登记 `content_analysis` 的对象键、大小等元数据 |
+| PostgreSQL `app_settings` | API 进程的运行时配置层可从这里读取保存的 `LLM` 设置；独立 worker 通常从自己的运行环境读取。文档不把某个型号写死，任务 JSON 的 `model` 才是该次执行证据 |
+| Redis | worker 状态更新后可发布进度事件；不保存分析正文，也不参与主题、金句或医学标签计算 |
+| 版本化转写文件库 | 读取 `STUDIO_TASKS_ROOT/transcripts/<source_id>/vN.json` 中的纠错转写；这是文件事实源，不是 PostgreSQL 表 |
+| 医学知识运行时快照 | 读取 `backend/medical_kb_seed/active_snapshot.json`（或 `MEDICAL_KB_SNAPSHOT` 指定文件），在内存中完成匹配；主链分析时**不查询** `medical_guidelines` 表 |
+| PostgreSQL `medical_guidelines` | 供医学知识入库、检索和复核 API 使用，不是单条视频分析的在线依赖；当前物化脚本是“种子 JSON → active snapshot”，可用 `--db` 同步写表，并非“数据库 → 快照” |
+| LLM 用量台账 | 成功接受的模型调用写入 `STUDIO_TASKS_ROOT/llm_usage/YYYY-MM-DD.json`（或 `LLM_USAGE_DIR`）；这是文件台账，不是 PostgreSQL 表 |
+| 分析文件与对象存储 | 本地原子写入 `tasks/analysis/<job>.json`，随后上传 R2 或本地对象存储并登记 artifact |
 
-#### 3.2.3 切片规划：决定本次剪什么
+分析阶段不读取 Redis 业务数据，也不向切片计划写 `discarded`。分析指纹绑定转写、提示词、知识快照、医学阈值及实现哈希；任何一项变化都会使旧分析缓存失效。
 
-**输入**
+#### 3.2.3 切片规划：具体怎么规划
 
-- 已持久化的内容分析结果；
-- 分析结果引用的权威纠错分段；
-- Prompt A、规则快照及本次规划配置。
+规划输入为“同一版本纠错转写 + 已持久化内容分析 + Prompt A + 规则快照”。它不读取视频画面、不重新 ASR/纠错，也不重新做医学主题匹配；只有在 `MEDICAL_BG_INJECT=on` 时，才会按分析中已经命中的条目 ID 从本地快照取受控背景文字拼入 Prompt A。
 
-规划不读取视频画面，也不重新做内容分析或医学知识匹配；访问权威分段仅用于切点吸附、逐字校验、时间重算和医学密度计算。
+**逐步流程**
 
-**规划决定**
+| 步骤 | 规划动作 | 程序约束与结果 |
+|---|---|---|
+| 1. 读取输入 | 正常主链直接接收上一步分析记录；断点恢复时读取分析 JSON；同时取得同版本权威纠错分段 | 规划只消费保存的 `medical_analysis/medical_annotations`，缺失时医学过滤明确禁用，不现场重算 |
+| 2. 拼 Prompt A | 把全片带时间分段、关键词、金句、主题块、候选区间和医学标签拼成一次全局规划请求 | 超过 4000 段时跳过 LLM，防止上下文爆炸；默认最多保留 12 条是资源上限，不是目标数量 |
+| 3. 模型提出方案 | 模型动态决定可独立成立的主题数量，并给出每条的 `time_range/theme/hook_first_line/cover_text/content_summary/completeness_note/risk_flags`，同时列出寒暄、重复、无价值内容的 `discarded_segments` | 单条以 60–180 秒为宜，低于 40 秒会 warning；数量不固定、宁缺毋滥、不凑数 |
+| 4. 吸附切点 | 模型时间只作定位线索，程序把起止点吸附到最近的 `segment_id` 边界，并重新计算 `start_ms/end_ms/duration_ms` | 每条初始切片必须是一个连续源区间，不允许模型制造权威时间戳 |
+| 5. 归一化与排序 | 程序校验边界、去高重叠候选、计算完整度/主题集中度/开头/结尾/证据/时长综合分，并按源时间轴排序 | 超过资源上限时才按综合分保留最优；质量和时长偏差记 warning，不以 QC 阻断任务 |
+| 6. 医学过滤 | 只有全片存在 strong 主题时进入 enforce；逐切片计算医学分段密度和覆盖主题最高级别 | enforce 下“密度 `<0.2` 且主题级别为 none”才移入 `discarded`，类型为“非医学闲聊”；无 strong 时只标注不剔除 |
+| 7. 既有 Purify | 医学过滤后调用既有 Purify，根据说话人 overlay、qa/mono 配置生成 `sub_ranges`；这一步只执行净化，不重新选主题 | 继续沿用现有 Prompt B、字幕和渲染契约，失败时整片回退原连续区间 |
+| 8. Hook 逐字护栏 | 模型 Hook 能在转写中逐字命中则保留；否则优先从切片窗口内的主题钩子、患者问题、金句候选取原句，再无候选则取窗口内原句 | 不使用 Hook 模式库，不从医学知识卡复制结论，不因 Hook 打分淘汰切片 |
+| 9. 全片覆盖 | 按转写分段索引把保留切片与 discarded 对齐；发现未归属分段时由程序补入 discarded | 最终要求转写分段无重叠、无静默丢段；原视频中的无语音空白不属于该覆盖检查 |
+| 10. 保存与登记 | 原子写入计划 JSON、保存 workflow snapshot、上传对象存储并登记 artifact | `tasks/plans/<job>/clip_plan.json`；artifact 名为 `clip_plan` |
 
-1. 根据可独立成立的完整主题动态决定切片数量，宁缺毋滥、不凑数；
-2. 选择连续源区间，程序将模型时间吸附到分段边界并重算权威毫秒；
-3. 选择主题、开头 Hook、封面文字、内容摘要和自然收尾；
-4. 将寒暄、重复、跑题或无法独立成立的内容写入 `discarded`；
-5. 根据分析阶段的医学标签决定领域激活：全片至少一个 strong 主题才启用医学硬过滤，否则仅标注；
-6. 在 enforce 模式下，候选切片医学分段密度低于 `0.2` 且覆盖主题级别为 none 时，由 `enforce_clips` 移入“非医学闲聊”；
-7. 生成 `clip_plan.json`，记录每条切片的区间、主题、Hook、完整性、医学决定、warnings 和 discarded 证据。
+**哪个模型在规划**
 
-**Hook 规则**
+规划没有另写死一个模型，它与内容分析共用运行时 `Config.llm`，通过 Pydantic AI 按 `_SlicePlanOut` schema 调用 Prompt A。模型设置为温度 `0.2`、默认关闭思考、初始输出预算 4096、token 上限不足时升到 6144；全局请求失败会再重试一次，仍失败则使用本地 `_fallback_plan`，不会悄悄切换到另一个模型或供应通道。某次任务的实际模型与执行结果必须看 `tasks/plans/<job>/clip_plan.json`：
 
-- Hook 必须来自转写原话；
-- 模型 Hook 命中转写则保留；
-- 未命中或为空时，优先使用切片窗口内的主题钩子、患者问题或金句候选；仍无候选时使用窗口内原句；
-- 不从知识卡复制 Hook，不引入转写外医学结论。
+- `model`：本次解析到的生成模型；
+- `plan_source=llm`：模型规划成功；
+- `plan_source=heuristic_fallback`：本地规则规划；
+- `llm_error/actual_calls/llm_usage`：失败原因、调用参数和用量。
 
-**医学知识的使用边界**
+**切片规划连接了哪些数据库或存储**
 
-- 规划只消费分析工件中的 `medical_analysis/medical_annotations`，不重新加载知识库或重新匹配；
-- `MEDICAL_BG_INJECT` 默认关闭。开启时只向 Prompt A 提供受控知识背景，条目正文不得复制进输出，并执行泄漏扫描；
-- 医学匹配事实属于分析，领域激活、密度阈值和淘汰决定属于规划。
+| 数据库/存储 | 本阶段如何使用 |
+|---|---|
+| PostgreSQL `studio_jobs` | 保存任务状态、planning 阶段、进度、租约和最终状态；规划算法本身不直接执行 SQL |
+| PostgreSQL `studio_artifacts` | 计划 JSON 上传后登记 `clip_plan` artifact 元数据 |
+| PostgreSQL `app_settings` | API 进程可从这里取得模型设置；独立 worker 通常从运行环境读取。规划器与分析器读取同一 `Config.llm`，某次实际值仍以计划 JSON 的 `model` 为准 |
+| Redis | worker 可发布 planning 进度事件；不保存 Prompt A 正文，也不参与切点、评分或医学过滤 |
+| 版本化转写文件库 | 读取同版本纠错分段；还可从同一转写目录读取 `speaker_labels.json` overlay 供既有 Purify 使用 |
+| 内容分析文件库 | 正常主链内存传递，恢复时从 `tasks/analysis/<job>.json` 读取；这是规划的事实输入 |
+| 医学知识快照 | 医学标签来自分析工件，规划不重新匹配；仅在受控背景注入开启时按已命中 ID 读取本地快照正文 |
+| PostgreSQL `medical_guidelines` | 规划主链不查询该表；当前运行时快照来自种子 JSON，数据库条目不会自动流入某次规划 |
+| LLM 用量台账 | 成功规划调用写入 `STUDIO_TASKS_ROOT/llm_usage/YYYY-MM-DD.json`（或 `LLM_USAGE_DIR`）；失败请求仍以计划 JSON 的 `actual_calls/llm_error` 为主要审计线索 |
+| 计划文件与对象存储 | 写入 `tasks/plans/<job>/clip_plan.json`，随后上传 R2 或本地对象存储并登记 artifact |
 
-**失败与缓存**
-
-- Prompt A 失败时重试一次，仍失败则走本地回退并保留 `plan_source/llm_error`；
-- 规划指纹绑定分析身份、Prompt A、规划规则、医学淘汰阈值和相关实现；
-- 旧分析工件缺少 `medical_analysis` 时，医学过滤明确禁用并留痕，不在规划阶段静默重算。
-
-> 详细契约：`docs/content-pipeline-layering-optimization.md`、`docs/medical-gate-design.md`、`docs/two-step-planning-design.md`。D 层切片精修、Purify、字幕和渲染见本表后续阶段，本轮分层整理未改变其行为。
+> 详细契约：`docs/content-pipeline-layering-optimization.md`、`docs/medical-gate-design.md`、`docs/two-step-planning-design.md`。D 层 Prompt B、字幕和渲染的行为未在本轮文档整理中改变。
 
 **隔离与恢复**：单切片技术故障记 `technical_error` 继续其余；已存在且可解码的 `clip_final.mp4` 直接跳过（worker 重启恢复）；终态 `completed / completed_with_warnings / partial_succeeded / technical_failed`。**全程无质量拦截**（只有 warning）。
 
