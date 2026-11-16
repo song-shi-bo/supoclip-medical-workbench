@@ -44,6 +44,41 @@ def _ledger(tmp_path, monkeypatch):
     monkeypatch.setattr(llm_budget, "_ledger_root", lambda: tmp_path / "ledger")
 
 
+def test_analysis_extracts_verbatim_hooks_and_drops_fabricated(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(ca, "_model_ready", lambda: (True, "openai:test", ""))
+
+    def fake_agent(model, prompt):
+        captured["prompt"] = prompt
+        return ca._AnalysisOut(
+            keywords=["高血压"],
+            golden_quotes=[],
+            topic_units=[],
+            candidate_intervals=[],
+            hooks=[
+                ca._HookOut(text="不能因为血压正常就自行停药。",
+                            segment_ids=["s2"], mechanism="反常识", reason="误区反转"),
+                ca._HookOut(text="这句原文里根本没有", segment_ids=[], mechanism="冲突"),
+                ca._HookOut(text="高血压患者应该按时服药。", segment_ids=["s1"],
+                            mechanism="不是机制", reason="术后一定要坚持规范随访和定期复查"),
+            ])
+
+    monkeypatch.setattr(ca, "_run_analysis_agent", fake_agent)
+    record = ca.analyze_content(_segments(), knowledge_context=_context())
+    assert "hooks（" in ca._GOLDEN_SYSTEM_PROMPT  # 钩子提取进分析系统提示词
+    hooks = record["hooks"]
+    # 按时间排序：s1（0ms）在前，s2（6000ms）在后
+    assert [h["text"] for h in hooks] == ["高血压患者应该按时服药。",
+                                          "不能因为血压正常就自行停药。"]
+    assert hooks[1]["start_ms"] == 6000 and hooks[1]["mechanism"] == "反常识"
+    assert hooks[1]["reason"] == "误区反转"  # 非库内容正常保留
+    assert hooks[0]["mechanism"] == ""  # 非法机制被清空
+    assert hooks[0]["reason"] == ""  # 三库内容复制被清理
+    assert any("引用分段不存在且原文不可定位" in n for n in record["notes"])
+    assert any("钩子机制非法" in n for n in record["notes"])
+    assert any("钩子理由被清除" in n for n in record["notes"])
+
+
 def test_analysis_model_receives_three_library_context_and_filters_external_keyword(monkeypatch):
     captured = {}
     monkeypatch.setattr(ca, "_model_ready", lambda: (True, "openai:test", ""))

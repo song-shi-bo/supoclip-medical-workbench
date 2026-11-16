@@ -122,7 +122,8 @@ def test_llm_plan_validated_deduped_and_sorted(monkeypatch: pytest.MonkeyPatch):
     window_norm = "".join(_ca_norm(s["text"]) for s in _segments()[1:6])
     assert clip["hook_first_line"], "每条切片必须有钩子"
     assert _ca_norm(clip["hook_first_line"]) in window_norm, "钩子必须是切片窗口原话"
-    assert any("钩子来自转写" in n for n in (record.get("notes") or []))
+    assert any("钩子前置" in n for n in (record.get("notes") or []))
+    assert record["hook_front_window_ms"] == cp.HOOK_FRONT_WINDOW_MS
     assert clip["cover_text"] == "规范治疗"
     assert clip["declared_time_range"] == ["00:00:06", "00:01:55"]
     assert record["video_summary"] == "高血压常见误区科普"
@@ -130,6 +131,65 @@ def test_llm_plan_validated_deduped_and_sorted(monkeypatch: pytest.MonkeyPatch):
     # 全覆盖契约：寒暄段 + 结尾引流段被程序补齐/模型弃用
     discarded_ids = {sid for d in record["discarded"] for sid in d["segment_ids"]}
     assert "seg_0000" in discarded_ids and "seg_0011" in discarded_ids
+
+
+def _hook_front_segments():
+    rows = [
+        (0, "大家好，今天聊一聊高血压的常见误区。", 0, 3000),
+        (1, "血压波动大其实比高血压更危险。", 4000, 9000),
+        (2, "擅自停药可能导致血压反跳，甚至加重病情。", 10000, 20000),
+        (3, "调整用药一定要听医生的。", 21000, 30000),
+        (4, "关注我，了解更多的健康知识。", 31000, 35000),
+    ]
+    return [seg(i, t, s, e) for i, t, s, e in rows]
+
+
+def test_hook_must_sit_in_front_window_late_hook_replaced(monkeypatch: pytest.MonkeyPatch):
+    """钩子前置规则：模型钩子逐字命中但在 8 秒之外 → 替换为切片首句，起点不变。"""
+    monkeypatch.setattr(cp, "_model_ready", lambda: (True, "openai:test-model", ""))
+    monkeypatch.setattr(cp, "_run_plan_agent", lambda model, prompt: _slice_plan(
+        [_slice_out(["00:00:00", "00:00:30"],
+                    hook_first_line="擅自停药可能导致血压反跳，甚至加重病情。")],
+        discarded=[cp._SliceDiscardOut(time_range=["00:00:31", "00:00:35"], reason="结尾引流")]))
+    record = cp.plan_clips(_hook_front_segments(), _analysis(), transcript_version=1)
+    clip = record["clips"][0]
+    assert clip["start_ms"] == 0 and clip["end_ms"] == 30000      # 切片起点未动
+    assert clip["hook_first_line"] == "大家好，今天聊一聊高血压的常见误区。"
+    assert any("钩子前置" in n and "切片首句" in n for n in record["notes"])
+
+
+def test_hook_front_prefers_front_window_material(monkeypatch: pytest.MonkeyPatch):
+    """前 8 秒内有分析钩子候选 → 优先用它替换，而不是更晚的金句或首句。"""
+    monkeypatch.setattr(cp, "_model_ready", lambda: (True, "openai:test-model", ""))
+    analysis = _analysis()
+    analysis["hooks"] = [{
+        "text": "血压波动大其实比高血压更危险。",
+        "segment_ids": ["seg_0001"], "start_ms": 4000, "end_ms": 9000,
+        "mechanism": "反常识", "reason": "反常识开头",
+    }]
+    monkeypatch.setattr(cp, "_run_plan_agent", lambda model, prompt: _slice_plan(
+        [_slice_out(["00:00:00", "00:00:30"],
+                    hook_first_line="擅自停药可能导致血压反跳，甚至加重病情。")],
+        discarded=[cp._SliceDiscardOut(time_range=["00:00:31", "00:00:35"], reason="结尾引流")]))
+    record = cp.plan_clips(_hook_front_segments(), analysis, transcript_version=1)
+    clip = record["clips"][0]
+    assert clip["hook_first_line"] == "血压波动大其实比高血压更危险。"
+    assert any("前置窗口内原话" in n for n in record["notes"])
+
+
+def test_hook_within_front_window_is_kept_with_boundary_untouched(
+        monkeypatch: pytest.MonkeyPatch):
+    """钩子落在前 8 秒内（不必是第一句）→ 保留，切片起点保持自然切点。"""
+    monkeypatch.setattr(cp, "_model_ready", lambda: (True, "openai:test-model", ""))
+    monkeypatch.setattr(cp, "_run_plan_agent", lambda model, prompt: _slice_plan(
+        [_slice_out(["00:00:00", "00:00:30"],
+                    hook_first_line="血压波动大其实比高血压更危险。")],
+        discarded=[cp._SliceDiscardOut(time_range=["00:00:31", "00:00:35"], reason="结尾引流")]))
+    record = cp.plan_clips(_hook_front_segments(), _analysis(), transcript_version=1)
+    clip = record["clips"][0]
+    assert clip["hook_first_line"] == "血压波动大其实比高血压更危险。"
+    assert clip["start_segment_id"] == "seg_0000"
+    assert any("切片起点保持自然切点不变" in n for n in record["notes"])
 
 
 def test_continuity_middle_segments_belong_to_clip(monkeypatch: pytest.MonkeyPatch):

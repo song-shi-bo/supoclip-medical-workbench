@@ -611,14 +611,19 @@ def _record(*, plan_source: str, llm_requested: bool, llm_error: str | None,
     }
 
 
-PLAN_SCHEMA_VERSION = "clip-plan/v4"
-PLAN_PROMPT_VERSION = "clip-plan-prompt/2026-11-16-slice-a3-three-libraries"
-PLAN_ADAPTER_VERSION = "clip-plan-adapter/v3"
+PLAN_SCHEMA_VERSION = "clip-plan/v5"
+PLAN_PROMPT_VERSION = "clip-plan-prompt/2026-11-16-slice-a3-hook-front"
+PLAN_ADAPTER_VERSION = "clip-plan-adapter/v4"
+
+# 钩子前置规则（2026-11-16 用户拍板）：钩子句必须落在切片开头几秒内；
+# 只是把钩子这句话放到开头，不要求切片起点改到钩子句位置（自然切点不动）。
+HOOK_FRONT_SECONDS = max(2, min(15, int(os.getenv("HOOK_FRONT_SECONDS", "8"))))
+HOOK_FRONT_WINDOW_MS = HOOK_FRONT_SECONDS * 1000
 
 
 def _analysis_input(analysis: dict[str, Any]) -> dict[str, Any]:
     result = {key: copy.deepcopy(analysis.get(key) or []) for key in
-              ("keywords", "golden_quotes", "topic_units", "candidate_intervals")}
+              ("keywords", "golden_quotes", "topic_units", "candidate_intervals", "hooks")}
     result["knowledge_context"] = copy.deepcopy(analysis.get("knowledge_context") or {})
     return result
 
@@ -702,6 +707,12 @@ def _analysis_context_lines(analysis: dict[str, Any], max_clips: int) -> list[st
     keywords = analysis.get("keywords") or []
     if keywords:
         lines.append(f"【关键词】{'、'.join(str(k) for k in keywords[:10])}")
+    hooks = analysis.get("hooks") or []
+    if hooks:
+        lines.append("【钩子候选（适合放开头的转写原话）】")
+        for hook in hooks[:8]:
+            ids = ",".join(str(s) for s in (hook.get("segment_ids") or [])[:3])
+            lines.append(f"  [{ids}] {str(hook.get('text', ''))[:60]}")
     quotes = analysis.get("golden_quotes") or []
     if quotes:
         lines.append("【金句（含所属分段）】")
@@ -1118,12 +1129,18 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
     plan_warnings.extend(purify_warns[:4])
     if purify_summary.get("purified"):
         plan_warnings.insert(0, f"clip_purify: {purify_summary['purified']} 条切片已净化重组（问答化）")
-    # 钩子必须逐字来自当前切片窗口；命中全片其他位置不能通过。
-    # 说话人未被本层可靠标注，因此这里只承诺“原视频转写原话”，不虚称医生原话。
+    # 钩子前置规则（2026-11-16）：钩子句必须逐字出自切片窗口，且落在切片
+    # 开头 HOOK_FRONT_SECONDS 秒内；只是把钩子放在开头，不要求切片起点
+    # 改到钩子句位置（自然切点不动）。说话人未被本层可靠标注，因此这里
+    # 只承诺“原视频转写原话”，不虚称医生原话。
     transcript_text = "".join(str(s.get("text") or "") for s in corrected_segments)
     if clips:
         pos_of = {e["segment_id"]: pos for pos, e in enumerate(index.entries)}
         hook_material: list[tuple[str, str]] = []
+        for hook in (analysis_for_prompt.get("hooks") or [])[:12]:
+            text = str(hook.get("text") or "").strip()
+            if text:
+                hook_material.append((_norm(text), text))
         for unit in (analysis_for_prompt.get("topic_units") or []):
             for key in ("hook_quote", "patient_question"):
                 quote = str(unit.get(key) or "").strip()
@@ -1133,37 +1150,55 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
             text = quote.strip() if isinstance(quote, str) else str(quote.get("text") or "").strip()
             if text:
                 hook_material.append((_norm(text), text))
+        front_label = f"{HOOK_FRONT_SECONDS}秒"
         for clip in clips:
             hook_line = str(clip.get("hook_first_line") or "").strip()
             start_pos = pos_of.get(str(clip.get("start_segment_id") or ""))
             end_pos = pos_of.get(str(clip.get("end_segment_id") or ""))
             window_texts: list[str] = []
+            clip_start_ms: int | None = None
             if start_pos is not None and end_pos is not None and start_pos <= end_pos:
                 window_texts = [index.entries[i]["text"] for i in range(start_pos, end_pos + 1)]
-            window_joined = "".join(_norm(text) for text in window_texts)
-            hook_valid = bool(hook_line and _norm(hook_line)
-                              and _norm(hook_line) in window_joined)
+                clip_start_ms = index.entries[start_pos]["start_ms"]
+            window_norm = [_norm(w) for w in window_texts]
+            window_joined = "".join(window_norm)
+            # 钩子命中位置：单段命中取该段；跨段拼接命中视作从窗口首段开始。
+            hook_norm_line = _norm(hook_line)
+            offsets = [i for i, wn in enumerate(window_norm)
+                       if hook_norm_line and wn and hook_norm_line in wn]
+            if not offsets and hook_norm_line and hook_norm_line in window_joined:
+                offsets = [0]
+            hook_front = bool(
+                offsets and clip_start_ms is not None
+                and index.entries[start_pos + offsets[0]]["start_ms"] - clip_start_ms
+                <= HOOK_FRONT_WINDOW_MS)
             replacement = ""
-            if not hook_valid and window_texts:
-                window_norm = [_norm(w) for w in window_texts]
+            replace_source = ""
+            if not hook_front and window_texts:
                 for norm_q, raw_q in hook_material:
-                    for wt, wn in zip(window_texts, window_norm):
-                        if norm_q and wn and norm_q in wn:
-                            replacement = wt.strip()
+                    for i, wn in enumerate(window_norm):
+                        if norm_q and wn and norm_q in wn and clip_start_ms is not None \
+                                and index.entries[start_pos + i]["start_ms"] - clip_start_ms \
+                                <= HOOK_FRONT_WINDOW_MS:
+                            replacement = window_texts[i].strip()
+                            replace_source = "前置窗口内原话"
                             break
                     if replacement:
                         break
                 if not replacement:
                     replacement = window_texts[0].strip()
+                    replace_source = "切片首句"
             original = hook_line or "（空）"
-            if not hook_valid and replacement:
+            if not hook_front and replacement:
                 clip["hook_first_line"] = replacement
-                notes.append(f"钩子来自转写：hook_first_line「{original[:30]}」不在切片窗口，"
-                             f"已替换为切片内原句「{replacement[:30]}」")
-            elif not hook_valid and hook_line:
-                notes.append(f"钩子逐字护栏：hook_first_line「{hook_line[:30]}」不在切片窗口且"
-                             f"无可替换原句，已置空")
+                notes.append(f"钩子前置：hook_first_line「{original[:30]}」未落在切片前{front_label}内，"
+                             f"已替换为{replace_source}「{replacement[:30]}」（切片起点不变）")
+            elif not hook_front and hook_line:
+                notes.append(f"钩子前置：hook_first_line「{hook_line[:30]}」无法前置且窗口为空，已置空")
                 clip["hook_first_line"] = ""
+            elif hook_front and offsets and offsets[0] > 0:
+                notes.append(f"钩子前置：钩子位于切片前{front_label}内（第{offsets[0] + 1}句），"
+                             f"切片起点保持自然切点不变")
 
             # 三库只用于理解和排序；发现上下文独有的长文本复制时硬清理。
             for field in ("topic", "title", "cover_text", "content_summary",
@@ -1225,6 +1260,7 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
                   medical_gate=med_gate.record_summary(gate_profile, gate_decisions,
                                                        len(moved_discarded)),
                   knowledge_context_summary=kc.summary(analysis.get("knowledge_context") or {}),
+                  hook_front_window_ms=HOOK_FRONT_WINDOW_MS,
                   purify=purify_summary,
                   callback_calls=len(actual_calls), callback_budget=2)
     # 医学背景注入审计（2026-11-13，默认 off 时无此字段）：本次规划注入了哪些

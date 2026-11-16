@@ -79,6 +79,9 @@ _GOLDEN_SYSTEM_PROMPT = (
     "doctor_core_segment_ids（该块中医生的成段解释分段 id 列表，必须是 segment_ids 的子集、按时间升序，"
     "判断依据是内容语气：提问/确认/寒暄属患者方，成段解释/建议/结论属医生；没有把握则留空）；"
     "引用句禁止改写润色；info_seconds 由系统按分段时长计算，模型不得输出该字段）；"
+    "hooks（≤12个钩子候选：从转写逐字提取适合做短视频开头钩子的原句，"
+    "text 必须逐字复制原文并给 segment_ids；mechanism 可选（冲突/反常识/具体疑问/身份共鸣）；"
+    "reason 一句话说明为什么适合当钩子）；"
     "candidate_intervals（≤12个，start_ms/end_ms 落在转写范围内且 end>start，给 topic_title 与 reason）。"
     "不改诊断/药名/剂量；跳过隐私片段。")
 # 主题簇机制字段：与规划提示词A 规划原则4 的钩子机制同一套分类（冲突/反常识/具体疑问/身份共鸣）。
@@ -88,6 +91,7 @@ MAX_KEYWORDS = 10
 MAX_GOLDEN_QUOTES = 12
 MAX_TOPIC_UNITS = 10
 MAX_CANDIDATE_INTERVALS = 12
+MAX_HOOKS = 12
 
 class _GoldenQuoteOut(BaseModel):
     text: str = Field(min_length=1, max_length=400)
@@ -114,11 +118,19 @@ class _CandidateIntervalOut(BaseModel):
     reason: str = Field(default="", max_length=300)
 
 
+class _HookOut(BaseModel):
+    text: str = Field(min_length=1, max_length=400)
+    segment_ids: list[str] = Field(default_factory=list, max_length=50)
+    mechanism: str = Field(default="", max_length=12)
+    reason: str = Field(default="", max_length=300)
+
+
 class _AnalysisOut(BaseModel):
     keywords: list[str] = Field(default_factory=list, max_length=20)
     golden_quotes: list[_GoldenQuoteOut] = Field(default_factory=list, max_length=20)
     topic_units: list[_TopicUnitOut] = Field(default_factory=list, max_length=20)
     candidate_intervals: list[_CandidateIntervalOut] = Field(default_factory=list, max_length=20)
+    hooks: list[_HookOut] = Field(default_factory=list, max_length=20)
 
 
 def _model_ready() -> tuple[bool, str, str]:
@@ -373,7 +385,8 @@ def _heuristic_fallback(index: _SegIndex, llm_error: str, *, llm_requested: bool
 def _record(*, llm_requested: bool, plan_source: str, llm_error: str | None,
             keywords: list[str], golden_quotes: list[dict[str, Any]],
             topic_units: list[dict[str, Any]], candidate_intervals: list[dict[str, Any]],
-            notes: list[str], model: str | None = None, llm_calls: int = 0,
+            notes: list[str], hooks: list[dict[str, Any]] | None = None,
+            model: str | None = None, llm_calls: int = 0,
             llm_duration_ms: int = 0, transcript_version: int | None = None,
             job_id: str | None = None, project_id: str | None = None,
             llm_reserved_tokens_estimate: int = 0,
@@ -390,6 +403,7 @@ def _record(*, llm_requested: bool, plan_source: str, llm_error: str | None,
         "golden_quotes": golden_quotes,
         "topic_units": topic_units,
         "candidate_intervals": candidate_intervals,
+        "hooks": hooks or [],
         "model": model,
         "llm_calls": llm_calls,
         "llm_duration_ms": llm_duration_ms,
@@ -406,7 +420,7 @@ def _record(*, llm_requested: bool, plan_source: str, llm_error: str | None,
 
 def _merge_llm_result(result: _AnalysisOut, index: _SegIndex, notes: list[str],
                       quotes: list, topics: list, intervals: list,
-                      keywords: list) -> None:
+                      keywords: list, hooks: list) -> None:
     """模型输出 → 逐字校验 + 分段重对齐 + 时间戳重算（模型无权产生时间戳）。"""
     keywords.extend(result.keywords)
     for quote in result.golden_quotes:
@@ -425,6 +439,28 @@ def _merge_llm_result(result: _AnalysisOut, index: _SegIndex, notes: list[str],
             "segment_ids": [e["segment_id"] for e in picked],
             "start_ms": start_ms, "end_ms": end_ms,
             "reason": str(quote.reason or "").strip(),
+        })
+    for hook in result.hooks:
+        picked = index.resolve(hook.segment_ids) or index.locate(hook.text)
+        if not picked:
+            notes.append(f"钩子被丢弃（引用分段不存在且原文不可定位）：{hook.text[:40]}")
+            continue
+        if _norm(hook.text) not in index.joined:
+            notes.append(f"钩子被丢弃（非逐字原话）：{hook.text[:40]}")
+            continue
+        start_ms, end_ms = index.span_of(picked)
+        if end_ms <= start_ms:
+            continue
+        mechanism = str(hook.mechanism or "").strip()
+        if mechanism and mechanism not in MECHANISM_OPTIONS:
+            notes.append(f"钩子机制非法已清空（{mechanism}）：{hook.text[:30]}")
+            mechanism = ""
+        hooks.append({
+            "text": str(hook.text).strip(),
+            "segment_ids": [e["segment_id"] for e in picked],
+            "start_ms": start_ms, "end_ms": end_ms,
+            "mechanism": mechanism,
+            "reason": str(hook.reason or "").strip(),
         })
     def _cluster_verbatim(picked: list[dict[str, Any]], text: Any, label: str, title: str) -> str:
         """簇内逐字校验：主题块引用句必须逐字出自该块自身分段（空白归一），违者清除留痕。"""
@@ -532,6 +568,7 @@ def _analyze_content(corrected_segments: list[dict[str, Any]], *,
     topics: list[dict[str, Any]] = []
     intervals: list[dict[str, Any]] = []
     keywords: list[str] = []
+    hooks: list[dict[str, Any]] = []
     est_reserved_total = 0
     usage_totals = {"prompt_tokens": 0, "completion_tokens": 0, "reasoning_tokens": 0}
     usage_records: list[dict[str, Any]] = []
@@ -564,7 +601,7 @@ def _analyze_content(corrected_segments: list[dict[str, Any]], *,
             # 只记成功调用（失败/429 未被网关接受，不消耗预留）
             llm_budget.record_call("content_analysis", job_id=job_id,
                                    est_reserved=prompt_est, usage=usage, model=model_name)
-            _merge_llm_result(result, index, notes, quotes, topics, intervals, keywords)
+            _merge_llm_result(result, index, notes, quotes, topics, intervals, keywords, hooks)
     except Exception as exc:  # noqa: BLE001 — 模型失败自动回退，任务继续（需求 12）
         llm_error = f"{type(exc).__name__}: {str(exc)[:200]}"
         if len(usage_records) < calls:
@@ -614,9 +651,21 @@ def _analyze_content(corrected_segments: list[dict[str, Any]], *,
         if kc.copied_from_context(interval.get("reason"), knowledge_context, transcript_text):
             interval["reason"] = ""
             notes.append("候选理由被清除（三库内容复制）")
+    deduped_hooks: list[dict[str, Any]] = []
+    seen_hook_norms: set[str] = set()
+    for hook in hooks:
+        if kc.copied_from_context(hook.get("reason"), knowledge_context, transcript_text):
+            hook["reason"] = ""
+            notes.append("钩子理由被清除（三库内容复制）")
+        hook_norm = _norm(hook.get("text"))
+        if hook_norm in seen_hook_norms:
+            continue
+        seen_hook_norms.add(hook_norm)
+        deduped_hooks.append(hook)
     quotes.sort(key=lambda q: q["start_ms"])
     topics.sort(key=lambda t: t["start_ms"])
     intervals.sort(key=lambda i: i["start_ms"])
+    deduped_hooks.sort(key=lambda h: h["start_ms"])
     record = _record(
         llm_requested=True, plan_source="llm", llm_error=None,
         transcript_version=transcript_version,
@@ -624,6 +673,7 @@ def _analyze_content(corrected_segments: list[dict[str, Any]], *,
         golden_quotes=quotes[:MAX_GOLDEN_QUOTES],
         topic_units=topics[:MAX_TOPIC_UNITS],
         candidate_intervals=intervals[:MAX_CANDIDATE_INTERVALS],
+        hooks=deduped_hooks[:MAX_HOOKS],
         notes=notes, model=model_name, llm_calls=calls, llm_duration_ms=duration_ms,
         job_id=job_id, project_id=project_id,
         llm_reserved_tokens_estimate=est_reserved_total,
@@ -691,9 +741,9 @@ def load_analysis_record(job_id: str, *, expected_provenance: dict[str, Any] | N
     return record
 
 
-ANALYSIS_SCHEMA_VERSION = "analysis/v6"
-ANALYSIS_PROMPT_VERSION = "analysis-prompt/2026-11-16-three-libraries"
-ANALYSIS_HELPER_VERSION = "analysis-helper/v6"
+ANALYSIS_SCHEMA_VERSION = "analysis/v7"
+ANALYSIS_PROMPT_VERSION = "analysis-prompt/2026-11-16-hook-extraction"
+ANALYSIS_HELPER_VERSION = "analysis-helper/v7"
 
 
 def _digest(value: Any) -> str:
