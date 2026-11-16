@@ -80,12 +80,106 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 | # | 阶段 | 实现 | 工具 | 产物 |
 |---|---|---|---|---|
 | 0 | retrieving_rules | 记 `rule_snapshot_id`（剪辑规则只读留痕，QC 永不拦截） | — | rule snapshot |
-| 1 | 内容分析 extracting_highlights | 模型全篇分析（主题/关键词/金句候选）；主题簇带 **mechanism/hook_quote/ending_quote/patient_question/doctor_core_segment_ids**（机制限钩子四机制词表；引用句与患者提问逐字校验违者清除留痕；医生核心段必须为该块 segment_ids 子集、非法 id 清理留痕——问答化重组 P2，2026-11-11）+ **info_seconds**（程序按分段时长求和，模型无权产生）；heuristic 回退各字段留空；**医学主题匹配已归入分析层（2026-11-16 A-C 分层）**：模型分析完成后由 `clip_medical_gate.analyze_topics` 对主题块做向量+词法匹配，将 `medical_analysis`（完整匹配事实）与 `medical_annotations`（规划提示兼容别名）正式写入分析工件；本阶段只贴标签和证据，不产生 discarded/发布决定；知识快照、匹配阈值及实现哈希进入分析指纹，变化时分析缓存失效 | `content_analysis.py`（analysis/v5 + analysis-prompt/2026-11-11） + `clip_medical_gate.py` + LLM 网关 | `tasks/analysis/<job>.json` |
-| 2 | 切片规划 planning（提示词A） | 连续时间区间切片、动态条数、硬性校验（时间不越界/文本忠于转写/禁词表）；拼装层背景透出主题簇五字段（含患者提问钩子候选，提示词A 原文不动，slice-a3）；**医学闸门（2026-11-10 第三库；2026-11-16 A-C 分层）**：规划阶段不再重新加载知识库或重新匹配主题，只消费分析工件中已持久化的 `medical_analysis/medical_annotations`；标签随拼装层透出【医学主题匹配】行（只标注标签与匹配度，条目正文不进提示词），领域激活与候选取舍仍由规划负责；规划后 `enforce_clips` **硬剔除**：医学分段密度 <0.2 且主题块级别 none 的切片移入 discarded（type=非医学闲聊，附证据；2026-11-10 用户拍板宁缺毋滥）；**领域激活防误伤**：仅全片存在 strong 级命中才执法，否则只标注不剔除；闸门任何失败降级不阻断；知识快照身份进入 analysis 指纹，规划指纹只绑定已持久化的分析身份和规划淘汰阈值——同一分析工件的规划可复现，库变化先使分析缓存失效。设计与条目见 `docs/medical-gate-design.md`；**医学知识库 v2（2026-11-13 黑色素瘤小闭环，用户授权）**：背景注入链路同日实施（默认 off，`MEDICAL_BG_INJECT=on` 开启；设计稿 `docs/medical-background-injection-design.md`）：闸门命中卡片的结论/边界经拼装层背景块注入提示词A用户提示（块首自带禁止复制指令；泄漏扫描 warn 级；prompt_sha256 自动失效旧缓存；statement 不进任何输出）。**分析超时已修（2026-11-13）**：537 段全篇单次分析 379s 超时退回规则回退（主题块无语义标题/机制空/钩子素材空/医生核心段无保护），根因=分析耗时超上限，已加 `CONTENT_ANALYSIS_LLM_TIMEOUT_SECONDS=900`；**两轮真模型诊断（stop_after=plan，不渲染不登记）**：第一轮 `15636aee`（分析 LLM 超时降级 + 注入 on + 新库）规划 4 切片、闸门剔除非医学 1 条（密度 0.067）保留 3 条——降级分析不可信；第二轮 `741812c5`（分析超时修复后：健康分析 + 新库 + 注入 off）规划 5 切片，边界与已发布方案几乎一致（管线稳定、知识库 v2 无扰动）、泄漏 0。方案对比与文案见 `tasks/projects/<id>/medical_ab_3clips_copy.md` 与 `medical_bg_prompt_diff.txt`。**钩子唯一规则（2026-11-13 用户拍板）：钩子必须来自转写内容**——模型产出的 hook_first_line 归一命中转写则保留；未命中或为空则自动替换为切片窗口内医生原话（优先分析阶段识别的钩子素材：主题块钩子句/患者提问/金句；无素材取窗口首句）+notes 留痕；无模式打分、无淘汰规则，每条切片必有钩子且 100% 医生原话。**用户拍板（2026-11-13）：保持关闭（选项 c，回到现状）**，注入能力保留（默认 off，随时可用 MEDICAL_BG_INJECT=on 开启），待 CACA 等正式指南语料补充后再评估；61 条知识库在闸门的消费不受此决定影响（维持现状）；种子重写为 45 张 MEL 编号知识卡片（`medical_kb_seed/2026-11-13-melanoma-v2.json`，构建脚本 `scripts/build_melanoma_v2_seed.py`），来源 3 份公有领域权威循证资料（NCI PDQ 患者版 Updated: May 16, 2025 / NCI 痣与黑色素瘤风险事实页 / MedlinePlus——注意 PDQ 自述非正式临床指南，CACA/ESMO 待团队提供后并入），卡片含公众问题/必要前提/适用边界/来源章节锚点/license；旧 44 条种子归档至 `archive/`；快照 sha256 `439fee41…` 已生效并用本库转写验证（6 主题块 5 strong）。**中国规范补充（同日追加）**：用户确认无 CACA/ESMO 文件、授权网上检索合法来源——检索结论：ESMO 临床指南正文在 Annals of Oncology 付费墙内、患者版无官方英文 PDF（仅非官方镜像，弃用）；CACA 全文在丁香园/医脉通等平台（版权内容，需授权渠道）；**最终追加第 4 份来源：国家卫健委《黑色素瘤诊疗规范（2018年版）》**（政府官方文件，《著作权法》第五条不受版权保护，全文存档 `medical_kb_seed/source_files/黑色素瘤诊疗规范-卫健委2018年版.txt`，含中国人群特异性内容：肢端型占 50%/黏膜型 20-30%、盐腌切割针挑绳勒不当处理危险、扩大切除切缘表、前哨活检指征 >0.8mm 或溃疡、MDT），构建脚本 `scripts/build_melanoma_china_seed.py` 追加 16 条中国规范卡片（MEL-046..061）；NCCN Guidelines for Patients: Melanoma（患者版，免费教育用途）PDF 及提取文本存档 `source_files/`。**当前快照 61 条（sha256 `c6b5ee79…`），闸门复验 5 strong 且中国规范卡片真实命中（MEL-060 MDT / MEL-055 活检规范）；项目映射含 20 条直命中+主题块关联**。配套项目级闭环产物（`tasks/projects/<id>/`）：`medical_segment_library.json`（537 段+说话人+角色标签，启发式 v1）与 `medical_kb_mapping.json`（知识点↔片段两层映射：关键词直命中带否定守卫 + 闸门主题块关联），构建脚本 `scripts/build_medical_segment_mapping.py`；**净化重组（2026-11-11 问答化 P1，P2 扩展）**：规划后 `clip_purify.purify_clips` 删除切片内应答碎片与患者插话，产出有序子区间 `sub_ranges`——**删除授权阶梯**：纯应答段（无需标注）< 患者话语（必须有说话人标注，qa 风格保护患者提问钩子段、mono 风格全删，`MEDICAL_PURIFY_STYLE=qa|mono`）< 医生核心段（analysis `doctor_core_segment_ids` 命中永不删）；开头吸附、净删占比超 50%（`MEDICAL_PURIFY_MIN_KEEP_RATIO`）或异常→整片回退原区间；说话人标注 overlay（`speaker_labels.json`，worker 解析并连同指纹显式传入 expected/plan_clips 两边，identity 一致性契约）可用时报告医生话语纯度（低于 `MEDICAL_PURIFY_MIN_DOCTOR_RATIO` 只 warning 不淘汰）；拼接合理性证据（命中指南主题）随 decision 透出；`sub_ranges`/`purify` 进 clip_plan.json，purify 身份（版本+风格+标注指纹+阈值）进 plan 指纹。设计与决策见 `docs/qa-style-restructure-design.md`；；**净化重组（2026-11-11 问答化 P1，P2 扩展）**：规划后 `clip_purify.purify_clips` 删除切片内应答碎片与患者插话，产出有序子区间 `sub_ranges`——**删除授权阶梯**：纯应答段（无需标注）< 患者话语（必须有说话人标注，qa 风格保护患者提问钩子段、mono 风格全删，`MEDICAL_PURIFY_STYLE=qa|mono`）< 医生核心段（analysis `doctor_core_segment_ids` 命中永不删）；开头吸附、净删占比超 50%（`MEDICAL_PURIFY_MIN_KEEP_RATIO`）或异常→整片回退原区间；说话人标注 overlay（`speaker_labels.json`，worker 解析并连同指纹显式传入 expected/plan_clips 两边，identity 一致性契约）可用时报告医生话语纯度（低于 `MEDICAL_PURIFY_MIN_DOCTOR_RATIO` 只 warning 不淘汰）；拼接合理性证据（命中指南主题）随 decision 透出；`sub_ranges`/`purify` 进 clip_plan.json，purify 身份（版本+风格+标注指纹+阈值）进 plan 指纹。设计与决策见 `docs/qa-style-restructure-design.md`；| `clip_planning.py`、`clip_medical_gate.py`、`clip_purify.py`、`medical_kb.py` + LLM | `tasks/plans/<job>/clip_plan.json`（含 `medical_gate`/`purify` 摘要、逐切片标注与 `sub_ranges`） |
+| 1 | 内容分析 `extracting_highlights` | 回答“原视频里有什么”：基于纠错转写提取主题、关键词、金句和原话候选，并用知识快照补充医学主题标签；只做发现、标记和校验，不决定删什么或发布什么 | `content_analysis.py`、`clip_medical_gate.analyze_topics` | `tasks/analysis/<job>.json`（analysis/v5） |
+| 2 | 切片规划 `planning`（提示词 A） | 回答“这次剪什么、怎么组合”：从分析结果和权威分段中选择主题、区间、Hook 与淘汰项；医学领域激活、密度判断和 `enforce_clips` 均在本阶段完成 | `clip_planning.py`、`clip_medical_gate.planning_profile_from_analysis/enforce_clips` | `tasks/plans/<job>/clip_plan.json` |
 | 3 | 切片精修 refining（提示词B b2） | 逐切片精修字幕文本 + **逐段说话人（医生/患者/家属）**，失败粒度回退不阻断；**只删不改执法（2026-11-08）**：精修句必须是语气词清理后转写的顺序保持子串，违规段整段回退原纠错转写（`reverted_segments` 留痕；全违规→整片 fallback `delete_only_violation`）；精修窗口（2026-11-11 问答化 P1）：切片带 `sub_ranges` 时窗口取子区间并集，被净化的应答碎片不进提示词B | `clip_refinement.py`（clip-refine-prompt/2026-11-08-b2） + LLM | `tasks/plans/<job>/clip_refinement.json`（`clips[clip_id].segments`：`segment_id/start_ms/end_ms/refined_text/speaker`） |
 | 4 | 封面 cover | realframe_v2：真实视频帧+文字叠加（纯本地，无 AI 生图）；**默认版型 yellow_bold_v5（2026-11-09 P2）**：两行同级黄字（theme 88/hook 110，#FFDD00 纯黑描边 6/8px）锚定胸腹区（top_ratio 0.56）+ 暗底面板 + 角标层（`cover_badge_text`），`build_cover(template=None)` 自动套用（此前 worker 路径无版型走白字默认排版）；均衡断行（优先空格分隔，杜绝单字孤行）；**选帧**：切片内每 2s 抽候选（首帧自 +1.0s 起，上限 40）→ 确定性评分＝人脸数（1 张最佳）+ 面积 + 清晰度 + **亮度项**（灰度 [90,200] 满分）+ 单脸居中项，运动模糊 ×0.6；**文案主题对齐（2026-11-09 P1）**：主题块锚点＝content_analysis `topic_units` 按切片区间重叠最大（并列优先标题与切片规划主题相关者），底料**精修稿优先**；LLM 一次出 3 组候选 → 主题校验（title 覆盖率/钩子原话命中）→ 不合格带反馈**受控重生成一次**（每切片封面文案 LLM ≤2 次）→ 仍不合格走 hint 规则组/主题词直组句兜底（有主题块时 hint 不进初选池）；hook 复述 topic（≥3 字全包含）评分 −2；**人工换帧（P3）**：`build_cover(frame_time_rel_s=)` 指定成片时间线秒，`selection_source=manual` 留痕；可读线校验（≥96px@1080，不过→纯色兜底）；`clip_final` 前 0.8s 替换为封面片头（时长不变契约）；失败只 warning。审计：`cover_copy.json` 的 `topic_unit_used/validation_report/regeneration_count/prompt_version(2026-11-09.2)/transcript_source/frame.selection_source`。规范全文见 `docs/cover-generation-convention.md` | `cover_realframe_v2.py`、`cover_templates.py`、`cover_replace.splice_intro`、ffmpeg | 切片目录四产物 + `cover_revision`（`cover_frames/` 侧目录：候选帧缩略图，仅手动链写）。**自动封面开关 STUDIO_AUTO_COVER（2026-11-09 用户拍板，默认关闭）**：关闭时渲染链不生成封面四产物、不拼接 0.8s 片头；手动制作链（重制封面/版型库/封面微调）不受影响 |
 | 5 | 渲染 rendering | clip_plan 的 `start_ms/end_ms` + 指定版本纠错转写 → **本地 FFmpeg 逐条渲染**：横转竖居中裁切（608×1080→1080×1920）、H.264+AAC、SRT 时间平移、**字幕同遍烧录**（2026-10-29 固化）；**烧录源=精修稿优先（2026-11-09 用户拍板）**：`source=llm` 切片按 segment_id 把烧录文本替换为 `refined_text`（语气词/无价值句已删，`clip_render._apply_refined_segments`），精修缺失/fallback 如实回退纠错转写，`warnings.json.subtitle_provenance.subtitle_source`（`clip_refinement`/`corrected_transcript`）+ `refined_segment_count` 留痕；渲染指纹含精修身份、版本 `purify-concat/1`（2026-11-11 净化重组升级：旧 `refined-burn/1` 缓存全量失效）；**多区间渲染（2026-11-11 问答化 P1）**：切片带合法 `sub_ranges` 时走 filter_complex 逐段 trim+concat（输入侧 `-ss 首段起 -t 末段止` 粗定位，分段/字幕平移到虚拟时间轴，`provenance.purify.ranges` 留痕），sub_ranges 缺失/非法回退单区间老路径；源片本地硬链接不重传；**字幕词级对齐 + 短 cue 纪律（2026-11-12 字幕优化，同日单位/行宽修复后定稿）**：提供词级时间（faster-whisper words，秒→内部 ms）时 cue 起止取真实词首尾——尾部静音不再挂字幕；词间停顿 >`SUBTITLE_CUE_GAP_SPLIT_S`（默认 1.5 秒）作为 cue 内切分边界；cue 间空隙 ≤`SUBTITLE_GAP_EXTEND_MS`（默认 0.8 秒）闭合防闪烁、超过则前条最多延伸 0.8 秒后留白（长停顿字幕消失，说完就撤）；单条显示超 `SUBTITLE_MAX_CUE_SECONDS`（**默认 12 秒**，此前文档误写 5 秒）按词时间/容量二次切分，且装箱合并同受时长上限约束（防切开后按文字容量重新并回超长挂屏 cue）；短条合并/折行全程守住每行 ≤16 字（修复 `_join_texts` 兜底盲拼与 `_arrange_lines` 行预算不足仍折行两处超宽行缺陷）。**2026-11-12 单位修复**：token 层毫秒与配置秒阈值直接比较曾致真实词时间下整句逐词碎裂（验收 case 回归），已统一换算；**words 已接入生产渲染（2026-11-12 人工确认 A/B 后接线）**：`_run_clip_render_stage` 与重新剪辑 `_run_reedit_replace` 两处渲染均传 v2 转写词级时间（秒），`_render_one_reserved` 将其与分段同映射平移到净化 sub_ranges 虚拟时间轴后交给 `build_srt`；渲染指纹版本 words-align/1（无词仍 purify-concat/1）——旧无词缓存自动失效重渲；`warnings.json.subtitle_provenance.words`（used/count/virtual_timeline）留痕；words 缺失/空回退段内线性插值（旧行为）。离线对比脚本 `backend/scripts/subtitle_ab_demo.py`（复刻生产链，words 平移引用同一生产实现） | `clip_render.py`、`subtitle_cueing.py`、ffmpeg（`CONTENT_RENDER_FFMPEG`） | `tasks/output/<job>/clips/<clip_id>/clip_final.mp4` + cover.jpg + ASS/SRT + warnings.json |
 | 6 | 回传/登记 | 渲染同一遍产出的字幕/封面四产物登记 artifact；卡片/台账构建 | `store.register_clips`（generation 锁，幂等） | 项目 `tasks/projects/<id>/clips.json` |
+
+
+#### 3.2.1 四层边界
+
+| 层级 | 回答的问题 | 本层负责 | 本层不负责 |
+|---|---|---|---|
+| 知识与策略配置 | 系统用什么标准理解内容？ | 医学知识卡、词表、禁词、阈值、规则版本、快照身份 | 判断某条视频具体剪哪一段 |
+| 内容分析 | 原视频里有什么？ | 主题簇、原话候选、患者问题、医生核心段和医学相关性标签 | 淘汰候选、决定发布内容 |
+| 切片规划 | 这次要剪什么、怎么组合？ | 选择主题和区间、选择 Hook、医学过滤、生成计划 | 清理语气词、净化音视频、渲染 |
+| 切片精修/后处理 | 已经决定剪的内容怎样呈现？ | Purify、Prompt B、`sub_ranges`、字幕与渲染 | 重新理解整条视频或重新选择主题 |
+
+数据流：
+
+```text
+知识与策略配置
+    ↓
+内容分析（事实与标签）
+    ↓
+切片规划（本次取舍决定）
+    ↓
+切片精修与渲染（执行呈现）
+```
+
+#### 3.2.2 内容分析：只描述原视频
+
+**输入**
+
+- 指定版本的纠错转写；
+- 权威 `segment_id/start_ms/end_ms`；
+- 内容分析提示词和知识快照。
+
+**输出**
+
+- `keywords`：全片关键词；
+- `golden_quotes`：逐字来自原转写的金句候选；
+- `topic_units`：主题簇及其 `segment_ids`；
+- 每个主题簇的 `mechanism`、`hook_quote`、`ending_quote`、`patient_question`、`doctor_core_segment_ids`；
+- `info_seconds`：程序按原分段时长计算，模型无权填写；
+- `candidate_intervals`：供规划参考的候选区间；
+- `medical_analysis`：医学匹配完整事实，包括知识快照身份、主题块 strong/weak/none、命中条目和医学分段；
+- `medical_annotations`：供规划提示拼装使用的兼容字段。
+
+**硬约束**
+
+- 引用句必须逐字存在于对应主题块，改写、拼接或发明的内容会被清除；
+- `doctor_core_segment_ids` 必须是主题块 `segment_ids` 的子集，非法 ID 会被清理；
+- 时间戳、分段 ID 和信息时长均以程序计算为准；
+- 分析可以发现、标记和警告，但不能生成 `discarded`、不能决定最终成片；
+- 模型失败时走 heuristic 回退并如实记录，不阻断任务。
+
+**缓存**
+
+分析指纹绑定转写、提示词、知识快照、医学匹配阈值及匹配实现。知识库或匹配实现变化时，旧分析缓存失效；规划阶段不会临时生成另一份医学标签。
+
+#### 3.2.3 切片规划：决定本次剪什么
+
+**输入**
+
+- 已持久化的内容分析结果；
+- 分析结果引用的权威纠错分段；
+- Prompt A、规则快照及本次规划配置。
+
+规划不读取视频画面，也不重新做内容分析或医学知识匹配；访问权威分段仅用于切点吸附、逐字校验、时间重算和医学密度计算。
+
+**规划决定**
+
+1. 根据可独立成立的完整主题动态决定切片数量，宁缺毋滥、不凑数；
+2. 选择连续源区间，程序将模型时间吸附到分段边界并重算权威毫秒；
+3. 选择主题、开头 Hook、封面文字、内容摘要和自然收尾；
+4. 将寒暄、重复、跑题或无法独立成立的内容写入 `discarded`；
+5. 根据分析阶段的医学标签决定领域激活：全片至少一个 strong 主题才启用医学硬过滤，否则仅标注；
+6. 在 enforce 模式下，候选切片医学分段密度低于 `0.2` 且覆盖主题级别为 none 时，由 `enforce_clips` 移入“非医学闲聊”；
+7. 生成 `clip_plan.json`，记录每条切片的区间、主题、Hook、完整性、医学决定、warnings 和 discarded 证据。
+
+**Hook 规则**
+
+- Hook 必须来自转写原话；
+- 模型 Hook 命中转写则保留；
+- 未命中或为空时，优先使用切片窗口内的主题钩子、患者问题或金句候选；仍无候选时使用窗口内原句；
+- 不从知识卡复制 Hook，不引入转写外医学结论。
+
+**医学知识的使用边界**
+
+- 规划只消费分析工件中的 `medical_analysis/medical_annotations`，不重新加载知识库或重新匹配；
+- `MEDICAL_BG_INJECT` 默认关闭。开启时只向 Prompt A 提供受控知识背景，条目正文不得复制进输出，并执行泄漏扫描；
+- 医学匹配事实属于分析，领域激活、密度阈值和淘汰决定属于规划。
+
+**失败与缓存**
+
+- Prompt A 失败时重试一次，仍失败则走本地回退并保留 `plan_source/llm_error`；
+- 规划指纹绑定分析身份、Prompt A、规划规则、医学淘汰阈值和相关实现；
+- 旧分析工件缺少 `medical_analysis` 时，医学过滤明确禁用并留痕，不在规划阶段静默重算。
+
+> 详细契约：`docs/content-pipeline-layering-optimization.md`、`docs/medical-gate-design.md`、`docs/two-step-planning-design.md`。D 层切片精修、Purify、字幕和渲染见本表后续阶段，本轮分层整理未改变其行为。
 
 **隔离与恢复**：单切片技术故障记 `technical_error` 继续其余；已存在且可解码的 `clip_final.mp4` 直接跳过（worker 重启恢复）；终态 `completed / completed_with_warnings / partial_succeeded / technical_failed`。**全程无质量拦截**（只有 warning）。
 
