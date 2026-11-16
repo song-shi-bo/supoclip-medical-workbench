@@ -81,7 +81,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 |---|---|---|---|---|
 | 0 | retrieving_rules | 记 `rule_snapshot_id`（剪辑规则只读留痕，QC 永不拦截） | — | rule snapshot |
 | 1 | 内容分析 `extracting_highlights` | **处理链：**①按 `object_key + transcript_id + transcript_version` 读取纠错转写（不读视频画面、不重跑 ASR）→ ②用运行时 `Config.llm` 做结构化分析，提取关键词、金句、主题块、患者问题、医生核心段和候选区间 → ③程序逐字校验引用、清理非法 ID，并用权威分段重算主题时间和 `info_seconds` → ④用本地 `BAAI/bge-small-zh-v1.5` + 词法匹配 `active_snapshot.json`，写入 strong/weak/none 医学标签 → ⑤原子保存、上传对象存储并登记 artifact。<br>**数据库/存储：**PostgreSQL `studio_jobs`（任务状态）、`studio_artifacts`（产物登记）；版本化转写文件库；本地医学知识快照；R2/本地对象存储。主链不查询 `medical_guidelines`。<br>**模型证据：**实际生成模型看分析 JSON 的 `model`；`plan_source=llm` 表示模型成功，`heuristic_fallback` 表示本地回退。 | `content_analysis.analyze_content` → Pydantic AI `_AnalysisOut` → `clip_medical_gate.analyze_topics` → `save_analysis_record` | `tasks/analysis/<job>.json`（analysis/v5；含 `model/plan_source/llm_error/medical_analysis`） |
-| 2 | 切片规划 `planning`（提示词 A） | **处理链：**①读取同版本权威分段和已保存分析 → ②把全片分段、主题、金句、候选区间及医学标签拼入 Prompt A → ③运行时 `Config.llm` 一次全局规划，动态决定切片数量、连续区间、主题、Hook、封面文字及 discarded → ④程序把模型时间吸附到分段边界，重算 `start_ms/end_ms/duration_ms`，去高重叠并按综合分执行资源上限 → ⑤全片有 strong 主题时执行医学过滤，仅“医学密度 `<0.2` 且主题级别 none”移入“非医学闲聊” → ⑥既有 Purify 生成 `sub_ranges`，Hook 执行转写逐字护栏，程序补齐未归属分段 → ⑦保存、上传并登记计划。<br>**数据库/存储：**PostgreSQL `studio_jobs`、`studio_artifacts`；版本化转写/说话人 overlay；分析 JSON；可选本地医学背景快照；R2/本地对象存储。规划不查询 `medical_guidelines`，也不重新做医学匹配。<br>**模型证据：**分析与规划共用运行时 `Config.llm`；实际规划模型看 `clip_plan.json.model`，`plan_source` 标明 LLM 或本地回退；模型失败重试一次后使用 `_fallback_plan`，不切换其他模型。 | `clip_planning.plan_clips` → Pydantic AI `_SlicePlanOut` → `planning_profile_from_analysis/enforce_clips` → `clip_purify.purify_clips` → `save_plan_record` | `tasks/plans/<job>/clip_plan.json`（含 `model/plan_source/actual_calls/medical_gate/purify/clips/discarded`） |
+| 2 | 切片规划 `planning`（提示词 A） | **处理链：**①读取同版本权威分段和已保存分析 → ②以 Prompt A 为 `system_prompt`，另把全片分段、主题、金句、候选区间及医学标签组成用户提示 → ③运行时 `Config.llm` 一次全局规划，动态决定切片数量、连续区间、主题、Hook、封面文字及 discarded → ④程序把模型时间吸附到分段边界，重算 `start_ms/end_ms/duration_ms`，去高重叠并按综合分执行资源上限 → ⑤全片有 strong 主题时执行医学过滤，仅“医学密度 `<0.2` 且主题级别 none”移入“非医学闲聊” → ⑥既有 Purify 生成 `sub_ranges`，Hook 执行转写逐字护栏，程序补齐未归属分段 → ⑦保存、上传并登记计划。<br>**数据库/存储：**PostgreSQL `studio_jobs`、`studio_artifacts`；版本化转写/说话人 overlay；分析 JSON；可选本地医学背景快照；R2/本地对象存储。规划不查询 `medical_guidelines`，也不重新做医学匹配。<br>**模型证据：**分析与规划共用运行时 `Config.llm`；实际规划模型看 `clip_plan.json.model`，`plan_source` 标明 LLM 或本地回退；模型失败重试一次后使用 `_fallback_plan`，不切换其他模型。 | `clip_planning.plan_clips` → Pydantic AI `_SlicePlanOut` → `planning_profile_from_analysis/enforce_clips` → `clip_purify.purify_clips` → `save_plan_record` | `tasks/plans/<job>/clip_plan.json`（含 `model/plan_source/actual_calls/medical_gate/purify/clips/discarded`） |
 | 3 | 切片精修 refining（提示词B b2） | 逐切片精修字幕文本 + **逐段说话人（医生/患者/家属）**，失败粒度回退不阻断；**只删不改执法（2026-11-08）**：精修句必须是语气词清理后转写的顺序保持子串，违规段整段回退原纠错转写（`reverted_segments` 留痕；全违规→整片 fallback `delete_only_violation`）；精修窗口（2026-11-11 问答化 P1）：切片带 `sub_ranges` 时窗口取子区间并集，被净化的应答碎片不进提示词B | `clip_refinement.py`（clip-refine-prompt/2026-11-08-b2） + LLM | `tasks/plans/<job>/clip_refinement.json`（`clips[clip_id].segments`：`segment_id/start_ms/end_ms/refined_text/speaker`） |
 | 4 | 封面 cover | realframe_v2：真实视频帧+文字叠加（纯本地，无 AI 生图）；**默认版型 yellow_bold_v5（2026-11-09 P2）**：两行同级黄字（theme 88/hook 110，#FFDD00 纯黑描边 6/8px）锚定胸腹区（top_ratio 0.56）+ 暗底面板 + 角标层（`cover_badge_text`），`build_cover(template=None)` 自动套用（此前 worker 路径无版型走白字默认排版）；均衡断行（优先空格分隔，杜绝单字孤行）；**选帧**：切片内每 2s 抽候选（首帧自 +1.0s 起，上限 40）→ 确定性评分＝人脸数（1 张最佳）+ 面积 + 清晰度 + **亮度项**（灰度 [90,200] 满分）+ 单脸居中项，运动模糊 ×0.6；**文案主题对齐（2026-11-09 P1）**：主题块锚点＝content_analysis `topic_units` 按切片区间重叠最大（并列优先标题与切片规划主题相关者），底料**精修稿优先**；LLM 一次出 3 组候选 → 主题校验（title 覆盖率/钩子原话命中）→ 不合格带反馈**受控重生成一次**（每切片封面文案 LLM ≤2 次）→ 仍不合格走 hint 规则组/主题词直组句兜底（有主题块时 hint 不进初选池）；hook 复述 topic（≥3 字全包含）评分 −2；**人工换帧（P3）**：`build_cover(frame_time_rel_s=)` 指定成片时间线秒，`selection_source=manual` 留痕；可读线校验（≥96px@1080，不过→纯色兜底）；`clip_final` 前 0.8s 替换为封面片头（时长不变契约）；失败只 warning。审计：`cover_copy.json` 的 `topic_unit_used/validation_report/regeneration_count/prompt_version(2026-11-09.2)/transcript_source/frame.selection_source`。规范全文见 `docs/cover-generation-convention.md` | `cover_realframe_v2.py`、`cover_templates.py`、`cover_replace.splice_intro`、ffmpeg | 切片目录四产物 + `cover_revision`（`cover_frames/` 侧目录：候选帧缩略图，仅手动链写）。**自动封面开关 STUDIO_AUTO_COVER（2026-11-09 用户拍板，默认关闭）**：关闭时渲染链不生成封面四产物、不拼接 0.8s 片头；手动制作链（重制封面/版型库/封面微调）不受影响 |
 | 5 | 渲染 rendering | clip_plan 的 `start_ms/end_ms` + 指定版本纠错转写 → **本地 FFmpeg 逐条渲染**：横转竖居中裁切（608×1080→1080×1920）、H.264+AAC、SRT 时间平移、**字幕同遍烧录**（2026-10-29 固化）；**烧录源=精修稿优先（2026-11-09 用户拍板）**：`source=llm` 切片按 segment_id 把烧录文本替换为 `refined_text`（语气词/无价值句已删，`clip_render._apply_refined_segments`），精修缺失/fallback 如实回退纠错转写，`warnings.json.subtitle_provenance.subtitle_source`（`clip_refinement`/`corrected_transcript`）+ `refined_segment_count` 留痕；渲染指纹含精修身份、版本 `purify-concat/1`（2026-11-11 净化重组升级：旧 `refined-burn/1` 缓存全量失效）；**多区间渲染（2026-11-11 问答化 P1）**：切片带合法 `sub_ranges` 时走 filter_complex 逐段 trim+concat（输入侧 `-ss 首段起 -t 末段止` 粗定位，分段/字幕平移到虚拟时间轴，`provenance.purify.ranges` 留痕），sub_ranges 缺失/非法回退单区间老路径；源片本地硬链接不重传；**字幕词级对齐 + 短 cue 纪律（2026-11-12 字幕优化，同日单位/行宽修复后定稿）**：提供词级时间（faster-whisper words，秒→内部 ms）时 cue 起止取真实词首尾——尾部静音不再挂字幕；词间停顿 >`SUBTITLE_CUE_GAP_SPLIT_S`（默认 1.5 秒）作为 cue 内切分边界；cue 间空隙 ≤`SUBTITLE_GAP_EXTEND_MS`（默认 0.8 秒）闭合防闪烁、超过则前条最多延伸 0.8 秒后留白（长停顿字幕消失，说完就撤）；单条显示超 `SUBTITLE_MAX_CUE_SECONDS`（**默认 12 秒**，此前文档误写 5 秒）按词时间/容量二次切分，且装箱合并同受时长上限约束（防切开后按文字容量重新并回超长挂屏 cue）；短条合并/折行全程守住每行 ≤16 字（修复 `_join_texts` 兜底盲拼与 `_arrange_lines` 行预算不足仍折行两处超宽行缺陷）。**2026-11-12 单位修复**：token 层毫秒与配置秒阈值直接比较曾致真实词时间下整句逐词碎裂（验收 case 回归），已统一换算；**words 已接入生产渲染（2026-11-12 人工确认 A/B 后接线）**：`_run_clip_render_stage` 与重新剪辑 `_run_reedit_replace` 两处渲染均传 v2 转写词级时间（秒），`_render_one_reserved` 将其与分段同映射平移到净化 sub_ranges 虚拟时间轴后交给 `build_srt`；渲染指纹版本 words-align/1（无词仍 purify-concat/1）——旧无词缓存自动失效重渲；`warnings.json.subtitle_provenance.words`（used/count/virtual_timeline）留痕；words 缺失/空回退段内线性插值（旧行为）。离线对比脚本 `backend/scripts/subtitle_ab_demo.py`（复刻生产链，words 平移引用同一生产实现） | `clip_render.py`、`subtitle_cueing.py`、ffmpeg（`CONTENT_RENDER_FFMPEG`） | `tasks/output/<job>/clips/<clip_id>/clip_final.mp4` + cover.jpg + ASS/SRT + warnings.json |
@@ -108,6 +108,20 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
     ↓
 切片精修与渲染（执行呈现）
 ```
+
+##### 3.2.1.1 三个业务知识库分别用在哪里
+
+这里要区分“PostgreSQL 里的业务表”和“自动剪辑主链真正读取的运行时文件”。当前不是把数据库里所有库都塞给规划模型。
+
+| 库 | 存放位置 | 当前用途 | 内容分析是否使用 | 切片规划是否使用 |
+|---|---|---|---|---|
+| 热点库 | PostgreSQL `hot_topics` | 通过 `/api/v1/ingest/hot-topics` 入库；通过 `/api/v1/kb/search?table=topics` 做关键词或语义检索，为选题、运营和外部知识工具提供热点资料 | **不使用** | **不使用**；热点标题、摘要不会自动进入 Prompt A |
+| 文案/脚本库 | PostgreSQL `scripts`，可关联 `hot_topics.topic_id` | 通过 `/api/v1/ingest/scripts` 入库；通过 `/api/v1/kb/search?table=scripts` 检索；医生可把 draft 确认为 approved | **不使用** | **不使用**；历史 Hook、正文和 CTA 不会自动进入 Prompt A，也不作为 Hook 模式库 |
+| 医学指南管理库 | PostgreSQL `medical_guidelines` | 医学条目的入库、检索、向量字段保存和医生事后复核 | 主链**不直接查询该表** | 主链**不直接查询该表** |
+| 医学指南运行时快照 | `backend/medical_kb_seed/active_snapshot.json`，可由 `MEDICAL_KB_SNAPSHOT` 改路径 | 自动剪辑实际消费的确定性知识快照；当前物化方向是“种子 JSON → 快照”，可选同时写入 `medical_guidelines`，不是规划时实时查库 | **使用**：内容分析用本地 BGE 向量 + 词法匹配，为主题和分段写 strong/weak/none 标签 | **间接使用**：通常只消费分析 JSON 中已经保存的医学标签，不重新匹配；仅 `MEDICAL_BG_INJECT=on` 时按已命中条目从快照取受控背景加入模型请求 |
+| 医学纠错词库（非上述三张业务表） | `medical_lexicon.py`、`project_glossary.py` | ASR 后的医学同音词、术语纠错 | 分析开始前已经使用完 | 规划不读取 |
+
+因此，当前自动切片主链真正会影响选段的是：**纠错转写、内容分析结果、医学运行时快照产生的标签、规则快照和 Prompt A**。热点库与脚本库目前是独立的采集/检索资产，尚未接入 `content_analysis.py` 或 `clip_planning.py`。
 
 #### 3.2.2 内容分析：对视频做了什么
 
@@ -151,14 +165,14 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 #### 3.2.3 切片规划：具体怎么规划
 
-规划输入为“同一版本纠错转写 + 已持久化内容分析 + Prompt A + 规则快照”。它不读取视频画面、不重新 ASR/纠错，也不重新做医学主题匹配；只有在 `MEDICAL_BG_INJECT=on` 时，才会按分析中已经命中的条目 ID 从本地快照取受控背景文字拼入 Prompt A。
+规划输入为“同一版本纠错转写 + 已持久化内容分析 + Prompt A + 规则快照”。**切片规划确实给模型加了提示词 A**：`_PLAN_SYSTEM_PROMPT` 作为 Pydantic AI Agent 的 `system_prompt`；另由 `_slice_plan_prompt` 生成用户提示，放入视频时长、分析结果和全量纠错分段。它不读取视频画面、不重新 ASR/纠错，也不重新做医学主题匹配；只有在 `MEDICAL_BG_INJECT=on` 时，才会按分析中已经命中的条目 ID 从本地快照取受控背景文字加入用户提示。
 
 **逐步流程**
 
 | 步骤 | 规划动作 | 程序约束与结果 |
 |---|---|---|
 | 1. 读取输入 | 正常主链直接接收上一步分析记录；断点恢复时读取分析 JSON；同时取得同版本权威纠错分段 | 规划只消费保存的 `medical_analysis/medical_annotations`，缺失时医学过滤明确禁用，不现场重算 |
-| 2. 拼 Prompt A | 把全片带时间分段、关键词、金句、主题块、候选区间和医学标签拼成一次全局规划请求 | 超过 4000 段时跳过 LLM，防止上下文爆炸；默认最多保留 12 条是资源上限，不是目标数量 |
+| 2. 组装提示词 A 请求 | 固定的 Prompt A 原文作为 `system_prompt`；用户提示另行加入实际视频时长、全片带时间分段、关键词、金句、主题块、候选区间和医学标签，组成一次全局规划请求 | 热点库和脚本库内容不在请求中；超过 4000 段时跳过 LLM，防止上下文爆炸；默认最多保留 12 条是资源上限，不是目标数量 |
 | 3. 模型提出方案 | 模型动态决定可独立成立的主题数量，并给出每条的 `time_range/theme/hook_first_line/cover_text/content_summary/completeness_note/risk_flags`，同时列出寒暄、重复、无价值内容的 `discarded_segments` | 单条以 60–180 秒为宜，低于 40 秒会 warning；数量不固定、宁缺毋滥、不凑数 |
 | 4. 吸附切点 | 模型时间只作定位线索，程序把起止点吸附到最近的 `segment_id` 边界，并重新计算 `start_ms/end_ms/duration_ms` | 每条初始切片必须是一个连续源区间，不允许模型制造权威时间戳 |
 | 5. 归一化与排序 | 程序校验边界、去高重叠候选、计算完整度/主题集中度/开头/结尾/证据/时长综合分，并按源时间轴排序 | 超过资源上限时才按综合分保留最优；质量和时长偏差记 warning，不以 QC 阻断任务 |
@@ -168,9 +182,11 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 | 9. 全片覆盖 | 按转写分段索引把保留切片与 discarded 对齐；发现未归属分段时由程序补入 discarded | 最终要求转写分段无重叠、无静默丢段；原视频中的无语音空白不属于该覆盖检查 |
 | 10. 保存与登记 | 原子写入计划 JSON、保存 workflow snapshot、上传对象存储并登记 artifact | `tasks/plans/<job>/clip_plan.json`；artifact 名为 `clip_plan` |
 
-**哪个模型在规划**
+**提示词 A 和哪个模型在规划**
 
-规划没有另写死一个模型，它与内容分析共用运行时 `Config.llm`，通过 Pydantic AI 按 `_SlicePlanOut` schema 调用 Prompt A。模型设置为温度 `0.2`、默认关闭思考、初始输出预算 4096、token 上限不足时升到 6144；全局请求失败会再重试一次，仍失败则使用本地 `_fallback_plan`，不会悄悄切换到另一个模型或供应通道。某次任务的实际模型与执行结果必须看 `tasks/plans/<job>/clip_plan.json`：
+调用关系是：`plan_clips` → `_slice_plan_prompt` 组装用户数据 → `_run_plan_agent` → `Agent(system_prompt=_PLAN_SYSTEM_PROMPT, output_type=_SlicePlanOut)`。因此 Prompt A 不是文档里写了但运行时没用，而是每次 LLM 规划调用的系统提示；Prompt B 只在之后的 `clip_refinement.py` 使用，两者不混用。
+
+规划没有另写死一个模型，它与内容分析共用运行时 `Config.llm`，通过 Pydantic AI 按 `_SlicePlanOut` schema 调用。模型设置为温度 `0.2`、默认关闭思考、初始输出预算 4096、token 上限不足时升到 6144；全局请求失败会再重试一次，仍失败则使用本地 `_fallback_plan`，不会悄悄切换到另一个模型或供应通道。某次任务的实际模型与执行结果必须看 `tasks/plans/<job>/clip_plan.json`：
 
 - `model`：本次解析到的生成模型；
 - `plan_source=llm`：模型规划成功；
