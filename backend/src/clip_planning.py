@@ -1110,20 +1110,53 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
     plan_warnings.extend(purify_warns[:4])
     if purify_summary.get("purified"):
         plan_warnings.insert(0, f"clip_purify: {purify_summary['purified']} 条切片已净化重组（问答化）")
-    # 钩子逐字护栏：模型产出的 hook_first_line 去标点归一后必须命中转写——
-    # 不命中 → 钩子置空 + 留痕（模型只准引用医生原话，绝不输出编造的钩子）。
+    # 钩子唯一规则（2026-11-13 用户拍板）：钩子必须来自转写内容。
+    # 模型产出的 hook_first_line 去标点归一后命中转写 → 保留；未命中（含空）
+    # → 自动替换为本切片窗口内的医生原话：优先分析阶段识别的钩子素材
+    # （主题块钩子句/患者提问/金句），无素材取窗口首句。无模式打分、无淘汰
+    # 规则——每条切片都有钩子，且钩子 100% 是医生原话。
     if clips:
         transcript_norm = "".join(_norm(str(s.get("text") or ""))
                                   for s in corrected_segments)
+        pos_of = {e["segment_id"]: pos for pos, e in enumerate(index.entries)}
+        hook_material: list[tuple[str, str]] = []
+        for unit in (analysis_for_prompt.get("topic_units") or []):
+            for key in ("hook_quote", "patient_question"):
+                quote = str(unit.get(key) or "").strip()
+                if quote:
+                    hook_material.append((_norm(quote), quote))
+        for quote in (analysis_for_prompt.get("golden_quotes") or [])[:6]:
+            text = quote.strip() if isinstance(quote, str) else str(quote.get("text") or "").strip()
+            if text:
+                hook_material.append((_norm(text), text))
         for clip in clips:
             hook_line = str(clip.get("hook_first_line") or "").strip()
-            if not hook_line:
+            if hook_line and _norm(hook_line) and _norm(hook_line) in transcript_norm:
                 continue
-            if _norm(hook_line) and _norm(hook_line) in transcript_norm:
-                continue
-            notes.append(f"钩子逐字护栏：hook_first_line「{hook_line[:30]}」非转写原话，"
-                         f"已置空")
-            clip["hook_first_line"] = ""
+            start_pos = pos_of.get(str(clip.get("start_segment_id") or ""))
+            end_pos = pos_of.get(str(clip.get("end_segment_id") or ""))
+            replacement = ""
+            if start_pos is not None and end_pos is not None and start_pos <= end_pos:
+                window_texts = [index.entries[i]["text"] for i in range(start_pos, end_pos + 1)]
+                window_norm = [_norm(w) for w in window_texts]
+                for norm_q, raw_q in hook_material:
+                    for wt, wn in zip(window_texts, window_norm):
+                        if norm_q and wn and norm_q in wn:
+                            replacement = wt.strip()
+                            break
+                    if replacement:
+                        break
+                if not replacement and window_texts:
+                    replacement = window_texts[0].strip()
+            original = hook_line or "（空）"
+            if replacement:
+                clip["hook_first_line"] = replacement
+                notes.append(f"钩子来自转写：hook_first_line「{original[:30]}」非转写原话，"
+                             f"已替换为切片内医生原句「{replacement[:30]}」")
+            elif hook_line:
+                notes.append(f"钩子逐字护栏：hook_first_line「{hook_line[:30]}」非转写原话且"
+                             f"窗口内无可替换原句，已置空")
+                clip["hook_first_line"] = ""
     # 医学背景泄漏扫描（2026-11-13 设计稿 §5-2，warn 级；默认 off 时零开销）：
     # 输出与注入卡片正文 ≥threshold 字连续相同 → medical_background_leak 告警。
     if medical_kb.background_config()["inject"]:

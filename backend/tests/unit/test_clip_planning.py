@@ -117,10 +117,12 @@ def test_llm_plan_validated_deduped_and_sorted(monkeypatch: pytest.MonkeyPatch):
     assert clip["clip_id"].startswith("clip-")
     assert clip["plan_source"] == "llm"
     # 提示词A策划字段透传（第二步精修按 clip_id 消费 theme/hook）
-    # 2026-11-13 钩子模式库移除：非转写原话的组合式钩子被逐字护栏置空
+    # 2026-11-13 钩子唯一规则：非转写原话的钩子自动替换为切片窗口内医生原话
     from src.content_analysis import _norm as _ca_norm
     transcript_norm = "".join(_ca_norm(s["text"]) for s in _segments())
-    assert clip["hook_first_line"] == "" or _ca_norm(clip["hook_first_line"]) in transcript_norm
+    assert clip["hook_first_line"], "每条切片必须有钩子"
+    assert _ca_norm(clip["hook_first_line"]) in transcript_norm, "钩子必须是转写原话"
+    assert any("钩子来自转写" in n for n in (record.get("notes") or []))
     assert clip["cover_text"] == "规范治疗"
     assert clip["declared_time_range"] == ["00:00:06", "00:01:55"]
     assert record["video_summary"] == "高血压常见误区科普"
