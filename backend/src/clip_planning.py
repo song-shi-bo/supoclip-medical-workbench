@@ -685,7 +685,7 @@ def _scan_background_leak(clips: list[dict[str, Any]], statements: list[str],
             if hit >= threshold:
                 warns.append(
                     f"medical_background_leak: 切片「{str(clip.get('topic'))[:24]}」输出与注入卡片"
-                    f"正文存在 {hit} 字连续相同片段，请人工核查（不阻断；钩子已逐字执法兜底）")
+                    f"正文存在 {hit} 字连续相同片段，请人工核查（不阻断；非原话钩子已置空兜底）")
                 break
     return warns
 
@@ -1110,9 +1110,8 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
     plan_warnings.extend(purify_warns[:4])
     if purify_summary.get("purified"):
         plan_warnings.insert(0, f"clip_purify: {purify_summary['purified']} 条切片已净化重组（问答化）")
-    # 钩子逐字护栏（2026-11-13 钩子模式库移除后保留的最小安全网）：模型产出的
-    # hook_first_line 去标点归一后必须命中转写——不命中 → 钩子置空 + 留痕
-    # （模型只准引用原话；模式打分与候选替换已随钩子模式库移除）。
+    # 钩子逐字护栏：模型产出的 hook_first_line 去标点归一后必须命中转写——
+    # 不命中 → 钩子置空 + 留痕（模型只准引用医生原话，绝不输出编造的钩子）。
     if clips:
         transcript_norm = "".join(_norm(str(s.get("text") or ""))
                                   for s in corrected_segments)
@@ -1123,7 +1122,7 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
             if _norm(hook_line) and _norm(hook_line) in transcript_norm:
                 continue
             notes.append(f"钩子逐字护栏：hook_first_line「{hook_line[:30]}」非转写原话，"
-                         f"已置空（钩子模式库已移除）")
+                         f"已置空")
             clip["hook_first_line"] = ""
     # 医学背景泄漏扫描（2026-11-13 设计稿 §5-2，warn 级；默认 off 时零开销）：
     # 输出与注入卡片正文 ≥threshold 字连续相同 → medical_background_leak 告警。
