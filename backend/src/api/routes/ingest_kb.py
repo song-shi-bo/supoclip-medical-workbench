@@ -324,6 +324,28 @@ async def kb_search(request: Request, q: str = "", tag: str = "", status: str = 
     return out
 
 
+@router.get("/titles/search")
+async def titles_search(request: Request, q: str = "",
+                        hook_tag: str = "", topic_tag: str = "",
+                        limit: int = Query(20, ge=1, le=100),
+                        db: AsyncSession = Depends(get_db)):
+    """标题库双标签检索：标签1 hook_tag（热点型/流量型…），标签2 topic_tag（心梗脑梗…，逗号分隔取交集）。"""
+    _check(request, "KB_READ_TOKEN")
+    like = f"%{q.strip()}%"
+    topic_list = [t.strip() for t in topic_tag.split(",") if t.strip()]
+    rows = (await db.execute(text("""
+        SELECT id, title, hook_tag, topic_tags, heat_score, created_at
+        FROM video_titles
+        WHERE status = 'active'
+          AND (:hook_tag = '' OR hook_tag = :hook_tag)
+          AND (cardinality(CAST(:tags AS text[])) = 0 OR topic_tags @> CAST(:tags AS text[]))
+          AND (:q = '' OR title ILIKE :like)
+        ORDER BY heat_score DESC, created_at DESC LIMIT :limit
+    """), {"hook_tag": hook_tag.strip(), "tags": topic_list,
+           "q": q.strip(), "like": like, "limit": limit})).fetchall()
+    return {"count": len(rows), "titles": [dict(r._mapping) for r in rows]}
+
+
 @router.post("/kb/scripts/{script_id}/confirm")
 async def confirm_script(script_id: str, request: Request,
                          db: AsyncSession = Depends(get_db)):
