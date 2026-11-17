@@ -11,9 +11,10 @@
   构造（只删患者话语与纯应答，医生话语原文原序且同一主题块内）天然满足
   同主题/同会诊对象/结论方向；医学指南条目佐证随 decision 透出（P3 LLM 裁判前）；
 - **绝不阻断**：任何失败/条件不满足 → 整片回退原连续区间，如实留痕。
-- **四点装配（2026-11-16，`MEDICAL_PURIFY_FOUR_STEP` 默认 on）**：主题块内
-  钩子/接题/叙述/收口锚点齐全时，按四点顺序**重排**锚点段为 sub_ranges
-  （唯一允许调语序的模式；缺件回退连续净化；钩子与叙述都缺则放弃成片）。
+
+分层契约（2026-11-16）：**四点装配是规划层的组合决定**（clip_planning：
+钩子→接题→叙述→收口重排锚点段），本层保持"只删不改、不调语序"，只对
+规划未装配的切片做连续净化兜底，并跳过已装配切片。
 
 删除授权阶梯（防误删医生话语）：
 1. 纯应答段（去标点后仅应答词重复）——无需任何标注，P1 起可删；
@@ -21,9 +22,9 @@
    （overlay labels 命中 患者/家属）；无标注时退回规则 1；
 3. 医生话语（doctor_core_segment_ids 命中）——永不删除。
 
-硬边界：不改写、不发明原话；提示词A 输出的切片区间不变（sub_ranges 是渲染级
-精化，全覆盖契约不受影响）；连续净化不调语序，唯四点装配例外；纯度/占比阈值
-只产 warning，无 reject。
+硬边界：不改写、不调语序、不发明原话；提示词A 输出的切片区间不变
+（sub_ranges 是渲染级精化，全覆盖契约不受影响）；纯度/占比阈值只产
+warning，无 reject。
 
 身份契约：``identity(speaker_fingerprint)`` 进 plan provenance——说话人标注、
 风格或阈值变化都会使旧计划缓存失效；渲染指纹亦含 purify 版本。
@@ -37,16 +38,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-PURIFY_VERSION = "clip-purify/v3"
-
-# 四点装配（2026-11-16 用户拍板）：同一主题块内 钩子→接题→叙述→收口 锚点段
-# 按四点顺序重排 sub_ranges；四点缺件 → 回退既有连续净化（绝不发明原话）。
-# 仅当主题块连钩子与叙述锚点都没有时才放弃成片（宁缺毋滥）。
-ASSEMBLY_VERSION = "four-step-assembly/v1"
-ASSEMBLY_ENABLED = os.getenv("MEDICAL_PURIFY_FOUR_STEP", "on").strip().lower() in {
-    "on", "1", "true"}
-ASSEMBLY_MIN_MS = 40_000
-ASSEMBLY_MAX_MS = 180_000
+PURIFY_VERSION = "clip-purify/v2"
 
 # 风格：qa=问答化（保留患者提问当钩子）；mono=独白化（患者话语全删）。
 STYLE = os.getenv("MEDICAL_PURIFY_STYLE", "qa").strip().lower()
@@ -73,13 +65,12 @@ _PUNCT_RE = re.compile(r"[，。！？；：、,.!?;:\s\[\]（）()\"\"''「」�
 
 
 def identity(speaker_fingerprint: str | None) -> dict[str, Any]:
-    """净化身份（进 plan 指纹）：版本 + 风格 + 说话人标注指纹 + 阈值 + 装配开关。"""
+    """净化身份（进 plan 指纹）：版本 + 风格 + 说话人标注指纹 + 阈值。
+    四点装配身份由规划层（clip_planning）单独进指纹。"""
     return {
         "enabled": True,
         "version": PURIFY_VERSION,
         "style": STYLE,
-        "four_step_assembly": ASSEMBLY_ENABLED,
-        "assembly_version": ASSEMBLY_VERSION if ASSEMBLY_ENABLED else "",
         "speaker_source": "overlay" if speaker_fingerprint else "none",
         "speaker_fingerprint": speaker_fingerprint or "",
         "min_keep_ratio": MIN_KEEP_RATIO,
@@ -148,7 +139,7 @@ def _clip_positions(entries: list[dict[str, Any]], position_of: dict[str, int],
     return list(range(start_pos, end_pos + 1))
 
 
-def _unit_for_clip(clip: dict[str, Any], analysis: dict[str, Any] | None,
+def unit_for_clip(clip: dict[str, Any], analysis: dict[str, Any] | None,
                    position_of: dict[str, int]) -> dict[str, Any] | None:
     """切片 → 重叠最大的主题块（拿 patient_question 与 doctor_core_segment_ids）。"""
     if not analysis:
@@ -271,123 +262,6 @@ def purify_clip(clip: dict[str, Any], entries: list[dict[str, Any]],
     return result
 
 
-def _anchor_positions(entries: list[dict[str, Any]], positions: list[int],
-                      quote: str) -> list[int]:
-    """锚点原话 → 命中分段位置：单段包含优先，否则连续跨段滑动匹配。"""
-    quote_norm = _norm_text(quote)
-    if not quote_norm:
-        return []
-    for pos in positions:
-        if quote_norm in _norm_text(entries[pos].get("text") or ""):
-            return [pos]
-    run: list[int] = []
-    run_norm = ""
-    for pos in positions:
-        run.append(pos)
-        run_norm += _norm_text(entries[pos].get("text") or "")
-        while run and quote_norm not in run_norm:
-            run_norm = run_norm[len(_norm_text(entries[run[0]].get("text") or "")):]
-            run.pop(0)
-        if run and quote_norm in run_norm:
-            return list(run)
-    return []
-
-
-def _hook_text_for_unit(unit: dict[str, Any] | None, analysis: dict[str, Any] | None) -> str:
-    """钩子锚点文本：优先主题块 hook_quote；缺省取与本块重叠最大的全局钩子候选。"""
-    quote = str((unit or {}).get("hook_quote") or "").strip()
-    if quote:
-        return quote
-    if not analysis:
-        return ""
-    unit_ids = {str(sid) for sid in (unit.get("segment_ids") or [])}
-    best: tuple[int, str] | None = None
-    for hook in (analysis.get("hooks") or []):
-        if not isinstance(hook, dict):
-            continue
-        ids = {str(sid) for sid in (hook.get("segment_ids") or [])}
-        overlap = len(ids & unit_ids)
-        text = str(hook.get("text") or "").strip()
-        if overlap and text and (best is None or overlap > best[0]):
-            best = (overlap, text)
-    return best[1] if best else ""
-
-
-def assemble_four_step(clip: dict[str, Any], entries: list[dict[str, Any]],
-                       position_of: dict[str, int], unit: dict[str, Any] | None,
-                       analysis: dict[str, Any] | None) -> dict[str, Any] | None:
-    """严格四点装配：同一主题块内取 钩子→接题→叙述→收口 锚点段，按四点顺序
-    重排 sub_ranges（输出第一句即钩子原话）。任一锚点定位失败或时长越界 →
-    None（调用方回退既有连续净化）。只重排与删除，绝不发明、不改写原话。
-    """
-    if unit is None:
-        return None
-    positions = _clip_positions(entries, position_of,
-                                str(clip.get("start_segment_id") or ""),
-                                str(clip.get("end_segment_id") or ""))
-    if not positions:
-        return None
-    position_set = set(positions)
-    hook_pos = _anchor_positions(entries, positions, _hook_text_for_unit(unit, analysis))
-    question_pos = _anchor_positions(
-        entries, positions, str(unit.get("patient_question") or ""))
-    ending_pos = _anchor_positions(
-        entries, positions, str(unit.get("ending_quote") or ""))
-    narration_pos = sorted({position_of[str(sid)] for sid in
-                            (unit.get("doctor_core_segment_ids") or [])
-                            if str(sid) in position_of} & position_set)
-    if not hook_pos or not question_pos or not ending_pos or not narration_pos:
-        return None
-    ordered: list[int] = []
-    seen: set[int] = set()
-    for pos in hook_pos + question_pos + narration_pos + ending_pos:
-        if pos not in seen:
-            seen.add(pos)
-            ordered.append(pos)
-
-    def _duration(seq: list[int]) -> int:
-        return sum(entries[p]["end_ms"] - entries[p]["start_ms"] for p in seq)
-
-    total_ms = _duration(ordered)
-    if total_ms < ASSEMBLY_MIN_MS:
-        return None
-    # 超长：从叙述段尾部收（钩子/接题/收口锚点不动）
-    narration_tail = [p for p in ordered if p in set(narration_pos)]
-    while total_ms > ASSEMBLY_MAX_MS and len(narration_tail) > 1:
-        drop_pos = narration_tail[-1]
-        narration_tail = narration_tail[:-1]
-        ordered.remove(drop_pos)
-        seen.discard(drop_pos)
-        total_ms = _duration(ordered)
-    if total_ms > ASSEMBLY_MAX_MS:
-        return None
-    runs: list[list[int]] = [[ordered[0]]]
-    for pos in ordered[1:]:
-        if pos == runs[-1][-1] + 1:
-            runs[-1].append(pos)
-        else:
-            runs.append([pos])
-    sub_ranges = [{
-        "start_segment_id": str(entries[run[0]]["segment_id"]),
-        "end_segment_id": str(entries[run[-1]]["segment_id"]),
-        "start_ms": int(entries[run[0]]["start_ms"]),
-        "end_ms": int(entries[run[-1]]["end_ms"]),
-    } for run in runs]
-    return {
-        "mode": "four_step_assembly",
-        "sub_ranges": sub_ranges,
-        "dropped_segment_ids": [str(entries[p]["segment_id"])
-                                for p in positions if p not in seen],
-        "anchors": {
-            "hook": [str(entries[p]["segment_id"]) for p in hook_pos],
-            "question": [str(entries[p]["segment_id"]) for p in question_pos],
-            "narration": [str(entries[p]["segment_id"]) for p in narration_pos],
-            "ending": [str(entries[p]["segment_id"]) for p in ending_pos],
-        },
-        "total_ms": total_ms,
-    }
-
-
 def purify_clips(clips: list[dict[str, Any]], corrected_segments: list[dict[str, Any]],
                  speaker_labels: dict[str, str] | None, *,
                  analysis: dict[str, Any] | None = None,
@@ -396,6 +270,7 @@ def purify_clips(clips: list[dict[str, Any]], corrected_segments: list[dict[str,
 
     ``analysis`` 提供主题块 patient_question / doctor_core_segment_ids（P2）；
     ``gate_profile`` 提供医学条目佐证（拼接合理性的证据透出，P3-lite）。
+    规划层已四点装配的切片（purify.mode=four_step_assembly）在此跳过。
     """
     entries = [{"segment_id": str(s.get("segment_id") or ""),
                 "start_ms": int(s.get("start_ms") or 0),
@@ -406,12 +281,14 @@ def purify_clips(clips: list[dict[str, Any]], corrected_segments: list[dict[str,
     annotations = (gate_profile or {}).get("unit_annotations") or []
     decisions: list[dict[str, Any]] = []
     purified = 0
-    assembled = 0
-    discarded_clips = 0
+    skipped_assembled = 0
     try:
         for clip in clips:
+            if str((clip.get("purify") or {}).get("mode") or "") == "four_step_assembly":
+                skipped_assembled += 1  # 规划层已装配，净化不再处理
+                continue
             try:
-                unit = _unit_for_clip(clip, analysis, position_of)
+                unit = unit_for_clip(clip, analysis, position_of)
                 evidence: list[str] = []
                 if unit is not None:
                     for ann in annotations:
@@ -419,58 +296,6 @@ def purify_clips(clips: list[dict[str, Any]], corrected_segments: list[dict[str,
                             evidence = [str(m.get("topic") or "")
                                         for m in (ann.get("matched") or [])]
                             break
-                # 四点装配优先（2026-11-16）：锚点齐全才重排，缺件回退连续净化。
-                assembled_result = (assemble_four_step(clip, entries, position_of,
-                                                       unit, analysis)
-                                    if ASSEMBLY_ENABLED else None)
-                if assembled_result is not None:
-                    sub_ranges = assembled_result["sub_ranges"]
-                    clip["sub_ranges"] = sub_ranges
-                    purified += 1
-                    assembled += 1
-                    clip["purify"] = {
-                        "mode": assembled_result["mode"],
-                        "style": STYLE,
-                        "sub_range_count": len(sub_ranges),
-                        "dropped_segment_ids": assembled_result["dropped_segment_ids"],
-                        "doctor_ratio": None, "question_kept": None,
-                        "evidence_topics": evidence,
-                        "fallback_reason": None,
-                        "assembly": {
-                            "version": ASSEMBLY_VERSION,
-                            "anchors": assembled_result["anchors"],
-                            "total_ms": assembled_result["total_ms"],
-                        },
-                    }
-                    decisions.append({
-                        "clip_id": str(clip.get("clip_id") or ""),
-                        "topic": str(clip.get("topic") or ""),
-                        **clip["purify"],
-                        "warning": None,
-                    })
-                    continue
-                if ASSEMBLY_ENABLED and unit is not None \
-                        and str((analysis or {}).get("plan_source") or "") == "llm" \
-                        and not _hook_text_for_unit(unit, analysis) \
-                        and not unit.get("doctor_core_segment_ids"):
-                    # 严格模式：主题块连钩子与叙述锚点都没有 → 宁缺毋滥放弃成片
-                    #（规划层会把该切片挪入 discarded，覆盖契约由程序补齐）。
-                    discarded_clips += 1
-                    clip["purify"] = {
-                        "mode": "skipped_no_anchor", "style": STYLE,
-                        "sub_range_count": 0, "dropped_segment_ids": [],
-                        "doctor_ratio": None, "question_kept": None,
-                        "evidence_topics": evidence,
-                        "fallback_reason": "主题块缺钩子与叙述锚点（四点装配严格模式放弃）",
-                        "assembly": None, "discard": True,
-                    }
-                    decisions.append({
-                        "clip_id": str(clip.get("clip_id") or ""),
-                        "topic": str(clip.get("topic") or ""),
-                        **clip["purify"],
-                        "warning": "主题块缺钩子与叙述锚点，已放弃成片（宁缺毋滥）",
-                    })
-                    continue
                 result = purify_clip(clip, entries, position_of, speaker_labels,
                                      unit=unit, evidence_topics=evidence,
                                      style=STYLE)
@@ -505,9 +330,7 @@ def purify_clips(clips: list[dict[str, Any]], corrected_segments: list[dict[str,
             })
     except Exception as exc:  # noqa: BLE001 — 整体失败：原样返回，绝不阻断
         return {"version": PURIFY_VERSION, "mode": "disabled", "style": STYLE,
-                "purified": 0, "assembled": 0, "discarded_clips": 0,
-                "four_step_assembly": ASSEMBLY_ENABLED,
-                "assembly_version": ASSEMBLY_VERSION,
+                "purified": 0, "skipped_assembled": 0,
                 "speaker_source": "overlay" if speaker_labels else "none",
                 "thresholds": {"min_keep_ratio": MIN_KEEP_RATIO,
                                "min_doctor_ratio": MIN_DOCTOR_RATIO},
@@ -519,10 +342,7 @@ def purify_clips(clips: list[dict[str, Any]], corrected_segments: list[dict[str,
         "mode": f"{STYLE}_purify",
         "style": STYLE,
         "purified": purified,
-        "assembled": assembled,
-        "discarded_clips": discarded_clips,
-        "four_step_assembly": ASSEMBLY_ENABLED,
-        "assembly_version": ASSEMBLY_VERSION,
+        "skipped_assembled": skipped_assembled,
         "speaker_source": "overlay" if speaker_labels else "none",
         "thresholds": {"min_keep_ratio": MIN_KEEP_RATIO,
                        "min_doctor_ratio": MIN_DOCTOR_RATIO},

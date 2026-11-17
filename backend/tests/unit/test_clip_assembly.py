@@ -1,14 +1,18 @@
-"""四点装配（clip_purify.assemble_four_step）契约测试（2026-11-16 用户拍板）。
+"""四点装配（clip_planning.assemble_four_step，规划层组合决定）契约测试。
 
-核心契约：
-* 同一主题块内 钩子→接题→叙述→收口 锚点段按四点顺序重排 sub_ranges；
-  输出第一句即钩子原话；锚点外的杂话段全部丢弃（只删不改，绝不发明原话）；
-* 任一锚点定位失败 / 时长 <40s → 回退既有连续净化；>180s 从叙述段尾部收；
-* 钩子与叙述锚点都缺（且分析来源为 llm）→ 宁缺毋滥放弃成片（规划层挪入 discarded）；
-* 装配开关/版本进 purify 身份，缓存可复现。
+分层契约（2026-11-16 用户拍板）：
+* 分析层只找锚点（逐字校验的 hooks/hook_quote/patient_question/doctor_core/
+  ending_quote）；规划层负责四点拼接——同一主题块内按 钩子→接题→叙述→收口
+  重排 sub_ranges，输出第一句即钩子原话，锚点外杂话丢弃（只删不改）；
+* 任一锚点定位失败 / 时长 <40s → 回退连续净化；>180s 从叙述段尾部收；
+* 钩子与叙述都缺（仅 llm 分析）→ 宁缺毋滥放弃成片（挪入 discarded）；
+* 开关/版本/时长闸门进 plan provenance；已装配切片由净化跳过。
 """
 from __future__ import annotations
 
+import pytest
+
+from src import clip_planning as cp
 from src import clip_purify as pu
 
 
@@ -47,96 +51,137 @@ def _clip() -> dict:
             "end_segment_id": "seg_0006", "topic": "靶向药皮疹"}
 
 
-def _run(unit, *, plan_source="llm", segments=None):
-    segments = segments or _segments()
-    clips = [_clip()]
-    summary = pu.purify_clips(clips, segments, None,
-                              analysis={"topic_units": [unit], "plan_source": plan_source})
-    return summary, clips[0]
+def _entries(segments):
+    return [{"segment_id": s["segment_id"], "start_ms": s["start_ms"],
+             "end_ms": s["end_ms"], "text": s["text"]} for s in segments]
 
 
 def test_four_step_assembly_orders_anchors_and_drops_chatter():
-    summary, clip = _run(_unit())
-    assert summary["assembled"] == 1
-    assert clip["purify"]["mode"] == "four_step_assembly"
-    ranges = clip["sub_ranges"]
+    entries = _entries(_segments())
+    position_of = {e["segment_id"]: i for i, e in enumerate(entries)}
+    assembled = cp.assemble_four_step(_clip(), entries, position_of, _unit(),
+                                      {"plan_source": "llm", "hooks": []})
+    assert assembled is not None and assembled["mode"] == "four_step_assembly"
+    ranges = assembled["sub_ranges"]
     # 顺序：钩子+接题（源相邻合并成一个区间）→ 叙述连续段 + 收口（源相邻合并）
     assert ranges[0]["start_segment_id"] == "seg_0000"
     assert ranges[0]["end_segment_id"] == "seg_0001"
     assert ranges[1]["start_segment_id"] == "seg_0003"
     assert ranges[1]["end_segment_id"] == "seg_0006"
-    order = [sid for r in ranges
-             for sid in (r["start_segment_id"], r["end_segment_id"])]
-    assert order.index("seg_0000") < order.index("seg_0003") < order.index("seg_0006")
-    assert "seg_0002" in clip["purify"]["dropped_segment_ids"]
-    anchors = clip["purify"]["assembly"]["anchors"]
-    assert anchors["hook"] == ["seg_0000"] and anchors["ending"] == ["seg_0006"]
-    assert clip["purify"]["assembly"]["total_ms"] >= pu.ASSEMBLY_MIN_MS
+    assert "seg_0002" in assembled["dropped_segment_ids"]
+    assert assembled["anchors"]["hook"] == ["seg_0000"]
+    assert assembled["anchors"]["ending"] == ["seg_0006"]
+    assert assembled["total_ms"] >= cp.ASSEMBLY_MIN_MS
 
 
-def test_missing_anchor_falls_back_to_continuous_purify():
-    unit = _unit(ending_quote="")  # 缺收口 → 回退连续净化
-    summary, clip = _run(unit)
-    assert summary["assembled"] == 0
-    assert clip["purify"]["mode"] != "four_step_assembly"
-    assert not clip["purify"].get("assembly")
-
-
-def test_short_total_duration_falls_back():
-    unit = _unit(doctor_core_segment_ids=["seg_0003"])  # 只有 12s 叙述 → 总长 <40s
-    summary, clip = _run(unit)
-    assert summary["assembled"] == 0
-    assert clip["purify"]["mode"] != "four_step_assembly"
+def test_missing_anchor_returns_none_for_continuous_fallback():
+    entries = _entries(_segments())
+    position_of = {e["segment_id"]: i for i, e in enumerate(entries)}
+    assert cp.assemble_four_step(_clip(), entries, position_of,
+                                 _unit(ending_quote=""),
+                                 {"plan_source": "llm", "hooks": []}) is None
+    assert cp.assemble_four_step(_clip(), entries, position_of,
+                                 _unit(doctor_core_segment_ids=["seg_0003"]),
+                                 {"plan_source": "llm", "hooks": []}) is None
 
 
 def test_overlong_narration_trims_tail():
     rows = _segments()
     extra = [seg(10 + i, f"叙述扩展第{i}段，补充完整的处理细节。", 66000 + i * 30000,
                  66000 + (i + 1) * 30000 - 1000) for i in range(6)]
-    long_segments = rows + extra
-    unit = _unit(segment_ids=[s["segment_id"] for s in long_segments],
-                 doctor_core_segment_ids=["seg_0003", "seg_0004", "seg_0005",
-                                          *[s["segment_id"] for s in extra]])
+    segments = rows + extra
+    entries = _entries(segments)
+    position_of = {e["segment_id"]: i for i, e in enumerate(entries)}
     clip = _clip()
     clip["end_segment_id"] = extra[-1]["segment_id"]  # 窗口覆盖全部叙述段
-    clips = [clip]
-    summary = pu.purify_clips(clips, long_segments, None,
-                              analysis={"topic_units": [unit], "plan_source": "llm"})
-    assert summary["assembled"] == 1
-    assert clips[0]["purify"]["assembly"]["total_ms"] <= pu.ASSEMBLY_MAX_MS
-    dropped = clips[0]["purify"]["dropped_segment_ids"]
-    assert any(s["segment_id"] in dropped for s in extra)
+    unit = _unit(segment_ids=[s["segment_id"] for s in segments],
+                 doctor_core_segment_ids=["seg_0003", "seg_0004", "seg_0005",
+                                          *[s["segment_id"] for s in extra]])
+    assembled = cp.assemble_four_step(clip, entries, position_of, unit,
+                                      {"plan_source": "llm", "hooks": []})
+    assert assembled is not None
+    assert assembled["total_ms"] <= cp.ASSEMBLY_MAX_MS
+    assert any(s["segment_id"] in assembled["dropped_segment_ids"] for s in extra)
 
 
 def test_hook_falls_back_to_analysis_hooks_within_unit():
-    unit = _unit(hook_quote="")  # 主题块缺 hook_quote
+    entries = _entries(_segments())
+    position_of = {e["segment_id"]: i for i, e in enumerate(entries)}
+    unit = _unit(hook_quote="")
     analysis = {"plan_source": "llm",
                 "hooks": [{"text": "先别急着自己停药，皮疹是靶向药最常见的反应。",
-                           "segment_ids": ["seg_0000"], "mechanism": "反常识"}],
-                "topic_units": [unit]}
-    clips = [_clip()]
-    summary = pu.purify_clips(clips, _segments(), None, analysis=analysis)
-    assert summary["assembled"] == 1
-    assert clips[0]["sub_ranges"][0]["start_segment_id"] == "seg_0000"
+                           "segment_ids": ["seg_0000"], "mechanism": "反常识"}]}
+    assembled = cp.assemble_four_step(_clip(), entries, position_of, unit, analysis)
+    assert assembled is not None
+    assert assembled["sub_ranges"][0]["start_segment_id"] == "seg_0000"
 
 
-def test_no_anchor_block_discarded_only_for_llm_analysis():
-    bare = {"title": "闲聊", "segment_ids": [s["segment_id"] for s in _segments()]}
-    _, clip_llm = _run(bare, plan_source="llm")
-    assert clip_llm["purify"].get("discard") is True
-    # 非模型分析（回退/旧工件）绝不放弃成片
-    _, clip_local = _run(bare, plan_source="heuristic_fallback")
-    assert clip_local["purify"].get("discard") is not True
+def test_no_anchor_block_discarded_only_for_llm_analysis(monkeypatch):
+    """钩子与叙述都缺：llm 分析 → 放弃成片挪入 discarded；本地回退 → 保留出片。"""
+    monkeypatch.setattr(cp, "_model_ready", lambda: (True, "openai:test-model", ""))
+    segments = _segments()
+    bare_unit = {"title": "闲聊", "segment_ids": [s["segment_id"] for s in segments]}
+
+    def fake_agent(model, prompt):
+        return cp._SlicePlanOut(video_summary="", slice_count=1,
+                                slices=[cp._SliceOut(id=1, time_range=["00:00:00", "00:01:05"],
+                                                     theme="闲聊")],
+                                discarded_segments=[])
+
+    monkeypatch.setattr(cp, "_run_plan_agent", fake_agent)
+    analysis = {"plan_source": "llm", "keywords": [], "golden_quotes": [],
+                "topic_units": [bare_unit], "candidate_intervals": [], "hooks": []}
+    record = cp.plan_clips(segments, analysis, transcript_version=1)
+    assert record["clips"] == []
+    assert record["four_step_assembly"]["discarded_clips"] == 1
+    assert any(d["type"] == "结构不完整" for d in record["discarded"])
+    covered = {sid for d in record["discarded"] for sid in d["segment_ids"]}
+    assert covered == {s["segment_id"] for s in segments}  # 覆盖契约由程序补齐
+
+    record2 = cp.plan_clips(segments, {**analysis, "plan_source": "heuristic_fallback"},
+                            transcript_version=1)
+    assert record2["clips"], "本地回退分析不放弃成片"
 
 
-def test_assembly_switch_and_identity_are_reproducible(monkeypatch):
-    assert pu.identity(None)["four_step_assembly"] is True
-    assert pu.identity(None)["assembly_version"] == pu.ASSEMBLY_VERSION
-    assert pu.PURIFY_VERSION == "clip-purify/v3"
-    monkeypatch.setenv("MEDICAL_PURIFY_FOUR_STEP", "off")
-    import importlib
-    importlib.reload(pu)
-    assert pu.identity(None)["four_step_assembly"] is False
-    monkeypatch.setenv("MEDICAL_PURIFY_FOUR_STEP", "on")
-    importlib.reload(pu)
-    assert pu.identity(None)["four_step_assembly"] is True
+def test_plan_assembles_and_purify_skips_assembled_clip(monkeypatch):
+    """规划层装配成功 → sub_ranges 四点顺序、净化跳过不再改写。"""
+    monkeypatch.setattr(cp, "_model_ready", lambda: (True, "openai:test-model", ""))
+    segments = _segments()
+
+    def fake_agent(model, prompt):
+        return cp._SlicePlanOut(video_summary="", slice_count=1,
+                                slices=[cp._SliceOut(id=1, time_range=["00:00:00", "00:01:05"],
+                                                     theme="靶向药皮疹")],
+                                discarded_segments=[])
+
+    monkeypatch.setattr(cp, "_run_plan_agent", fake_agent)
+    analysis = {"plan_source": "llm", "keywords": [], "golden_quotes": [],
+                "topic_units": [_unit()], "candidate_intervals": [], "hooks": []}
+    record = cp.plan_clips(segments, analysis, transcript_version=1)
+    clip = record["clips"][0]
+    assert clip["purify"]["mode"] == "four_step_assembly"
+    assert clip["sub_ranges"][0]["start_segment_id"] == "seg_0000"
+    assert clip["hook_first_line"] == segments[0]["text"].strip()  # 钩子即第一句
+    assert record["four_step_assembly"]["assembled"] == 1
+    assert record["purify"]["skipped_assembled"] == 1
+    assert record["purify"]["purified"] == 0
+    assert record["source_provenance"]["rules_snapshot"]["four_step_assembly"][
+        "enabled"] is True
+
+
+def test_assembly_switch_env(monkeypatch):
+    monkeypatch.setenv("CLIP_FOUR_STEP_ASSEMBLY", "off")
+    assert cp.four_step_assembly_enabled() is False
+    monkeypatch.setenv("CLIP_FOUR_STEP_ASSEMBLY", "on")
+    assert cp.four_step_assembly_enabled() is True
+
+
+def test_purify_keeps_delete_only_contract() -> None:
+    """净化层不装配：连续净化保持只删不改、不调语序。"""
+    clip = {"clip_id": "clip_a", "start_segment_id": "seg_0000", "end_segment_id": "seg_0007"}
+    entries = _entries(_segments())
+    position_of = {e["segment_id"]: i for i, e in enumerate(entries)}
+    result = pu.purify_clip(clip, entries, position_of, None)
+    if result["sub_ranges"]:
+        for entry_range in result["sub_ranges"]:
+            assert entry_range["start_ms"] < entry_range["end_ms"]

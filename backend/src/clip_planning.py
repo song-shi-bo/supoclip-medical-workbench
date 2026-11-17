@@ -615,6 +615,135 @@ PLAN_SCHEMA_VERSION = "clip-plan/v5"
 PLAN_PROMPT_VERSION = "clip-plan-prompt/2026-11-16-slice-a3-hook-front"
 PLAN_ADAPTER_VERSION = "clip-plan-adapter/v4"
 
+# 四点装配（2026-11-16 用户拍板，规划层组合决定）：同一主题块内
+# 钩子→接题→叙述→收口 锚点段按四点顺序重排 sub_ranges（输出第一句即钩子
+# 原话）；缺件回退连续净化；钩子与叙述都缺（仅模型分析）宁缺毋滥放弃成片。
+# 锚点来自分析阶段已逐字校验的产物（hooks/hook_quote/patient_question/
+# doctor_core_segment_ids/ending_quote），本层只组合，绝不发明原话。
+FOUR_STEP_ASSEMBLY_VERSION = "four-step-assembly/v1"
+ASSEMBLY_MIN_MS = 40_000
+ASSEMBLY_MAX_MS = 180_000
+
+
+def four_step_assembly_enabled() -> bool:
+    return os.getenv("CLIP_FOUR_STEP_ASSEMBLY", "on").strip().lower() in {
+        "on", "1", "true"}
+
+
+def _anchor_positions(entries: list[dict[str, Any]], positions: list[int],
+                      quote: str) -> list[int]:
+    """锚点原话 → 命中分段位置：单段包含优先，否则连续跨段滑动匹配。"""
+    quote_norm = _norm(quote)
+    if not quote_norm:
+        return []
+    for pos in positions:
+        if quote_norm in _norm(entries[pos].get("text") or ""):
+            return [pos]
+    run: list[int] = []
+    run_norm = ""
+    for pos in positions:
+        run.append(pos)
+        run_norm += _norm(entries[pos].get("text") or "")
+        while run and quote_norm not in run_norm:
+            run_norm = run_norm[len(_norm(entries[run[0]].get("text") or "")):]
+            run.pop(0)
+        if run and quote_norm in run_norm:
+            return list(run)
+    return []
+
+
+def _hook_text_for_unit(unit: dict[str, Any] | None, analysis: dict[str, Any]) -> str:
+    """钩子锚点文本：优先主题块 hook_quote；缺省取与本块重叠最大的全局钩子候选。"""
+    quote = str((unit or {}).get("hook_quote") or "").strip()
+    if quote:
+        return quote
+    unit_ids = {str(sid) for sid in (unit.get("segment_ids") or [])}
+    best: tuple[int, str] | None = None
+    for hook in (analysis.get("hooks") or []):
+        if not isinstance(hook, dict):
+            continue
+        ids = {str(sid) for sid in (hook.get("segment_ids") or [])}
+        overlap = len(ids & unit_ids)
+        text = str(hook.get("text") or "").strip()
+        if overlap and text and (best is None or overlap > best[0]):
+            best = (overlap, text)
+    return best[1] if best else ""
+
+
+def assemble_four_step(clip: dict[str, Any], entries: list[dict[str, Any]],
+                       position_of: dict[str, int], unit: dict[str, Any] | None,
+                       analysis: dict[str, Any]) -> dict[str, Any] | None:
+    """严格四点装配：同一主题块内取 钩子→接题→叙述→收口 锚点段，按四点顺序
+    重排 sub_ranges（输出第一句即钩子原话）。任一锚点定位失败或时长越界 →
+    None（调用方回退既有连续净化）。只重排与删除，绝不发明、不改写原话。
+    """
+    if unit is None:
+        return None
+    start_pos = position_of.get(str(clip.get("start_segment_id") or ""))
+    end_pos = position_of.get(str(clip.get("end_segment_id") or ""))
+    if start_pos is None or end_pos is None or start_pos > end_pos:
+        return None
+    positions = list(range(start_pos, end_pos + 1))
+    position_set = set(positions)
+    hook_pos = _anchor_positions(entries, positions, _hook_text_for_unit(unit, analysis))
+    question_pos = _anchor_positions(
+        entries, positions, str(unit.get("patient_question") or ""))
+    ending_pos = _anchor_positions(
+        entries, positions, str(unit.get("ending_quote") or ""))
+    narration_pos = sorted({position_of[str(sid)] for sid in
+                            (unit.get("doctor_core_segment_ids") or [])
+                            if str(sid) in position_of} & position_set)
+    if not hook_pos or not question_pos or not ending_pos or not narration_pos:
+        return None
+    ordered: list[int] = []
+    seen: set[int] = set()
+    for pos in hook_pos + question_pos + narration_pos + ending_pos:
+        if pos not in seen:
+            seen.add(pos)
+            ordered.append(pos)
+
+    def _duration(seq: list[int]) -> int:
+        return sum(int(entries[p]["end_ms"]) - int(entries[p]["start_ms"]) for p in seq)
+
+    total_ms = _duration(ordered)
+    if total_ms < ASSEMBLY_MIN_MS:
+        return None
+    # 超长：从叙述段尾部收（钩子/接题/收口锚点不动）
+    narration_tail = [p for p in ordered if p in set(narration_pos)]
+    while total_ms > ASSEMBLY_MAX_MS and len(narration_tail) > 1:
+        drop_pos = narration_tail[-1]
+        narration_tail = narration_tail[:-1]
+        ordered.remove(drop_pos)
+        seen.discard(drop_pos)
+        total_ms = _duration(ordered)
+    if total_ms > ASSEMBLY_MAX_MS:
+        return None
+    runs: list[list[int]] = [[ordered[0]]]
+    for pos in ordered[1:]:
+        if pos == runs[-1][-1] + 1:
+            runs[-1].append(pos)
+        else:
+            runs.append([pos])
+    sub_ranges = [{
+        "start_segment_id": str(entries[run[0]]["segment_id"]),
+        "end_segment_id": str(entries[run[-1]]["segment_id"]),
+        "start_ms": int(entries[run[0]]["start_ms"]),
+        "end_ms": int(entries[run[-1]]["end_ms"]),
+    } for run in runs]
+    return {
+        "mode": "four_step_assembly",
+        "sub_ranges": sub_ranges,
+        "dropped_segment_ids": [str(entries[p]["segment_id"])
+                                for p in positions if p not in seen],
+        "anchors": {
+            "hook": [str(entries[p]["segment_id"]) for p in hook_pos],
+            "question": [str(entries[p]["segment_id"]) for p in question_pos],
+            "narration": [str(entries[p]["segment_id"]) for p in narration_pos],
+            "ending": [str(entries[p]["segment_id"]) for p in ending_pos],
+        },
+        "total_ms": total_ms,
+    }
+
 # 钩子前置规则（2026-11-16 用户拍板）：钩子句必须落在切片开头几秒内；
 # 只是把钩子这句话放到开头，不要求切片起点改到钩子句位置（自然切点不动）。
 HOOK_FRONT_SECONDS = max(2, min(15, int(os.getenv("HOOK_FRONT_SECONDS", "8"))))
@@ -959,7 +1088,8 @@ def build_current_plan_provenance(corrected_segments: list[dict[str, Any]],
                  (_score_clip, _normalize_clips, _fallback_plan, _clip_id,
                   _global_summary, _analysis_context_lines, _slice_plan_prompt,
                   _parse_clock_ms, _clock_of, _snap_to_positions,
-                  _assemble_slice_plan, _enforce_full_coverage)]),
+                  _assemble_slice_plan, _enforce_full_coverage,
+                  assemble_four_step, _anchor_positions, _hook_text_for_unit)]),
              "helper_source_sha256": hashlib.sha256(Path(hp.__file__).read_bytes()).hexdigest(),
              # 医学闸门（2026-11-10 第三库）：身份含快照指纹与阈值——库/阈值变了旧计划缓存失效；
              # 闸门与检索模块源码指纹一并进 provenance。
@@ -967,6 +1097,11 @@ def build_current_plan_provenance(corrected_segments: list[dict[str, Any]],
              "medical_gate_discard_below": med_gate.DISCARD_BELOW,
              "medical_gate_helper_sha256": hashlib.sha256(
                  Path(med_gate.__file__).read_bytes()).hexdigest(),
+             # 四点装配（2026-11-16，规划层组合决定）：开关/版本/时长闸门进指纹。
+             "four_step_assembly": {
+                 "enabled": four_step_assembly_enabled(),
+                 "version": FOUR_STEP_ASSEMBLY_VERSION,
+                 "min_ms": ASSEMBLY_MIN_MS, "max_ms": ASSEMBLY_MAX_MS},
              "clip_purify": purify_id,
              "clip_purify_helper_sha256": hashlib.sha256(
                  Path(clip_purify.__file__).read_bytes()).hexdigest(),
@@ -1121,36 +1256,61 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
         plan_warnings.append(
             f"medical_gate: 硬剔除 {len(moved_discarded)} 条非医学切片"
             f"（闸门模式={gate_profile.get('mode')}）")
+    # 四点装配（2026-11-16，规划层组合决定）：同一主题块内钩子→接题→叙述→收口
+    # 锚点齐全时按四点顺序重排 sub_ranges（输出第一句即钩子原话）；缺件回退
+    # 连续净化；钩子与叙述都缺（仅模型分析）宁缺毋滥放弃成片。
+    assembled_count = 0
+    assembly_dropped: list[dict[str, Any]] = []
+    if four_step_assembly_enabled() and clips:
+        assembly_pos = {e["segment_id"]: pos for pos, e in enumerate(index.entries)}
+        llm_analysis = str(analysis.get("plan_source") or "") == "llm"
+        for clip in list(clips):
+            unit = clip_purify.unit_for_clip(clip, analysis, assembly_pos)
+            assembled = assemble_four_step(clip, index.entries, assembly_pos, unit, analysis)
+            if assembled is not None:
+                clip["sub_ranges"] = assembled["sub_ranges"]
+                clip["purify"] = {
+                    "mode": "four_step_assembly", "style": clip_purify.STYLE,
+                    "sub_range_count": len(assembled["sub_ranges"]),
+                    "dropped_segment_ids": assembled["dropped_segment_ids"],
+                    "doctor_ratio": None, "question_kept": None,
+                    "evidence_topics": [], "fallback_reason": None,
+                    "assembly": {"version": FOUR_STEP_ASSEMBLY_VERSION,
+                                 "anchors": assembled["anchors"],
+                                 "total_ms": assembled["total_ms"]},
+                }
+                assembled_count += 1
+                continue
+            if unit is not None and llm_analysis \
+                    and not _hook_text_for_unit(unit, analysis) \
+                    and not unit.get("doctor_core_segment_ids"):
+                assembly_dropped.append(clip)
+        for clip in assembly_dropped:
+            clips.remove(clip)
+            start_pos = assembly_pos.get(str(clip.get("start_segment_id") or ""))
+            end_pos = assembly_pos.get(str(clip.get("end_segment_id") or ""))
+            ids = [index.entries[p]["segment_id"]
+                   for p in range(start_pos, end_pos + 1)
+                   if start_pos is not None and end_pos is not None and start_pos <= end_pos]
+            discarded.append({
+                "segment_ids": ids, "type": "结构不完整",
+                "reason": "四点装配严格模式：主题块缺钩子与叙述锚点，宁缺毋滥放弃成片",
+            })
+            notes.append(f"切片放弃（四点装配宁缺毋滥）：{str(clip.get('topic') or '')[:30]}")
+    if assembled_count:
+        plan_warnings.insert(0, f"四点装配: {assembled_count} 条切片按钩子→接题→叙述→收口重排")
+    if assembly_dropped:
+        plan_warnings.append(
+            f"four_step_assembly: {len(assembly_dropped)} 条切片因锚点不齐放弃成片")
     # 净化重组（2026-11-11 问答化 P1/P2）：删除切片内纯应答碎片与患者插话
     # （qa 保护提问钩子；mono 全删患者话语），产出有序子区间；任何失败整片回退。
-    # 四点装配（2026-11-16）：锚点齐全的主题块按 钩子→接题→叙述→收口 重排
-    # sub_ranges；缺件回退连续净化；钩子与叙述都缺的块宁缺毋滥放弃成片。
+    # 已四点装配的切片由净化跳过（分层契约：净化只删不改、不调语序）。
     purify_summary = clip_purify.purify_clips(clips, corrected_segments, speaker_labels,
                                               analysis=analysis, gate_profile=gate_profile)
     purify_warns = [n for n in (purify_summary.get("notes") or [])]
     plan_warnings.extend(purify_warns[:4])
     if purify_summary.get("purified"):
         plan_warnings.insert(0, f"clip_purify: {purify_summary['purified']} 条切片已净化重组（问答化）")
-    if purify_summary.get("assembled"):
-        plan_warnings.insert(0, f"四点装配: {purify_summary['assembled']} 条切片按钩子→接题→叙述→收口重排")
-    assembly_pos = {e["segment_id"]: pos for pos, e in enumerate(index.entries)}
-    for clip in [c for c in clips if (c.get("purify") or {}).get("discard")]:
-        clips.remove(clip)
-        start_pos = assembly_pos.get(str(clip.get("start_segment_id") or ""))
-        end_pos = assembly_pos.get(str(clip.get("end_segment_id") or ""))
-        ids = [index.entries[p]["segment_id"]
-               for p in range(start_pos, end_pos + 1)
-               if start_pos is not None and end_pos is not None and start_pos <= end_pos]
-        discarded.append({
-            "segment_ids": ids,
-            "type": "结构不完整",
-            "reason": str((clip.get("purify") or {}).get("fallback_reason") or
-                          "四点装配严格模式：主题块锚点不齐，宁缺毋滥放弃成片"),
-        })
-        notes.append(f"切片放弃（四点装配宁缺毋滥）：{str(clip.get('topic') or '')[:30]}")
-    if purify_summary.get("discarded_clips"):
-        plan_warnings.append(
-            f"four_step_assembly: {purify_summary['discarded_clips']} 条切片因锚点不齐放弃成片")
     # 钩子前置规则（2026-11-16）：钩子句必须逐字出自切片窗口，且落在切片
     # 开头 HOOK_FRONT_SECONDS 秒内；只是把钩子放在开头，不要求切片起点
     # 改到钩子句位置（自然切点不动）。说话人未被本层可靠标注，因此这里
@@ -1283,6 +1443,10 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
                                                        len(moved_discarded)),
                   knowledge_context_summary=kc.summary(analysis.get("knowledge_context") or {}),
                   hook_front_window_ms=HOOK_FRONT_WINDOW_MS,
+                  four_step_assembly={"enabled": four_step_assembly_enabled(),
+                                      "version": FOUR_STEP_ASSEMBLY_VERSION,
+                                      "assembled": assembled_count,
+                                      "discarded_clips": len(assembly_dropped)},
                   purify=purify_summary,
                   callback_calls=len(actual_calls), callback_budget=2)
     # 医学背景注入审计（2026-11-13，默认 off 时无此字段）：本次规划注入了哪些

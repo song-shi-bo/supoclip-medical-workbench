@@ -278,7 +278,7 @@ def test_unit_for_clip_maps_by_segment_overlap() -> None:
     entries, position_of = _dialogue_entries()
     analysis = {"topic_units": [_dialogue_unit(), {"title": "无关块",
                                                    "segment_ids": ["seg_9999"]}]}
-    unit = pu._unit_for_clip({"start_segment_id": "seg_0000", "end_segment_id": "seg_0005"},
+    unit = pu.unit_for_clip({"start_segment_id": "seg_0000", "end_segment_id": "seg_0005"},
                              analysis, position_of)
     assert unit is not None and unit["title"] == "基因检测问答"
 
