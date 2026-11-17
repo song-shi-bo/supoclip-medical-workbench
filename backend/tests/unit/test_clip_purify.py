@@ -307,7 +307,8 @@ def test_merge_llm_result_validates_question_and_core_ids() -> None:
     topics: list = []
     intervals: list = []
     keywords: list = []
-    ca._merge_llm_result(result, index, notes, quotes, topics, intervals, keywords)
+    ca._merge_llm_result(result, index, notes, quotes, topics, intervals, keywords, hooks := [])
+    assert hooks == []
     unit = topics[0]
     assert unit["patient_question"] == "做完手术还需要做基因检测吗？"
     assert unit["doctor_core_segment_ids"] == ["seg_0001"]
@@ -325,7 +326,7 @@ def test_merge_llm_result_clears_non_verbatim_question() -> None:
     })])
     notes: list[str] = []
     topics: list = []
-    ca._merge_llm_result(result, index, notes, [], topics, [], [])
+    ca._merge_llm_result(result, index, notes, [], topics, [], [], [])
     assert topics[0]["patient_question"] == ""
     assert any("患者提问" in n for n in notes)
     assert topics[0]["doctor_core_segment_ids"] == ["seg_0001"]

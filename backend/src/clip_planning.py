@@ -1123,12 +1123,34 @@ def plan_clips(corrected_segments: list[dict[str, Any]], analysis: dict[str, Any
             f"（闸门模式={gate_profile.get('mode')}）")
     # 净化重组（2026-11-11 问答化 P1/P2）：删除切片内纯应答碎片与患者插话
     # （qa 保护提问钩子；mono 全删患者话语），产出有序子区间；任何失败整片回退。
+    # 四点装配（2026-11-16）：锚点齐全的主题块按 钩子→接题→叙述→收口 重排
+    # sub_ranges；缺件回退连续净化；钩子与叙述都缺的块宁缺毋滥放弃成片。
     purify_summary = clip_purify.purify_clips(clips, corrected_segments, speaker_labels,
                                               analysis=analysis, gate_profile=gate_profile)
     purify_warns = [n for n in (purify_summary.get("notes") or [])]
     plan_warnings.extend(purify_warns[:4])
     if purify_summary.get("purified"):
         plan_warnings.insert(0, f"clip_purify: {purify_summary['purified']} 条切片已净化重组（问答化）")
+    if purify_summary.get("assembled"):
+        plan_warnings.insert(0, f"四点装配: {purify_summary['assembled']} 条切片按钩子→接题→叙述→收口重排")
+    assembly_pos = {e["segment_id"]: pos for pos, e in enumerate(index.entries)}
+    for clip in [c for c in clips if (c.get("purify") or {}).get("discard")]:
+        clips.remove(clip)
+        start_pos = assembly_pos.get(str(clip.get("start_segment_id") or ""))
+        end_pos = assembly_pos.get(str(clip.get("end_segment_id") or ""))
+        ids = [index.entries[p]["segment_id"]
+               for p in range(start_pos, end_pos + 1)
+               if start_pos is not None and end_pos is not None and start_pos <= end_pos]
+        discarded.append({
+            "segment_ids": ids,
+            "type": "结构不完整",
+            "reason": str((clip.get("purify") or {}).get("fallback_reason") or
+                          "四点装配严格模式：主题块锚点不齐，宁缺毋滥放弃成片"),
+        })
+        notes.append(f"切片放弃（四点装配宁缺毋滥）：{str(clip.get('topic') or '')[:30]}")
+    if purify_summary.get("discarded_clips"):
+        plan_warnings.append(
+            f"four_step_assembly: {purify_summary['discarded_clips']} 条切片因锚点不齐放弃成片")
     # 钩子前置规则（2026-11-16）：钩子句必须逐字出自切片窗口，且落在切片
     # 开头 HOOK_FRONT_SECONDS 秒内；只是把钩子放在开头，不要求切片起点
     # 改到钩子句位置（自然切点不动）。说话人未被本层可靠标注，因此这里
