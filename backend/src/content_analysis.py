@@ -608,6 +608,11 @@ def _analyze_content(corrected_segments: list[dict[str, Any]], *,
             usage_records.append(llm_budget.extract_usage_details(None))
 
     duration_ms = int((time.monotonic() - started) * 1000)
+    if llm_error is None and not (keywords or quotes or topics or intervals or hooks):
+        # 模型调用"成功"但四产物+钩子全空（2026-11-17 真实事故：网关返回结构
+        # 不匹配被 pydantic 静默吞成全默认值）→ 视为失败走启发式回退，不产空分析。
+        llm_error = "模型返回全空输出（结构不匹配或被截断）"
+        notes.append(llm_error)
     if llm_error is not None:
         fallback = _heuristic_fallback(index, llm_error, llm_requested=True, notes=notes,
                                        transcript_version=transcript_version,

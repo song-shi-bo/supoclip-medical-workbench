@@ -132,6 +132,18 @@ def test_model_failure_automatic_fallback_without_blocking(monkeypatch: pytest.M
         assert 0 <= interval["start_ms"] < interval["end_ms"] <= 25000
 
 
+def test_empty_model_output_falls_back_to_heuristic(monkeypatch: pytest.MonkeyPatch):
+    """真实事故回归（2026-11-17）：模型调用成功但返回全空 → 视为失败走启发式，不产空分析。"""
+    monkeypatch.setattr(ca, "_model_ready", lambda: (True, "openai:test-model", ""))
+    monkeypatch.setattr(ca, "_run_analysis_agent",
+                        lambda model, prompt: ca._AnalysisOut())
+    record = ca.analyze_content(_segments(), transcript_version=2)
+    assert record["plan_source"] == "heuristic_fallback"
+    assert "模型返回全空输出" in (record.get("llm_error") or "")
+    assert record["topic_units"], "启发式回退必须产出主题块"
+    assert record["llm_calls"] == 1
+
+
 def test_model_not_configured_falls_back_without_request(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(ca, "_model_ready", lambda: (False, "", "LLM 未配置"))
     record = ca.analyze_content(_segments(), transcript_version=1)

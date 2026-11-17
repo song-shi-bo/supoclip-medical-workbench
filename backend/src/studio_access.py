@@ -563,7 +563,7 @@ def _is_worker_request(method: str, path: str) -> bool:
     if method == "GET" and re.fullmatch(r"/api/internal/jobs/[A-Za-z0-9_-]+/artifacts", path):
         return True
     return method == "POST" and (path in {"/api/internal/heartbeat", "/api/internal/jobs/claim"}
-                                 or bool(re.fullmatch(r"/api/internal/jobs/[A-Za-z0-9_-]+/(state|artifacts|activate)", path)))
+                                 or bool(re.fullmatch(r"/api/internal/jobs/[A-Za-z0-9_-]+/(state|artifacts|activate|knowledge-context)", path)))
 
 
 _ba_pool = None
