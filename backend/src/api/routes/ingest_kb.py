@@ -327,12 +327,12 @@ async def kb_search(request: Request, q: str = "", tag: str = "", status: str = 
 @router.get("/titles/search")
 async def titles_search(request: Request, q: str = "",
                         hook_tag: str = "", topic_tag: str = "", source: str = "",
-                        intent: str = "",
+                        intent: str = "", audience: str = "",
                         limit: int = Query(20, ge=1, le=100),
                         db: AsyncSession = Depends(get_db)):
-    """标题库双标签检索：标签1 hook_tag（热点型/流量型…），标签2 topic_tag（心梗脑梗…，逗号分隔取交集）；
-    intent=内容意图（患者决策链：症状识别/就医决策/方案解释/误区辟谣…，存 content_tags）；
-    source=hot_topic|generated 过滤来源（热点标题 / 剪辑成片标题）。"""
+    """标题库多维度检索：hook_tag（六类风格）、topic_tag（病种，逗号取交集）、
+    intent（内容意图-患者决策链）、audience（受众人群）均存 content_tags/列内；
+    source=hot_topic|generated 过滤来源。"""
     _check(request, "KB_READ_TOKEN")
     like = f"%{q.strip()}%"
     topic_list = [t.strip() for t in topic_tag.split(",") if t.strip()]
@@ -350,10 +350,14 @@ async def titles_search(request: Request, q: str = "",
                SELECT 1 FROM content_tags t
                WHERE t.object_type = 'video_title' AND t.object_id = v.id
                  AND t.dimension = 'intent' AND t.tag = :intent))
+          AND (:audience = '' OR EXISTS (
+               SELECT 1 FROM content_tags t
+               WHERE t.object_type = 'video_title' AND t.object_id = v.id
+                 AND t.dimension = 'audience' AND t.tag = :audience))
         ORDER BY v.heat_score DESC, v.created_at DESC LIMIT :limit
     """), {"hook_tag": hook_tag.strip(), "tags": topic_list, "source": source.strip(),
-           "intent": intent.strip(), "q": q.strip(), "like": like,
-           "limit": limit})).fetchall()
+           "intent": intent.strip(), "audience": audience.strip(),
+           "q": q.strip(), "like": like, "limit": limit})).fetchall()
     return {"count": len(rows), "titles": [dict(r._mapping) for r in rows]}
 
 
