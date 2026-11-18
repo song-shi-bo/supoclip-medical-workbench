@@ -622,8 +622,10 @@ class StudioAuthenticationMiddleware:
         # （值在 backend/.env.kb，路由内校验）；confirm 仍在会话保护下。
         # 2026-11-10 第三库：/api/v1/medical-kb/ingest|search 同款独立 token；
         # entries/{id}/review 走 Studio 登录态，不在豁免清单。
+        # 2026-11-18 标题库/跨库标签检索：同款独立 token（路由内校验 KB_READ_TOKEN）。
         if (path0.startswith("/api/v1/ingest/") or path0 == "/api/v1/kb/search"
-                or path0 in {"/api/v1/medical-kb/ingest", "/api/v1/medical-kb/search"}):
+                or path0 in {"/api/v1/medical-kb/ingest", "/api/v1/medical-kb/search",
+                             "/api/v1/titles/search", "/api/v1/tags/browse"}):
             return await self.app(scope, receive, send)
         request = Request(scope, receive=receive)
         path = scope.get("path", "")

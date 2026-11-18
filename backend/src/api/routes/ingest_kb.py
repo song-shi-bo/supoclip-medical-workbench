@@ -327,25 +327,49 @@ async def kb_search(request: Request, q: str = "", tag: str = "", status: str = 
 @router.get("/titles/search")
 async def titles_search(request: Request, q: str = "",
                         hook_tag: str = "", topic_tag: str = "", source: str = "",
+                        intent: str = "",
                         limit: int = Query(20, ge=1, le=100),
                         db: AsyncSession = Depends(get_db)):
     """标题库双标签检索：标签1 hook_tag（热点型/流量型…），标签2 topic_tag（心梗脑梗…，逗号分隔取交集）；
+    intent=内容意图（患者决策链：症状识别/就医决策/方案解释/误区辟谣…，存 content_tags）；
     source=hot_topic|generated 过滤来源（热点标题 / 剪辑成片标题）。"""
     _check(request, "KB_READ_TOKEN")
     like = f"%{q.strip()}%"
     topic_list = [t.strip() for t in topic_tag.split(",") if t.strip()]
     rows = (await db.execute(text("""
-        SELECT id, title, hook_tag, topic_tags, heat_score, source, project_id, created_at
-        FROM video_titles
-        WHERE status = 'active'
-          AND (:hook_tag = '' OR hook_tag = :hook_tag)
-          AND (cardinality(CAST(:tags AS text[])) = 0 OR topic_tags @> CAST(:tags AS text[]))
-          AND (:source = '' OR source = :source)
-          AND (:q = '' OR title ILIKE :like)
-        ORDER BY heat_score DESC, created_at DESC LIMIT :limit
+        SELECT v.id, v.title, v.hook_tag, v.topic_tags, v.heat_score, v.source,
+               v.project_id, v.created_at
+        FROM video_titles v
+        WHERE v.status = 'active'
+          AND (:hook_tag = '' OR v.hook_tag = :hook_tag)
+          AND (cardinality(CAST(:tags AS text[])) = 0
+               OR v.topic_tags @> CAST(:tags AS text[]))
+          AND (:source = '' OR v.source = :source)
+          AND (:q = '' OR v.title ILIKE :like)
+          AND (:intent = '' OR EXISTS (
+               SELECT 1 FROM content_tags t
+               WHERE t.object_type = 'video_title' AND t.object_id = v.id
+                 AND t.dimension = 'intent' AND t.tag = :intent))
+        ORDER BY v.heat_score DESC, v.created_at DESC LIMIT :limit
     """), {"hook_tag": hook_tag.strip(), "tags": topic_list, "source": source.strip(),
-           "q": q.strip(), "like": like, "limit": limit})).fetchall()
+           "intent": intent.strip(), "q": q.strip(), "like": like,
+           "limit": limit})).fetchall()
     return {"count": len(rows), "titles": [dict(r._mapping) for r in rows]}
+
+
+@router.get("/tags/browse")
+async def tags_browse(request: Request, dimension: str, tag: str,
+                      object_type: str = "",
+                      db: AsyncSession = Depends(get_db)):
+    """跨库标签检索（content_tags）：按维度+标签列出热点库/文稿库/标题库命中对象。
+    例：dimension=intent&tag=症状识别 → 三库里所有症状识别类内容。"""
+    _check(request, "KB_READ_TOKEN")
+    from ... import content_tags
+    items = await content_tags.browse_by_tag(
+        db, dimension=dimension.strip(), tag=tag.strip(),
+        object_type=object_type.strip())
+    return {"dimension": dimension.strip(), "tag": tag.strip(),
+            "count": len(items), "items": items}
 
 
 @router.post("/kb/scripts/{script_id}/confirm")
