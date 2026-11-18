@@ -30,6 +30,16 @@ def test_build_rows_assigns_both_tags_and_defaults_empty_topic_tags():
     assert len(payloads) == 2
 
 
+def test_build_rows_falls_back_to_own_disease_tags_for_new_batches():
+    """门诊素材批次（无钩子类型标签）：hook_tag 留空，病种回退自带标签。"""
+    rows = [_Row(id="id-4", title="肺结节随访门诊素材",
+                 tags=["门诊素材", "肺结节"], heat_score=99)]
+    payloads = tl.build_rows(rows)
+    assert payloads[0]["hook_tag"] == ""
+    assert payloads[0]["topic_tags"] == ["肺结节"]
+    assert payloads[0]["source"] == "hot_topic"
+
+
 def test_title_hash_is_stable_and_content_sensitive():
     first = tl.title_hash("同一个标题", "热点型")
     assert first == tl.title_hash("同一个标题", "热点型")

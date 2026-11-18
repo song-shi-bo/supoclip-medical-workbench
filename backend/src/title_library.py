@@ -189,8 +189,14 @@ def auto_topic_tags(title: str, vocab: Iterable[str] | None = None) -> list[str]
     return [tag for _, tag in scored[:DISEASE_MAX_TAGS]]
 
 
-def build_rows(rows: Iterable[Any], mapping: dict[str, list[str]]) -> list[dict[str, Any]]:
-    """hot_topics 行 → video_titles 行；缺标注的标题保持空病种标签。"""
+def build_rows(rows: Iterable[Any], mapping: dict[str, list[str]] | None = None) -> list[dict[str, Any]]:
+    """hot_topics 行 → video_titles 行。
+
+    标签1（hook_tag）取 tags 中的六类钩子类型（无则留空待标）；
+    标签2（topic_tags）优先人工标注映射，缺省回退热点自带标签
+    （剔除钩子类型与批次标记，如「门诊素材」）。
+    """
+    mapping = mapping if mapping is not None else {}
     out: list[dict[str, Any]] = []
     for row in rows:
         data = row._mapping if hasattr(row, "_mapping") else row
@@ -200,11 +206,15 @@ def build_rows(rows: Iterable[Any], mapping: dict[str, list[str]]) -> list[dict[
         tags = [str(tag) for tag in (data.get("tags") or [])]
         hook_tag = tags[0] if tags and tags[0] in HOOK_TAGS else ""
         entry_id = str(data.get("id") or "")
+        topic_tags = list(mapping.get(entry_id) or [])
+        if not topic_tags:
+            topic_tags = [t for t in tags if t and t not in HOOK_TAGS
+                          and t != "门诊素材"]
         out.append({
             "id": entry_id,
             "title": title,
             "hook_tag": hook_tag,
-            "topic_tags": list(mapping.get(entry_id, [])),
+            "topic_tags": topic_tags,
             "heat_score": int(data.get("heat_score") or 0),
             "content_hash": title_hash(title, hook_tag),
             "source": "hot_topic",
@@ -244,12 +254,15 @@ def build_generated_rows(cards: Iterable[dict[str, Any]],
 
 
 async def sync_title_library(db: AsyncSession, *, mapping_path: Path | None = None) -> dict[str, int]:
-    """全量幂等同步钩子类型热点标题到标题库；返回插入/更新计数。"""
+    """全量幂等同步非 disabled 热点标题到标题库；返回插入/更新计数。
+
+    2026-11-18 扩大范围：不再限于六类钩子标签——病种标签批次（如门诊素材）
+    同样入库，钩子类型留空待标；病种标签回退用热点自带标签。
+    """
     mapping = load_topic_tags(mapping_path)
     rows = (await db.execute(text(
         "SELECT id, title, tags, heat_score FROM hot_topics "
-        "WHERE status <> 'disabled' AND tags && CAST(:tags AS text[])"),
-        {"tags": list(HOOK_TAGS)})).fetchall()
+        "WHERE status <> 'disabled'"))).fetchall()
     payloads = build_rows(rows, mapping)
     inserted = updated = 0
     for values in payloads:
