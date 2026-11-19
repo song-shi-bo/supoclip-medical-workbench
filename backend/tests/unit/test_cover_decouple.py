@@ -101,14 +101,18 @@ def test_auto_cover_default_on_and_emergency_off(monkeypatch):
 
 
 def test_cover_asset_missing_gate(monkeypatch, tmp_path):
+    """缺失判据三态：缺封面=True、有封面=False、紧急停机不标记（避免全量误标）。
+
+    阶段2 P3 软处理（用户拍板 2026-11-18）：判据只用于**标记** cover_missing
+    （照常发布），不再拦截发布——发布循环把标记写进条目 + 聚合 warning。"""
     monkeypatch.setenv("STUDIO_AUTO_COVER", "1")
     empty = tmp_path / "nocover"
     empty.mkdir()
-    assert w._cover_asset_missing(empty) is True      # 缺封面 → 拦
+    assert w._cover_asset_missing(empty) is True      # 缺封面 → 标记
     (empty / "cover.jpg").write_bytes(b"x")
-    assert w._cover_asset_missing(empty) is False     # 有封面 → 放行
+    assert w._cover_asset_missing(empty) is False     # 有封面 → 不标记
     monkeypatch.setenv("STUDIO_AUTO_COVER", "0")
-    assert w._cover_asset_missing(empty) is False     # 停机模式不拦（避免全量封死）
+    assert w._cover_asset_missing(empty) is False     # 停机模式不标记
 
 
 # ---------------------------------------------------------------------------
@@ -187,11 +191,12 @@ def test_stage_restart_recovery_off_then_on(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 发布门禁（helper 层）：封面资产缺失 → 拦截（聚合 warning 由调用方写）
+# 发布软标记（helper 层）：封面资产缺失 → cover_missing 标记（不拦截发布）。
+# 发布循环本体在 render 大函数内，标记行为由 helper 判据 + 条目拼装保证。
 # ---------------------------------------------------------------------------
 
 
-def test_publish_gate_blocks_missing_cover_only(tmp_path, monkeypatch):
+def test_publish_soft_marker_detector_only(tmp_path, monkeypatch):
     monkeypatch.setenv("STUDIO_AUTO_COVER", "1")
     base = tmp_path / "clips" / "c1"
     base.mkdir(parents=True)

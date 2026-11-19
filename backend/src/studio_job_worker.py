@@ -1204,10 +1204,12 @@ def _cover_intro_enabled() -> bool:
 
 
 def _cover_asset_missing(base: Path) -> bool:
-    """阶段2 P3 发布门禁判据：封面资产缺失（cover.jpg 不在）→ 禁止发布。
+    """阶段2 P3 封面资产缺失判据（cover.jpg 不在）→ 发布条目标记 cover_missing。
 
-    仅在封面资产生产开启时执法（``STUDIO_AUTO_COVER=0`` 紧急停机模式下整条
-    封面链路停摆，此时不拦截发布——停机开关优先于资产契约，避免全量封死）。
+    **软处理（用户拍板 2026-11-18：降级为标记而非拦截）**：封面缺失的切片
+    照常发布，条目带 ``cover_missing: true`` + 聚合 warning 留痕，工作台可见
+    后人工重制封面补齐再投递。仅封面资产生产开启时判（``STUDIO_AUTO_COVER=0``
+    紧急停机时整条封面链路停摆，不标记——避免全量误标）。
     """
     return _auto_cover_enabled() and not (base / "cover.jpg").is_file()
 
@@ -1222,8 +1224,9 @@ def _run_clip_cover_stage(job: dict, job_id: str, plan_record: dict, transcript:
     * 文案底料（2026-11-09）：该切片精修稿优先（source=llm 才消费，与烧录契约
       一致），缺失如实回退纠错转写；主题块（content_analysis topic_units 按切片
       区间重叠选取）注入提示词并驱动主题校验/受控重生成（cover 模块内实现）；
-    * 失败：记 warning；发布门禁在发布循环按「封面资产缺失禁止发布」拦截
-      （阶段2 P3 契约，:func:`_cover_asset_missing`）；
+    * 失败：记 warning；发布循环按软处理标记（用户拍板 2026-11-18）：封面资产
+      缺失的切片**照常发布**，条目带 ``cover_missing`` + 警告留痕，工作台可见
+      后人工补制封面再投递（:func:`_cover_asset_missing`）；
     * 同 clip 已有封面且产物不完整/需要重制时，新工具内部 revision+1、旧封面
       转 ``.purge-trash`` 回收站。
     返回 ``{clip_id: {sha256, bytes, topic, hook, cover_revision, copy_source}}``
@@ -1419,10 +1422,10 @@ def _run_clip_render_stage(job: dict, job_id: str, transcript: dict,
     )
 
     # 封面固化（2026-10-18）：每条切片发布前自动生成 realframe_v2 封面资产。
-    # 阶段2 P3（2026-11-18）：封面资产必产（契约：审核通过成片必须有独立封面
-    # 资产，缺失则发布门禁拦截）；0.8s 片头烧入由 COVER_INTRO_MODE 决定（默认
-    # off，不再默认烧进视频）。
-    # STUDIO_AUTO_COVER=0 仅作紧急停机（资产都不产，此时发布门禁不拦封面）。
+    # 阶段2 P3（2026-11-18）：封面资产必产；0.8s 片头烧入由 COVER_INTRO_MODE
+    # 决定（默认 off，不再默认烧进视频）。
+    # 封面缺失 = 软处理（用户拍板）：照常发布 + cover_missing 标记 + 警告留痕。
+    # STUDIO_AUTO_COVER=0 仅作紧急停机（资产都不产，此时不做缺失标记）。
     cover_results: dict[str, dict] = {}
     if _auto_cover_enabled():
         _state(job_id, "rendering", "生成固化封面资产（realframe_v2：真实帧+文字叠加）", 0.85)
@@ -1430,7 +1433,7 @@ def _run_clip_render_stage(job: dict, job_id: str, transcript: dict,
                                               aggregate, Path(source), out_root)
     else:
         _log(f"job {job_id}（auto_edit/render）STUDIO_AUTO_COVER=0 紧急停机：跳过封面资产生产"
-             f"（此时发布门禁不拦封面缺失）")
+             f"（此时不做封面缺失标记）")
 
     # 每条成片/警告登记 artifact（本地模式由后端回源文件，前端直接可播/可下载）
     published_clips=[]
@@ -1443,14 +1446,14 @@ def _run_clip_render_stage(job: dict, job_id: str, transcript: dict,
             # 发布。正常流程已不可能产出（render 层硬失败），此处为纵深防御。
             continue
         base = out_root / "clips" / clip_id
-        if _cover_asset_missing(base):
-            # 阶段2 P3 契约（2026-11-18）：审核通过成片必须有独立封面资产——
-            # 封面缺失禁止发布（与 sidecar_only 同款纵深防御；正常流程封面
-            # 阶段已产出，走到这里 = 封面生成失败或资产被删，如实拦截）。
+        cover_missing = _cover_asset_missing(base)
+        if cover_missing:
+            # 阶段2 P3 软处理（用户拍板 2026-11-18：降级为标记而非拦截）：
+            # 封面资产缺失照常发布——条目带 cover_missing 标记 + 警告留痕，
+            # 工作台可见（卡片无封面 → 「重制封面」补齐）后再投递。
             aggregate.setdefault("warnings", []).append(
-                f"封面资产缺失，按阶段2契约禁止发布（{clip_id}，可修复后重跑封面阶段）")
-            _log(f"job {job_id}（auto_edit/render）{clip_id} 封面资产缺失：禁止发布")
-            continue
+                f"封面资产缺失（{clip_id}）：照常发布并标记 cover_missing，可在工作台重制封面补齐")
+            _log(f"job {job_id}（auto_edit/render）{clip_id} 封面资产缺失：软处理照常发布")
         kinds = [("clip_final", "clip_final.mp4"), ("clip_warnings", "warnings.json"), ("srt", "subtitles.srt")]
         kinds += _cover_artifact_kinds(base)
         for kind, filename in kinds:
@@ -1459,13 +1462,17 @@ def _run_clip_render_stage(job: dict, job_id: str, transcript: dict,
                 continue
             reused=_existing_published(job_id,kind,clip_id,path)
             if reused is not None:
-                if kind=="clip_final": published_clips.append(reused)
+                if kind=="clip_final":
+                    published_clips.append({**reused,
+                                            **({"cover_missing": True} if cover_missing else {})})
                 continue
             stored = _guarded_upload_file(path, f"studio-artifacts/{_run_id(job_id)}/{clip_id}/{filename}")
             _http("POST", f"{BACKEND_INTERNAL_URL}/internal/jobs/{job_id}/artifacts",
                   {"kind": kind, "clip_id": clip_id, "object_key": stored["object_key"],
                    "size_bytes": stored["size"], "sha256": _sha256_file(path)})
-            if kind=="clip_final": published_clips.append({"clip_id":clip_id,"object_key":stored["object_key"]})
+            if kind=="clip_final":
+                published_clips.append({"clip_id":clip_id,"object_key":stored["object_key"],
+                                        **({"cover_missing": True} if cover_missing else {})})
 
     if published_clips:
         _fenced_activation(job,job_id,plan_record,published_clips)
