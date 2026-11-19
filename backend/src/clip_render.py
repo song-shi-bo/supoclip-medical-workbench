@@ -48,6 +48,7 @@ from . import subtitle_cueing as _subtitle_cueing
 from . import subtitle_qc as _subtitle_qc
 from . import subtitle_readability as _subtitle_readability
 from . import subtitle_emphasis as _subtitle_emphasis
+from . import reframe as _reframe
 _FF_FALLBACK_DIRS = ("/domain/dsh-home/bin", "/usr/local/bin", "/usr/bin")
 
 # 资源/性能参数（刻意保守：可解码可播放优先，不做画质竞赛）
@@ -272,6 +273,12 @@ def _render_fingerprint(clip, source, corrected_segments, transcript_ref, rule_s
                "rule": rule_snapshot_id, "video_args": _VIDEO_ARGS, "audio_args": _AUDIO_ARGS,
                "sub_style": {"emphasis": _subtitle_emphasis.emphasis_mode(),
                              "readability": _subtitle_readability.enabled()}}
+    # 重构图（阶段2 P4）：仅 auto 模式加指纹键——off（默认）时 payload 与历史
+    # 逐字节一致，不失效任何存量缓存；开 auto 后同一指纹内轨迹确定（源片身份
+    # 已在 identity），分析结果漂移自动触发重渲。
+    if _reframe.reframe_mode() != "off":
+        payload["reframe"] = {"mode": _reframe.reframe_mode(),
+                              "gesture": _reframe.gesture_enabled()}
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -435,6 +442,28 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
 
     render_warnings: list[str] = list(subtitle_warnings)
     video_args = list(_VIDEO_ARGS)
+    # 人脸/主体重构图（阶段2 P4 2026-11-18）：REFRAME_MODE=auto 时渲染前分析
+    # 源片切片窗口（3fps@480w 单遍解码 + MediaPipe 单脸跟踪 + Pose 手势），
+    # 非直通模式在滤镜链最前插入 crop（crop → scale → 字幕烧录顺序，字幕在
+    # 最终像素成型不受影响）。默认 off：零分析零裁切，行为与历史一致。
+    # 任何失败降级静态居中/直通，绝不阻断渲染；审计落盘 reframe.json。
+    reframe_doc: dict[str, Any] | None = None
+    if _reframe.reframe_mode() == "auto":
+        reframe_doc = _reframe.build_reframe_spec(
+            source, float(start_ms), float(end_ms), ranges=ranges)
+        try:
+            (out_dir / "reframe.json").write_text(
+                json.dumps(reframe_doc, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:
+            pass  # 审计文件写失败不影响渲染
+        crop_part = _reframe.crop_filter(reframe_doc)
+        if crop_part:
+            vf_idx = video_args.index("-vf")
+            video_args[vf_idx + 1] = f"{crop_part},{video_args[vf_idx + 1]}"
+            render_warnings.extend(
+                f"重构图: {w}" for w in (reframe_doc.get("warnings") or []))
+        render_warnings.append(
+            f"重构图: mode={reframe_doc.get('mode')} reason={reframe_doc.get('reason')}")
     # 2026-10-29 字幕烧录固化（用户指令「固化烧录链」）：渲染同一遍 ffmpeg 直接烧入
     # 固化样式 ASS（白字/纯黑 2px 描边/Shadow=0，PlayRes 1080x1920 随输出分辨率等比
     # 缩放，滤镜链位于 scale 之后保证字幕在最终像素上成型）。成片即 burned：
@@ -585,6 +614,13 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
                 "ass": str(burn_ass_path)}}
            if burn_ass_path is not None else {}),
         "subtitle_qc": subtitle_qc_doc,
+        # 阶段2 P4：重构图摘要（完整审计在同目录 reframe.json；off 时为 None）
+        **({"reframe": {"mode": reframe_doc.get("mode"),
+                        "reason": reframe_doc.get("reason"),
+                        "crop_w": reframe_doc.get("crop_w"),
+                        "crop_h": reframe_doc.get("crop_h"),
+                        "json": str(out_dir / "reframe.json")}}
+           if reframe_doc is not None else {}),
         # 阶段2 P2：亮背景自适应 + 安全区校验 + 强调形态留痕（只报告不拦截）
         **({"subtitle_readability": readability_doc}
            if readability_doc is not None else {}),
