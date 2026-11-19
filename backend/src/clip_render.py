@@ -46,6 +46,8 @@ from .capacity_guard import reserve_capacity, estimate_render_peak, CapacityInsu
 from . import subtitle_compose as _subtitle_compose
 from . import subtitle_cueing as _subtitle_cueing
 from . import subtitle_qc as _subtitle_qc
+from . import subtitle_readability as _subtitle_readability
+from . import subtitle_emphasis as _subtitle_emphasis
 _FF_FALLBACK_DIRS = ("/domain/dsh-home/bin", "/usr/local/bin", "/usr/bin")
 
 # 资源/性能参数（刻意保守：可解码可播放优先，不做画质竞赛）
@@ -257,17 +259,19 @@ def _render_fingerprint(clip, source, corrected_segments, transcript_ref, rule_s
         identity = [stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns]
     except OSError:
         identity = [str(source)]
-    # 版本串参与指纹：subtitle-v2/1 = 阶段2 字幕升级（2026-11-18）：cue 上限
-    # 12s→6s、药名保护词入原子 token、品牌字体解析链（SUBTITLE_BRAND_FONT）。
-    # 烧录产物变化 → 旧缓存（words-align/1、purify-concat/1 及更早）必须全部
-    # 失效重渲。
-    version = "subtitle-v2/1" if words else "subtitle-v2-base/1"
+    # 版本串参与指纹：subtitle-v3/1 = 阶段2 P2（2026-11-18）：亮背景自适应
+    # 底板（SubBox 逐 cue 样式）+ 医学关键词克制强调——烧录产物再变，P1 的
+    # subtitle-v2 及更早缓存全部失效重渲。sub_style 把强调形态/可读性开关
+    # 纳入指纹：改这两个 env 即自动失效缓存（改阈值同理）。
+    version = "subtitle-v3/1" if words else "subtitle-v3-base/1"
     payload = {"version": version, "source": identity,
                "start_ms": clip.get("start_ms"), "end_ms": clip.get("end_ms"),
                "sub_ranges": clip.get("sub_ranges"),
                "transcript": transcript_ref, "segments": corrected_segments,
                "refine": _refined_identity(refined_entry),
-               "rule": rule_snapshot_id, "video_args": _VIDEO_ARGS, "audio_args": _AUDIO_ARGS}
+               "rule": rule_snapshot_id, "video_args": _VIDEO_ARGS, "audio_args": _AUDIO_ARGS,
+               "sub_style": {"emphasis": _subtitle_emphasis.emphasis_mode(),
+                             "readability": _subtitle_readability.enabled()}}
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -296,7 +300,9 @@ def _cached_entry(clip, source, out_dir, segments, transcript_ref, rule_snapshot
             "warnings": list(clip.get("warnings") or []), "render_warnings": doc.get("render_warnings") or [],
             "subtitle_provenance": doc.get("subtitle_provenance") or {},
             "segments": doc.get("subtitle_segments") or [], "subtitle_mode": doc.get("subtitle_mode"),
-            "subtitle_qc": doc.get("subtitle_qc")}
+            "subtitle_qc": doc.get("subtitle_qc"),
+            "subtitle_readability": doc.get("subtitle_readability"),
+            "subtitle_safezone": doc.get("subtitle_safezone")}
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -425,10 +431,7 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
     srt_text, used_ids, subtitle_warnings = build_srt(
         burn_segments, srt_start, srt_end, words=words_used)
     srt_path.write_text(srt_text, encoding="utf-8")
-    # 字幕 QC（阶段2 2026-11-18）：cue 首尾 vs 词首尾偏差 p95、行宽/行数/时长
-    # 违例——只报告不拦截，写入 warnings.json 的 subtitle_qc 块（验收数据源）。
-    subtitle_qc_doc = _subtitle_qc.qc_report(
-        _subtitle_qc.cues_from_srt(srt_text), words=words_used)
+    qc_cues = _subtitle_qc.cues_from_srt(srt_text)
 
     render_warnings: list[str] = list(subtitle_warnings)
     video_args = list(_VIDEO_ARGS)
@@ -441,13 +444,30 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
     # （ClipRenderError），不再静默降级 sidecar_only（2026-11-04 固化契约：
     # 切片预览必须显示字幕）。
     burn_ass_path: Path | None = None
+    readability_doc: dict[str, Any] | None = None
+    emphasis_mode_used: str | None = None
     if srt_text and _subtitle_cueing.hardburn_enabled():
         # 品牌字体解析链（阶段2）：SUBTITLE_BRAND_FONT → MicrosoftYaHeiBold →
         # 文泉驿；返回真实字体族名与字体文件所在目录（libass fontsdir）。
         burn_font_family, burn_fontsdir = _subtitle_cueing.resolve_burn_font()
+        # 亮背景自适应（阶段2 P2）：逐 cue 采样字幕带亮度/边缘密度 → 复杂背景
+        # cue 用 SubBox 半透明底板；分析失败自动全描边（绝不阻断渲染）。
+        readability_doc = _subtitle_readability.analyze_cues(
+            source, qc_cues, ranges=ranges, clip_start_ms=float(start_ms))
+        box_set = set(readability_doc.get("box_cues") or [])
+        style_names = ([_subtitle_cueing.BURN_BOX_STYLE_NAME if i in box_set else "Sub"
+                        for i in range(len(qc_cues))]
+                       if readability_doc.get("mode") == "analyzed" else None)
+        # 关键词克制强调（阶段2 P2）：每 cue 最多 1 处、≤6 字、数字单位永不强调；
+        # SRT 副本保持纯净，标签只进 ASS。
+        emphasis_mode_used = _subtitle_emphasis.emphasis_mode()
+        emphasis_lines = [_subtitle_emphasis.cue_lines_with_emphasis(
+            str(c["text"]), mode=emphasis_mode_used) for c in qc_cues]
         burn_ass_path = out_dir / "subtitles.ass"
         burn_ass_path.write_text(
-            _subtitle_cueing.srt_to_styled_ass(srt_text, font_name=burn_font_family),
+            _subtitle_cueing.srt_to_styled_ass(
+                srt_text, font_name=burn_font_family,
+                style_names=style_names, emphasis_lines=emphasis_lines),
             encoding="utf-8")
         vf_idx = video_args.index("-vf")
         video_args[vf_idx + 1] = (
@@ -464,6 +484,19 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
             "拒绝产出 sidecar_only 底片（2026-11-04 固化契约）")
     else:
         subtitle_mode = "absent"
+    # 字幕 QC（阶段2 2026-11-18）：cue 首尾 vs 词首尾偏差 p95、行宽/行数/时长
+    # 违例——只报告不拦截，写入 warnings.json 的 subtitle_qc 块（验收数据源）。
+    # P2：readability 摘要一并入块（pre_mitigation_readability + 底板 cue 数）。
+    safezone_doc = _subtitle_readability.check_safe_zone()
+    readability_summary: dict[str, Any] | None = None
+    if readability_doc is not None:
+        readability_summary = {
+            "mode": readability_doc.get("mode"),
+            "boxed_cues": len(readability_doc.get("box_cues") or []),
+            "pre_mitigation_readability": readability_doc.get("pre_mitigation_readability"),
+        }
+    subtitle_qc_doc = _subtitle_qc.qc_report(
+        qc_cues, words=words_used, readability=readability_summary)
     try:
         if ranges:
             # 多区间 concat（purify-concat/1）：输入侧粗定位（首段起、末段止），
@@ -552,6 +585,12 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
                 "ass": str(burn_ass_path)}}
            if burn_ass_path is not None else {}),
         "subtitle_qc": subtitle_qc_doc,
+        # 阶段2 P2：亮背景自适应 + 安全区校验 + 强调形态留痕（只报告不拦截）
+        **({"subtitle_readability": readability_doc}
+           if readability_doc is not None else {}),
+        "subtitle_safezone": safezone_doc,
+        **({"subtitle_emphasis_mode": emphasis_mode_used}
+           if emphasis_mode_used is not None else {}),
         "completeness": str(clip.get("completeness") or "pass"),
         "warnings": plan_warnings,
         "render_warnings": render_warnings,
@@ -563,7 +602,8 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
     return {"clip_id": clip_id, "status": "rendered", "path": str(final_path),
             "warnings": plan_warnings, "render_warnings": render_warnings,
             "subtitle_provenance": provenance, "segments": subtitle_segments,
-            "subtitle_mode": subtitle_mode, "subtitle_qc": subtitle_qc_doc}
+            "subtitle_mode": subtitle_mode, "subtitle_qc": subtitle_qc_doc,
+            "subtitle_readability": readability_doc, "subtitle_safezone": safezone_doc}
 
 
 def render_one(clip, *, source, out_dir, corrected_segments, transcript_ref,

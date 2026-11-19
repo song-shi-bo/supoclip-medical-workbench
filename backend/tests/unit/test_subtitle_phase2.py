@@ -230,11 +230,11 @@ def test_qc_words_missing_flagged_not_failing():
 
 
 def test_render_fingerprint_version_bumped(tmp_path):
-    """指纹版本串必须 bump 到 subtitle-v2/1（有词）/subtitle-v2-base/1（无词）。"""
+    """指纹版本串：P2 后为 subtitle-v3/1（有词）/subtitle-v3-base/1（无词）。"""
     import inspect
     src = inspect.getsource(cr._render_fingerprint)
-    assert '"subtitle-v2/1"' in src
-    assert '"subtitle-v2-base/1"' in src
+    assert '"subtitle-v3/1"' in src
+    assert '"subtitle-v3-base/1"' in src
     plan = {"clip_id": "c", "start_ms": 0, "end_ms": 1000}
     words = [{"text": "词", "start": 0.0, "end": 0.5}]
     assert cr._render_fingerprint(plan, tmp_path / "src.mp4", [], {"t": 1}, None, None, words)

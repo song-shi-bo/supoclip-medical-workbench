@@ -784,6 +784,14 @@ BURN_PRIMARY_COLOR = "&H00FFFFFF"   # 白
 BURN_OUTLINE_COLOR = "&H00000000"   # 纯黑
 BURN_BACK_COLOR = "&H00000000"
 
+# 亮背景自适应底板样式（阶段2 P2 2026-11-18）：BorderStyle=3（底板模式），
+# Outline=4 即底板内边距，底板色 = 半透明黑（ASS &HAABBGGRR：alpha 0x60 ≈ 62%
+# 不透明）。白字压半透明黑底在任何背景上可读；仅用于被 readability 判定为
+# 「复杂背景」的 cue（逐 Dialogue 选 Style），默认不输出该样式行（字节兼容）。
+BURN_BOX_STYLE_NAME = "SubBox"
+BURN_BOX_OUTLINE_PX = 4
+BURN_BOX_COLOR = "&H60000000"
+
 def _burn_style_line(font_name: str = BURN_FONT_NAME) -> str:
     return (
         f"Style: Sub,{font_name},{BURN_FONT_SIZE_PX},"
@@ -792,14 +800,30 @@ def _burn_style_line(font_name: str = BURN_FONT_NAME) -> str:
     )
 
 
-def burn_ass_header(font_name: str = BURN_FONT_NAME) -> str:
-    """固化样式 ASS 头（阶段2 2026-11-18：字体可参数化，样式其余项一律不动）。
+def _burn_box_style_line(font_name: str) -> str:
+    """SubBox 底板样式行：与主样式同字体/字号/位置，仅 BorderStyle=3 +
+    Outline=底板内边距 + 半透明黑底板色（OutlineColour 携带 alpha）。"""
+    return (
+        f"Style: {BURN_BOX_STYLE_NAME},{font_name},{BURN_FONT_SIZE_PX},"
+        f"{BURN_PRIMARY_COLOR},&H00000000,{BURN_BOX_COLOR},{BURN_BACK_COLOR},"
+        f"0,0,0,0,100,100,0,0,3,{BURN_BOX_OUTLINE_PX},{BURN_SHADOW},2,0,0,{BURN_MARGIN_V_PX},1"
+    )
+
+
+def burn_ass_header(font_name: str = BURN_FONT_NAME,
+                    with_box_style: bool = False) -> str:
+    """固化样式 ASS 头（阶段2 2026-11-18：字体可参数化；P2：可选 SubBox 底板样式）。
 
     ``font_name`` 必须是 libass 可按族名解析的**真实字体族名**（经
     :func:`resolve_burn_font` 从字体文件解码得到，不要手填显示名）。
+    ``with_box_style``：True 时追加 SubBox 半透明底板样式行（亮背景自适应
+    cue 用）；默认 False，产物与历史逐字节一致。
     """
+    styles = _burn_style_line(font_name)
+    if with_box_style:
+        styles = f"{styles}\n{_burn_box_style_line(font_name)}"
     return f"""[Script Info]
-; 字幕烧录规范（2026-10-29 固化；2026-11-18 阶段2 字体参数化）：白字 + 纯黑 2px 描边（BorderStyle=1/Outline=2），无阴影（Shadow=0）
+; 字幕烧录规范（2026-10-29 固化；2026-11-18 阶段2 字体参数化；P2 亮背景自适应底板）：白字 + 纯黑 2px 描边（BorderStyle=1/Outline=2），无阴影（Shadow=0）
 ScriptType: v4.00+
 PlayResX: {BURN_PLAYRES_W}
 PlayResY: {BURN_PLAYRES_H}
@@ -808,7 +832,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-{_burn_style_line(font_name)}
+{styles}
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -899,24 +923,45 @@ def _srt_ts_to_ass(ts: str) -> str:
     return f"{h}:{mi:02d}:{s:02d}.{ms // 10:02d}"
 
 
-def srt_to_styled_ass(srt_text: str, font_name: str | None = None) -> str:
+def srt_to_styled_ass(srt_text: str, font_name: str | None = None,
+                      style_names: list[str] | None = None,
+                      emphasis_lines: list[list[str]] | None = None) -> str:
     """规范 SRT（cue 合成产物，含预折行）→ 固化样式 ASS 文本。
 
     纯 Python 解析，不依赖 ffmpeg；样式全部来自 :func:`burn_ass_header`
     （白字 / 纯黑 Outline=2 / Shadow=0 / BorderStyle=1，PlayRes 1080x1920）。
-    ``font_name``：烧录字体族名（阶段2 品牌字体管道）；None = 历史默认文泉驿，
-    产物与旧版逐字节一致。
+    ``font_name``：烧录字体族名（阶段2 品牌字体管道）；None = 历史默认文泉驿。
+    ``style_names``：逐 cue 样式名列表（与 SRT 块顺序一一对应；P2 亮背景
+    自适应底板：被判复杂背景的 cue 用 SubBox）。None = 全部主样式 Sub
+    （历史行为）。列表提供时自动附带 SubBox 样式行。
+    ``emphasis_lines``：逐 cue **已套好 ASS 行内标签**的行列表（P2 关键词
+    克制强调，由 subtitle_emphasis 产出）；None = 用 SRT 原文（历史行为）。
+    SRT 副本本身永远保持纯净（审计口径）。
     """
-    header = burn_ass_header(font_name) if font_name else _BURN_ASS_HEADER
+    needs_box = bool(style_names) and any(
+        s and s != "Sub" for s in style_names)
+    if font_name or needs_box:
+        header = burn_ass_header(font_name, with_box_style=needs_box)
+    else:
+        header = _BURN_ASS_HEADER
     dialogues: list[str] = []
+    block_idx = 0
     for block in re.split(r"\n\s*\n", srt_text.strip()):
         lines = [ln for ln in block.split("\n") if ln.strip()]
         if len(lines) < 2 or "-->" not in lines[1]:
             continue
         t0, t1 = lines[1].split("-->")
-        text = "\\N".join(ln.strip() for ln in lines[2:])
+        if emphasis_lines is not None and block_idx < len(emphasis_lines) \
+                and emphasis_lines[block_idx]:
+            text = "\\N".join(ln.strip() for ln in emphasis_lines[block_idx])
+        else:
+            text = "\\N".join(ln.strip() for ln in lines[2:])
+        style = "Sub"
+        if style_names is not None:
+            style = style_names[block_idx] if block_idx < len(style_names) and style_names[block_idx] else "Sub"
+            block_idx += 1
         dialogues.append(
-            f"Dialogue: 0,{_srt_ts_to_ass(t0)},{_srt_ts_to_ass(t1)},Sub,,0,0,0,,{text}")
+            f"Dialogue: 0,{_srt_ts_to_ass(t0)},{_srt_ts_to_ass(t1)},{style},,0,0,0,,{text}")
     return header + "\n".join(dialogues) + "\n"
 
 

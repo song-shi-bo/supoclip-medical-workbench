@@ -18,9 +18,10 @@
    `subtitle_source = corrected_transcript`，绝不冒充精修。
 
 渲染指纹含精修身份串（`clip_render._refined_identity`）；指纹版本串自
-2026-11-18 起为 `subtitle-v2/1`（有词）/`subtitle-v2-base/1`（无词）——阶段2
-P1（cue 上限 6s/药名保护词/品牌字体管道）变更烧录产物，旧 `words-align/1`、
-`purify-concat/1` 及更早缓存全部失效，重新剪辑后按新规范重渲。
+2026-11-18 P2 起为 `subtitle-v3/1`（有词）/`subtitle-v3-base/1`（无词），
+且 payload 含 `sub_style`（强调形态 + 可读性开关）——P1（cue 6s/药名/品牌
+字体）与 P2（自适应底板/克制强调）变更烧录产物，旧 `words-align/1`、
+`purify-concat/1`、`subtitle-v2*` 及更早缓存全部失效重渲。
 
 ## 1. 切分规则（按优先级从高到低，实现在 `src/subtitle_cueing.py`；输入为 §0 选定的分段文本）
 
@@ -41,7 +42,9 @@ P1（cue 上限 6s/药名保护词/品牌字体管道）变更烧录产物，旧
 | BorderStyle | `1`（描边模式） |
 | PlayRes | 1080×1920（与视频 1:1，Outline 即字面像素） |
 | 字体 | WenQuanYi Zen Hei（容器唯一 CJK 字体），字号 63px；**品牌字体管道（2026-11-18 阶段2）**：配置 `SUBTITLE_BRAND_FONT`（字体文件名/stem，经 font_registry 查找，只认 FONTS_DIR 子树与系统 CJK 白名单）后按 品牌字体 → MicrosoftYaHeiBold → 文泉驿 逐级回退，ASS 族名取字体内部真实族名（`resolve_burn_font` 同产 fontsdir）；0 字节占位文件自动跳过（现存 `fonts/MicrosoftYaHeiBold.ttc` 即占位）。**未配置时保持文泉驿，产物字节兼容** |
-| 位置 | 底部居中（Alignment=2，MarginV=360，2026-11-09 用户选定 C 档：下三分之一黄金位，避开平台底部交互 UI；原 160 过贴底） |
+| 亮背景底板（P2） | **逐 cue 自适应**：被 `subtitle_readability` 判定复杂背景（字幕带亮度 ≥170 或边缘密度 ≥0.18）的 Dialogue 用第二样式 `SubBox`——BorderStyle=3 + Outline=4 + 半透明黑底板 `&H60000000`（alpha 0x60≈62% 不透明）；其余 cue 保持描边。样式行只在存在底板 cue 时输出（默认字节兼容）。判定失败/开关关闭 → 全描边 |
+| 关键词强调（P2） | 每条 cue **最多 1 处**、单处 ≤6 字、数字/单位永不强调、跨行不强调；形态 `SUBTITLE_EMPHASIS=off|bold|color`（默认 bold=内联 `{\b1}`；color=低饱和暖金 `{\1c&H00D7FF&}`，禁红绿）；术语=medical_lexicon 全类型标准词 + 指南库快照 keywords（**只取关键词字段，条目正文绝不进字幕**）；SRT 副本保持纯净，标签只进 ASS |
+| 位置 | 底部居中（Alignment=2，MarginV=360，2026-11-09 用户选定 C 档：下三分之一黄金位，避开平台底部交互 UI；原 160 过贴底）；**安全区校验（P2）**：`subtitle_readability.check_safe_zone` 按平台档案（`SUBTITLE_PLATFORM_PROFILE`，默认 douyin 底部 UI 16%）静态校验 MarginV 留白，结果写 `warnings.json.subtitle_safezone` |
 
 **验收方法**：①纯白背景烧录帧（最严苛投影检测）②真实画面亮部抽帧，字幕区放大目检——白字周围只允许一圈干净纯黑描边，无任何灰色/黑色偏移残留。
 
@@ -58,6 +61,12 @@ SUBTITLE_SENTENCE_PAUSE_MS=500  # 语音停顿判定阈值
 SUBTITLE_GAP_EXTEND_MS=800      # 长停顿前条最大延伸（延伸后仍受 6s 上限约束）
 SUBTITLE_CUE_GAP_SPLIT_S=1.5    # 词间停顿切分阈值
 SUBTITLE_BRAND_FONT=            # 品牌字体文件名（空=文泉驿字节兼容默认）
+SUBTITLE_READABILITY=on         # 亮背景自适应底板开关（off=全描边历史行为）
+SUBTITLE_READABILITY_LUMA=170   # 字幕带亮度阈值（≥ 判复杂背景 → 底板）
+SUBTITLE_READABILITY_EDGE=0.18  # 字幕带边缘密度阈值（≥ 判复杂背景 → 底板）
+SUBTITLE_READABILITY_MAX_FRAMES=24  # 每切片抽帧上限（超出均匀抽样，未采样 cue 继承相邻判定）
+SUBTITLE_EMPHASIS=bold          # 关键词强调形态：off | bold | color
+SUBTITLE_PLATFORM_PROFILE=douyin  # 安全区档案：douyin | shipinhao | baijiahao | default
 SUBTITLE_HARDBURN=true          # 渲染时直接烧字进成片（false=紧急停机：有cue切片硬失败，见§4）
 BURN_FONTSDIR=/usr/share/fonts/truetype/wqy   # 烧录字体目录（容器默认已带文泉驿）
 ```
@@ -73,7 +82,8 @@ BURN_FONTSDIR=/usr/share/fonts/truetype/wqy   # 烧录字体目录（容器默�
 
 ## 5. 历史变更
 
-- 2026-11-18：**阶段2 P1 字幕升级**（方案《剪辑工作台阶段2优化方案-2026-11-18》）——①cue 上限 12s→6s（验收「>6s cue = 0」，切分/装箱/整平/合并四处护栏）；②药名保护词（内置 starter + medical_lexicon type=drug，原子 token 不拆）；③品牌字体解析链 `SUBTITLE_BRAND_FONT`（未配置保持文泉驿字节兼容；发现现存 `fonts/MicrosoftYaHeiBold.ttc` 为 0 字节占位的历史遗留问题，解析链自动跳过）；④新 `subtitle_qc.py`：warnings.json `subtitle_qc` 验收块（p95≤200ms 目标、行宽/行数/时长违例、words_missing 占比），指纹 bump `subtitle-v2/1`（有词）/`subtitle-v2-base/1`（无词），旧缓存全量失效。2026-10-29 验收 case 期望同步更新（7.8s 双行 cue 按新规合法拆为两条单行）。
+- 2026-11-18（P2）：**可读性与克制强调**——①亮背景自适应底板：新 `subtitle_readability.py` 渲染前逐 cue 采样源片字幕带（与烧录位置同比例坐标）亮度/边缘密度，判复杂背景的 cue 用 SubBox 半透明底板（抽帧 ≤24 帧/切片，失败/关开关全描边）；②关键词克制强调：新 `subtitle_emphasis.py`（每 cue ≤1 处 ≤6 字、数字单位永不强调、bold 默认/color 暖金可选）；③安全区档案静态校验（douyin 等 4 档）写 `subtitle_safezone`；④`subtitle_qc.readability` 接入 pre_mitigation_readability 与底板 cue 数；指纹 bump `subtitle-v3/1`（payload 增 `sub_style`）。**P2 验收口径**：「复杂背景可读率 ≥98%」= pre_mitigation 低读 cue 全部获得底板补偿（post-mitigation 100% 达标），raw 比例如实透出不粉饰。
+- 2026-11-18（P1）：**阶段2 P1 字幕升级**（方案《剪辑工作台阶段2优化方案-2026-11-18》）——①cue 上限 12s→6s（验收「>6s cue = 0」，切分/装箱/整平/合并四处护栏）；②药名保护词（内置 starter + medical_lexicon type=drug，原子 token 不拆）；③品牌字体解析链 `SUBTITLE_BRAND_FONT`（未配置保持文泉驿字节兼容；发现现存 `fonts/MicrosoftYaHeiBold.ttc` 为 0 字节占位的历史遗留问题，解析链自动跳过）；④新 `subtitle_qc.py`：warnings.json `subtitle_qc` 验收块（p95≤200ms 目标、行宽/行数/时长违例、words_missing 占比），指纹 bump `subtitle-v2/1`（有词）/`subtitle-v2-base/1`（无词），旧缓存全量失效。2026-10-29 验收 case 期望同步更新（7.8s 双行 cue 按新规合法拆为两条单行）。
 
 - 2026-11-09：**烧录源升级「精修稿优先」**（用户提问「字幕为什么还有语气词」后拍板）——source=llm 的切片烧精修稿（语气词/无价值句已删），缺失/fallback 如实回退纠错转写；指纹版本 refined-burn/1 全量失效旧缓存，重新剪辑后生效。同日右侧切片转写去重：切片视图只保留「切片精修文案」面板（医生/患者标注），删除下方转写分段列表（用户指令「切片转写只保留一个板块」）。
 - 2026-10-29 上午：cue 合成层上线（切分 6 规则），6 成片首次按新逻辑烧录。
