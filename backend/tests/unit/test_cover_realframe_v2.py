@@ -1057,7 +1057,10 @@ def test_worker_cover_stage_uses_refined_and_topic_unit(tmp_path, monkeypatch, s
 
 
 def test_worker_cover_stage_and_card_binding_end_to_end(tmp_path, monkeypatch):
-    """_run_clip_cover_stage + _bind_clip_covers：产物、片头替换、幂等、卡片字段。"""
+    """_run_clip_cover_stage + _bind_clip_covers：产物、片头替换、幂等、卡片字段。
+
+    阶段2 P3（2026-11-18）后本测试显式走 **COVER_INTRO_MODE=on**（旧契约拼接
+    路径）；默认 off（不烧片头）行为见 test_cover_decouple 新增用例。"""
     import hashlib
     import uuid
 
@@ -1066,6 +1069,7 @@ def test_worker_cover_stage_and_card_binding_end_to_end(tmp_path, monkeypatch):
     from src import cover_realframe_v2 as cover_mod
 
     monkeypatch.setenv("STUDIO_AUTO_COVER", "1")                 # 测的就是封面阶段本身
+    monkeypatch.setenv("COVER_INTRO_MODE", "1")                  # 本测试走片头拼接路径
     monkeypatch.setattr(w, "_log", lambda _message: None)
     monkeypatch.setattr(w, "_COVER_LLM_FN", lambda _prompt: json.dumps({"candidates": [
         {"topic": "高血压", "hook": "早上不要猛起床", "segment_ids": ["s1"]}]},

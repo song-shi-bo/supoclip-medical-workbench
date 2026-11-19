@@ -1178,27 +1178,52 @@ def _cover_artifact_kinds(base: Path) -> list[tuple[str, str]]:
 
 
 def _auto_cover_enabled() -> bool:
-    """自动封面开关（2026-11-09 用户拍板：自动化剪辑渲染链默认不再制作封面）。
+    """封面**资产生产**开关（阶段2 P3 2026-11-18 语义收窄）。
 
-    env ``STUDIO_AUTO_COVER``：缺省开启（兼容既有测试与调用方）；设为
-    0/false/off/no → 渲染链跳过封面固化（不生成封面四产物、不拼接 0.8s 片头）。
+    env ``STUDIO_AUTO_COVER``：缺省开启——阶段2 契约「每条审核通过成片必须有
+    独立封面资产」，封面资产（cover.jpg/cover_copy.json/cover_layout.json/
+    cover_intro.mp4）默认必产（2026-11-09 的「渲染链不做封面」决定已被阶段2
+    需求取代）；设为 0/false/off/no 仅作紧急停机（资产都不产）。
+    **0.8s 片头是否烧入视频与本开关无关**，由 :func:`_cover_intro_enabled`
+    （``COVER_INTRO_MODE``，默认 off）单独决定。
     手动封面（路由直连 build_cover/replace_cover：重制封面、版型库、封面微调）
     不受本开关影响。
     """
     return str(os.getenv("STUDIO_AUTO_COVER", "1")).strip().lower() not in {"0", "false", "off", "no"}
 
 
+def _cover_intro_enabled() -> bool:
+    """0.8s 静态封面片头**烧入视频**开关（阶段2 P3 2026-11-18 解耦核心）。
+
+    env ``COVER_INTRO_MODE``：默认 **off**——不再默认把 0.8s 静态封面烧进视频，
+    成片第 0 帧即真实画面（自然首帧）；设 1/true/on/yes 时按旧契约拼接片头
+    （时长不变、台账防二次拼接）。封面是否显示在开头由实验决定，本开关即实验
+    分配入口；封面资产（含 cover_intro.mp4）无论开关如何都照常产出备用。
+    """
+    return str(os.getenv("COVER_INTRO_MODE", "off")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _cover_asset_missing(base: Path) -> bool:
+    """阶段2 P3 发布门禁判据：封面资产缺失（cover.jpg 不在）→ 禁止发布。
+
+    仅在封面资产生产开启时执法（``STUDIO_AUTO_COVER=0`` 紧急停机模式下整条
+    封面链路停摆，此时不拦截发布——停机开关优先于资产契约，避免全量封死）。
+    """
+    return _auto_cover_enabled() and not (base / "cover.jpg").is_file()
+
+
 def _run_clip_cover_stage(job: dict, job_id: str, plan_record: dict, transcript: dict,
                           aggregate: dict, source: Path, out_root: Path) -> dict[str, dict]:
     """每条切片发布前的固化封面步骤（realframe_v2：真实帧+文字叠加，纯本地）。
 
-    * 成功：四产物落在切片目录，并把 ``clip_final`` 前 0.8s 替换为封面片头
-      （复用 ``cover_replace.splice_intro`` 时长不变契约；重启恢复按台账 sha
-      防二次拼接）；
+    * 成功：四产物落在切片目录（含 cover_intro.mp4 资产）；**0.8s 片头是否烧入
+      ``clip_final`` 由 ``COVER_INTRO_MODE`` 决定（阶段2 P3 默认 off=不烧，成片
+      首帧=自然画面；on=旧契约拼接，台账 sha 防二次拼接）**；
     * 文案底料（2026-11-09）：该切片精修稿优先（source=llm 才消费，与烧录契约
       一致），缺失如实回退纠错转写；主题块（content_analysis topic_units 按切片
       区间重叠选取）注入提示词并驱动主题校验/受控重生成（cover 模块内实现）；
-    * 失败：该切片照常发布、无封面，只记 warning（只警告不拦截）；
+    * 失败：记 warning；发布门禁在发布循环按「封面资产缺失禁止发布」拦截
+      （阶段2 P3 契约，:func:`_cover_asset_missing`）；
     * 同 clip 已有封面且产物不完整/需要重制时，新工具内部 revision+1、旧封面
       转 ``.purge-trash`` 回收站。
     返回 ``{clip_id: {sha256, bytes, topic, hook, cover_revision, copy_source}}``
@@ -1254,25 +1279,34 @@ def _run_clip_cover_stage(job: dict, job_id: str, plan_record: dict, transcript:
             _log(f"job {job_id}（auto_edit/cover）{clip_id} 封面失败: {exc}")
             continue
         try:
-            if not cover_realframe_v2.intro_already_applied(base, clip_final):
-                intro_s = cover_replace.style_intro_duration("realframe_v2")
-                fade_s = cover_replace.style_fade_in("realframe_v2")
-                before = cover_replace.probe_streams(clip_final)
-                plan = cover_replace.plan_intro_split(
-                    before["fps"], before["frames"], cover_replace.keyframe_list(clip_final),
-                    max(1, int(round(intro_s * before["fps"]))))
-                if plan["mode"] == "exact_copy":
-                    # 既有契约路径：片头边界恰在关键帧上 → 全程流拷贝无损
-                    cover_replace.splice_intro(clip_final, base / "cover.jpg",
-                                               intro_duration_s=intro_s, fade_in_s=fade_s)
-                else:
-                    # staged 成片 0.8s 处无关键帧（单次编码）→ 本地等长重编码回退
-                    cover_realframe_v2.splice_intro_reencode(
-                        clip_final, base / "cover.jpg",
-                        intro_duration_s=intro_s, fade_in_s=fade_s)
-            cover_realframe_v2.record_intro_applied(
-                base, int(produced["cover_revision"]), _sha256_file(clip_final))
+            intro_applied = False
+            if _cover_intro_enabled():
+                if not cover_realframe_v2.intro_already_applied(base, clip_final):
+                    intro_s = cover_replace.style_intro_duration("realframe_v2")
+                    fade_s = cover_replace.style_fade_in("realframe_v2")
+                    before = cover_replace.probe_streams(clip_final)
+                    plan = cover_replace.plan_intro_split(
+                        before["fps"], before["frames"], cover_replace.keyframe_list(clip_final),
+                        max(1, int(round(intro_s * before["fps"]))))
+                    if plan["mode"] == "exact_copy":
+                        # 既有契约路径：片头边界恰在关键帧上 → 全程流拷贝无损
+                        cover_replace.splice_intro(clip_final, base / "cover.jpg",
+                                                   intro_duration_s=intro_s, fade_in_s=fade_s)
+                    else:
+                        # staged 成片 0.8s 处无关键帧（单次编码）→ 本地等长重编码回退
+                        cover_realframe_v2.splice_intro_reencode(
+                            clip_final, base / "cover.jpg",
+                            intro_duration_s=intro_s, fade_in_s=fade_s)
+                cover_realframe_v2.record_intro_applied(
+                    base, int(produced["cover_revision"]), _sha256_file(clip_final))
+                intro_applied = True
+            else:
+                # 阶段2 P3：默认不烧 0.8s 静态片头——成片第 0 帧即自然画面；
+                # cover_intro.mp4 资产照常产出备用（实验开启时按台账防重拼）。
+                _log(f"job {job_id}（auto_edit/cover）{clip_id} COVER_INTRO_MODE=off："
+                     f"不拼接 0.8s 片头（封面仅作平台封面资产）")
         except Exception as exc:  # noqa: BLE001 — 片头拼接失败同样只警告
+            intro_applied = False
             aggregate.setdefault("warnings", []).append(
                 f"封面片头拼接失败（{clip_id}，切片照常发布无片头）: {exc}"[:200])
             _log(f"job {job_id}（auto_edit/cover）{clip_id} 片头拼接失败: {exc}")
@@ -1284,6 +1318,7 @@ def _run_clip_cover_stage(job: dict, job_id: str, plan_record: dict, transcript:
             "topic": final_copy.get("topic"),
             "hook": final_copy.get("hook"),
             "copy_source": produced.get("copy_source"),
+            "intro_burned": intro_applied,
         }
     return results
 
@@ -1314,7 +1349,9 @@ def _bind_clip_covers(job: dict, job_id: str, cover_results: dict[str, dict],
             store.bump_cover(
                 project_id, clip_id, task_id=job_id, style_id="realframe_v2",
                 cover_path=cover_rel, sha256=info.get("sha256"),
-                bytes_=info.get("bytes"), intro_burned=True, kind="auto_edit",
+                bytes_=info.get("bytes"),
+                # 阶段2 P3：intro_burned 如实记录（默认 off=False；旧契约 on=True）
+                intro_burned=bool(info.get("intro_burned")), kind="auto_edit",
                 title=str(info.get("topic") or "") or None,
                 hook=hook_text or None)
         except Exception as exc:  # noqa: BLE001 — 卡片绑定失败不阻塞发布
@@ -1381,16 +1418,19 @@ def _run_clip_render_stage(job: dict, job_id: str, transcript: dict,
         words=(transcript.get("words") or []) or None,
     )
 
-    # 封面固化（2026-10-18）：每条切片发布前自动生成 realframe_v2 封面并替换片头，
-    # 失败只记 warning（aggregate.warnings），绝不拦截切片发布。
-    # 2026-11-09：STUDIO_AUTO_COVER 关闭时整步跳过（不生成封面/不拼片头）。
+    # 封面固化（2026-10-18）：每条切片发布前自动生成 realframe_v2 封面资产。
+    # 阶段2 P3（2026-11-18）：封面资产必产（契约：审核通过成片必须有独立封面
+    # 资产，缺失则发布门禁拦截）；0.8s 片头烧入由 COVER_INTRO_MODE 决定（默认
+    # off，不再默认烧进视频）。
+    # STUDIO_AUTO_COVER=0 仅作紧急停机（资产都不产，此时发布门禁不拦封面）。
     cover_results: dict[str, dict] = {}
     if _auto_cover_enabled():
-        _state(job_id, "rendering", "生成固化封面（realframe_v2：真实帧+文字叠加）并替换片头", 0.85)
+        _state(job_id, "rendering", "生成固化封面资产（realframe_v2：真实帧+文字叠加）", 0.85)
         cover_results = _run_clip_cover_stage(job, job_id, plan_record, transcript,
                                               aggregate, Path(source), out_root)
     else:
-        _log(f"job {job_id}（auto_edit/render）STUDIO_AUTO_COVER 关闭：跳过自动封面固化")
+        _log(f"job {job_id}（auto_edit/render）STUDIO_AUTO_COVER=0 紧急停机：跳过封面资产生产"
+             f"（此时发布门禁不拦封面缺失）")
 
     # 每条成片/警告登记 artifact（本地模式由后端回源文件，前端直接可播/可下载）
     published_clips=[]
@@ -1403,6 +1443,14 @@ def _run_clip_render_stage(job: dict, job_id: str, transcript: dict,
             # 发布。正常流程已不可能产出（render 层硬失败），此处为纵深防御。
             continue
         base = out_root / "clips" / clip_id
+        if _cover_asset_missing(base):
+            # 阶段2 P3 契约（2026-11-18）：审核通过成片必须有独立封面资产——
+            # 封面缺失禁止发布（与 sidecar_only 同款纵深防御；正常流程封面
+            # 阶段已产出，走到这里 = 封面生成失败或资产被删，如实拦截）。
+            aggregate.setdefault("warnings", []).append(
+                f"封面资产缺失，按阶段2契约禁止发布（{clip_id}，可修复后重跑封面阶段）")
+            _log(f"job {job_id}（auto_edit/render）{clip_id} 封面资产缺失：禁止发布")
+            continue
         kinds = [("clip_final", "clip_final.mp4"), ("clip_warnings", "warnings.json"), ("srt", "subtitles.srt")]
         kinds += _cover_artifact_kinds(base)
         for kind, filename in kinds:

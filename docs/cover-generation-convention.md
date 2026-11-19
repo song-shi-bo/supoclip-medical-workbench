@@ -108,8 +108,16 @@ cover_title 生成规则（写进提示词 A 的字段指令）：
 ## 七、与管线对接
 
 - 输入：cover_title / cover_hook_text / numeric_cards（均来自 clip_plan，规划层字段）。
-- 输出：封面 PNG；clip_final 前 0.8s 替换为封面片头，时长不变契约沿用；账本沿用 intro_clip_final_sha256 防重复烧片头。
-- 渲染顺序：片头替换在滤镜链（lanczos 缩放 + unsharp）之后执行，避免封面被二次缩放。
+- 输出：封面 PNG；**阶段2 P3（2026-11-18）封面与片头解耦**：封面资产（cover.jpg
+  + cover_copy.json + cover_layout.json + cover_intro.mp4）默认必产，但
+  **0.8s 片头是否烧入 `clip_final` 由 `COVER_INTRO_MODE` 单独决定（默认
+  off=不烧，成片第 0 帧即自然画面）**；`COVER_INTRO_MODE=on` 时旧契约沿用
+  （时长不变、账本 intro_clip_final_sha256 防重复烧片头）。`STUDIO_AUTO_COVER`
+  语义收窄为「封面资产生产开关」（默认必产；0=紧急停机，此时发布门禁不拦封面）。
+- **发布门禁（阶段2 P3）**：审核通过成片必须有独立封面资产——封面缺失的切片
+  在发布循环被拦截（与 sidecar_only 禁发布同款纵深防御），warning 如实留痕。
+- 渲染顺序：片头替换（on 时）在滤镜链（lanczos 缩放 + unsharp）之后执行，避免封面被二次缩放。
+- 三资产定位：平台封面=cover.jpg（1080×1920 直接作抖音封面）；视频自然首帧=成片第 0 帧（片头 off 时天然成立）；开场钩子=规划层 hook_first_line（与封面无关，已存在）。
 - 灰度路径：第一期只上「文案 + 排版模板 + 兜底」（纯增量、风险最低）；选帧打分第二期；A/B 双版本第三期。
 
 ## 八、A/B 与数据回流（第三期）
