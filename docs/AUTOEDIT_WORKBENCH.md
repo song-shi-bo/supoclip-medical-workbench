@@ -280,7 +280,8 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 | LLM 网关 | `ai.py`（Pydantic AI）+ `llm_budget` 当日台账 | 纠错/分析/规划/精修/说话人标注/copilot/封面文案 |
 | 医学词库 | `medical_lexicon.py`、`project_glossary.py`（video-brain 侧：`medical_terms.py`、`doctor_profiles.py`、`kb_context.py`） | 纠错与领域上下文 |
 | 医学指南库（第三库） | `medical_kb.py`（快照检索）、`clip_medical_gate.py`（闸门）、`api/routes/medical_kb.py`（ingest/search/review，独立 token）、`medical_kb_seed/`（种子与 active_snapshot）、`migrations/007_medical_guidelines.sql`；改种子后跑 `scripts/materialize_medical_kb.py`（`--db` 同时入库） | 切片医学主题匹配、前提/风险边界标注、非医学切片硬剔除（2026-11-10） |
-| 字幕体系 | `subtitle_compose.py`、`caption_templates.py`、`emoji_captions.py`、`font_registry.py`（`backend/fonts/` 自动发现） | ASS/SRT 生成与烧录 |
+| 字幕体系（阶段2 扩展 2026-11-18） | 烧录链 `subtitle_cueing.py`（cue 合成+固化样式+品牌字体链）、`subtitle_qc.py`（验收指标）、`subtitle_readability.py`（亮背景自适应+安全区）、`subtitle_emphasis.py`（关键词克制强调）；studio 金黄模板 `subtitle_compose.py`、`caption_templates.py`、`emoji_captions.py`、`font_registry.py`（`backend/fonts/` 自动发现） | ASS/SRT 生成与烧录、五项验收数据源 |
+| 人脸重构图（阶段2 P4） | `reframe.py`（`REFRAME_MODE=auto`，默认 off；`video_utils.build_crop_trajectory`/`build_smooth_pan_expression` 平滑资产接线） | 横宽源单脸跟踪横转竖、上半身定位、手势保护、多人保守回退；审计 `reframe.json` |
 | B-roll | `broll.py`（Pexels API，`PEXELS_API_KEY`） | 备用素材（可选） |
 | 存储 | 本地 `tasks/`（in/processing/completed/failed/output/plans/analysis/status/transcripts/projects/logs）；R2 可选（`r2.py`，无凭据时降级本地） | 任务与产物事实源 |
 | 数据库/队列 | PostgreSQL 16（`.tools/pg16`）、Redis 7.2（`.tools/redis-src`） | studio_jobs 租约、台账、计费、缓存 |
@@ -301,7 +302,8 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 - `docs/medical-gate-design.md` — 医学指南库（第三库）与切片医学闸门设计（2026-11-10）
 - `docs/qa-style-restructure-design.md` — 问答化重组：对话切片剪出口播感（净化重组/多点拼接/多区间渲染，2026-11-11）
 - `docs/two-step-planning-design.md` — 两步制切片规划（提示词A/B）设计
-- `docs/subtitle-burn-convention.md` — 烧录字幕契约
+- `docs/subtitle-burn-convention.md` — 烧录字幕契约（阶段2 P1/P2 全量更新：6s 上限/药名/品牌字体/自适应底板/克制强调/安全区）
+- `docs/cover-generation-convention.md` — 封面生成规范（阶段2 P3 更新：封面与片头解耦、发布软标记）
 - `docs/copilot.md` — AI 助手
 - `docs/clear-project-data.md` — 项目数据清理
 - `CLAUDE.md` / `AGENTS.md` — 仓库级开发约定（注意：其「video-brain 是唯一管线」的描述已被 staged 本地链取代，以本文与代码为准）
