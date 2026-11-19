@@ -45,6 +45,7 @@ FFMPEG_TIMEOUT_SECONDS = 3600
 from .capacity_guard import reserve_capacity, estimate_render_peak, CapacityInsufficientError
 from . import subtitle_compose as _subtitle_compose
 from . import subtitle_cueing as _subtitle_cueing
+from . import subtitle_qc as _subtitle_qc
 _FF_FALLBACK_DIRS = ("/domain/dsh-home/bin", "/usr/local/bin", "/usr/bin")
 
 # 资源/性能参数（刻意保守：可解码可播放优先，不做画质竞赛）
@@ -256,12 +257,11 @@ def _render_fingerprint(clip, source, corrected_segments, transcript_ref, rule_s
         identity = [stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns]
     except OSError:
         identity = [str(source)]
-    # 版本串参与指纹：purify-concat/1 = 问答化净化重组多区间渲染（2026-11-11
-    # 问答化 P1：clip.sub_ranges 有序子区间 concat，字幕按虚拟时间轴平移）。
-    # refined-burn/1 及更早的旧缓存必须全部失效重渲（多区间契约变更）。
-    # words-align/1 = 词级对齐烧录（2026-11-12）：传 words 时cue 时间走真实词
-    # 首尾，旧无词缓存（purify-concat/1）指纹不匹配 → 自动失效重渲。
-    version = "words-align/1" if words else "purify-concat/1"
+    # 版本串参与指纹：subtitle-v2/1 = 阶段2 字幕升级（2026-11-18）：cue 上限
+    # 12s→6s、药名保护词入原子 token、品牌字体解析链（SUBTITLE_BRAND_FONT）。
+    # 烧录产物变化 → 旧缓存（words-align/1、purify-concat/1 及更早）必须全部
+    # 失效重渲。
+    version = "subtitle-v2/1" if words else "subtitle-v2-base/1"
     payload = {"version": version, "source": identity,
                "start_ms": clip.get("start_ms"), "end_ms": clip.get("end_ms"),
                "sub_ranges": clip.get("sub_ranges"),
@@ -295,7 +295,8 @@ def _cached_entry(clip, source, out_dir, segments, transcript_ref, rule_snapshot
     return {"clip_id": clip["clip_id"], "status": "skipped_playable", "path": str(final),
             "warnings": list(clip.get("warnings") or []), "render_warnings": doc.get("render_warnings") or [],
             "subtitle_provenance": doc.get("subtitle_provenance") or {},
-            "segments": doc.get("subtitle_segments") or [], "subtitle_mode": doc.get("subtitle_mode")}
+            "segments": doc.get("subtitle_segments") or [], "subtitle_mode": doc.get("subtitle_mode"),
+            "subtitle_qc": doc.get("subtitle_qc")}
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -424,6 +425,10 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
     srt_text, used_ids, subtitle_warnings = build_srt(
         burn_segments, srt_start, srt_end, words=words_used)
     srt_path.write_text(srt_text, encoding="utf-8")
+    # 字幕 QC（阶段2 2026-11-18）：cue 首尾 vs 词首尾偏差 p95、行宽/行数/时长
+    # 违例——只报告不拦截，写入 warnings.json 的 subtitle_qc 块（验收数据源）。
+    subtitle_qc_doc = _subtitle_qc.qc_report(
+        _subtitle_qc.cues_from_srt(srt_text), words=words_used)
 
     render_warnings: list[str] = list(subtitle_warnings)
     video_args = list(_VIDEO_ARGS)
@@ -437,14 +442,18 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
     # 切片预览必须显示字幕）。
     burn_ass_path: Path | None = None
     if srt_text and _subtitle_cueing.hardburn_enabled():
+        # 品牌字体解析链（阶段2）：SUBTITLE_BRAND_FONT → MicrosoftYaHeiBold →
+        # 文泉驿；返回真实字体族名与字体文件所在目录（libass fontsdir）。
+        burn_font_family, burn_fontsdir = _subtitle_cueing.resolve_burn_font()
         burn_ass_path = out_dir / "subtitles.ass"
         burn_ass_path.write_text(
-            _subtitle_cueing.srt_to_styled_ass(srt_text), encoding="utf-8")
+            _subtitle_cueing.srt_to_styled_ass(srt_text, font_name=burn_font_family),
+            encoding="utf-8")
         vf_idx = video_args.index("-vf")
         video_args[vf_idx + 1] = (
             f"{video_args[vf_idx + 1]},"
             f"subtitles=filename='{_filter_value(str(burn_ass_path))}'"
-            f":fontsdir='{_filter_value(_BURN_FONTSDIR)}'")
+            f":fontsdir='{_filter_value(burn_fontsdir)}'")
         subtitle_mode = "burned"
     elif srt_text:
         # 2026-11-04 固化契约（用户指令「切片预览必须显示字幕」）：有 cue 的切片必须
@@ -536,11 +545,13 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
         **({"subtitle_hard_burn": {
                 "style": ("ASS PlayRes 1080x1920: Primary=white, OutlineColour=black, "
                           "BorderStyle=1, Outline=2, Shadow=0"),
-                "font": _subtitle_cueing.BURN_FONT_NAME,
+                "font": burn_font_family,
+                "fontsdir": burn_fontsdir,
                 "font_size_px": _subtitle_cueing.BURN_FONT_SIZE_PX,
                 "max_line_chars": _subtitle_cueing.config_from_env().max_line_chars,
                 "ass": str(burn_ass_path)}}
            if burn_ass_path is not None else {}),
+        "subtitle_qc": subtitle_qc_doc,
         "completeness": str(clip.get("completeness") or "pass"),
         "warnings": plan_warnings,
         "render_warnings": render_warnings,
@@ -551,7 +562,8 @@ def _render_one_reserved(clip: dict[str, Any], *, source: Path, out_dir: Path,
     _write_json(warnings_path, warnings_doc)
     return {"clip_id": clip_id, "status": "rendered", "path": str(final_path),
             "warnings": plan_warnings, "render_warnings": render_warnings,
-            "subtitle_provenance": provenance, "segments": subtitle_segments, "subtitle_mode": subtitle_mode}
+            "subtitle_provenance": provenance, "segments": subtitle_segments,
+            "subtitle_mode": subtitle_mode, "subtitle_qc": subtitle_qc_doc}
 
 
 def render_one(clip, *, source, out_dir, corrected_segments, transcript_ref,

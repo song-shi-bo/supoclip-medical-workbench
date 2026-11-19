@@ -27,16 +27,22 @@ def _cues(segments, start_ms=0, end_ms=600_000, cfg=None):
 
 
 def test_acceptance_case_fillers_on():
-    """验收：冗余开关开（默认）→ 单条 cue 两行，文字与用户期望逐字一致。"""
+    """验收：冗余开关开（默认）→ 文字与用户期望逐字一致。
+
+    2026-10-29 首版断言「单条 cue 两行」（跨度 7.8s 合并挂屏）；阶段2
+    （2026-11-18 用户需求「cue 最长 4～6 秒」）后 max_cue_seconds=6.0，
+    装箱时长约束拒绝该合并 → 合法地拆为两条单行 cue，文字内容不变。"""
     segs = [{"segment_id": "seg_0104", "start_ms": 6750, "end_ms": 14550, "text": CASE_TEXT}]
     cues, used, _ = _cues(segs, 0, 60_000, _cfg())
     assert used == ["seg_0104"]
-    assert len(cues) == 1, cues
-    cue = cues[0]
-    assert cue["text"] == "因为你0.4的厚度\n原则上要求扩切0.5公分"
+    assert len(cues) == 2, cues
+    assert cues[0]["text"] == "因为你0.4的厚度"
+    assert cues[1]["text"] == "原则上要求扩切0.5公分"
+    for cue in cues:
+        assert cue["end"] - cue["start"] <= 6.0 + 1e-6
     # 时间码用原区间，不压缩
-    assert cue["start"] == pytest.approx(6.75, abs=0.05)
-    assert cue["end"] == pytest.approx(14.55, abs=0.01)
+    assert cues[0]["start"] == pytest.approx(6.75, abs=0.05)
+    assert cues[-1]["end"] == pytest.approx(14.55, abs=0.01)
 
 
 def test_acceptance_case_fillers_off():

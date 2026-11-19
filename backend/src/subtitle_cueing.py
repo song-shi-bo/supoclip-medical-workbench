@@ -26,6 +26,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field, replace as _dc_replace
+from functools import lru_cache as _lru_cache
 
 # ---------------------------------------------------------------------------
 # 配置
@@ -39,8 +40,12 @@ _DEFAULT_SENTENCE_PAUSE_MS = 500
 # （说完整句就撤，不挂到下一句开始）；≤ 该值的短停顿仍闭合（防闪烁）。
 _DEFAULT_GAP_EXTEND_MS = 800
 # 单条 cue 显示时长硬上限（秒，防挂屏）：超过即按词时间切开。
+# 阶段2（2026-11-18 用户需求「cue 最长建议控制到 4～6 秒」）：默认从 12.0 收紧到
+# 6.0（验收项「超过 6 秒的 cue：0」）；环境变量 >6 视为配置错误钳回 6。
 # 字幕停留长的根因=ASR 尾部静音 + 整平无限延伸；词间停顿切分(1.5s)+该上限兜底。
-_DEFAULT_MAX_CUE_SECONDS = 12.0
+_DEFAULT_MAX_CUE_SECONDS = 6.0
+# 上限合法区间：默认 6.0 即验收值；环境变量允许下探（更碎但合规），超过 6.0 一律钳回。
+_MAX_CUE_SECONDS_CEILING = 6.0
 # 词间停顿切分阈值：相邻词间隔超过该值 → cue 在此切开（真实沉默≠字幕停留）
 _DEFAULT_CUE_GAP_SPLIT_S = 1.5
 
@@ -94,7 +99,8 @@ def config_from_env(env: dict | None = None) -> CueConfig:
         punct_style=style,
         sentence_pause_ms=max(0, _int("SUBTITLE_SENTENCE_PAUSE_MS", _DEFAULT_SENTENCE_PAUSE_MS)),
         gap_extend_ms=max(0.0, _float("SUBTITLE_GAP_EXTEND_MS", _DEFAULT_GAP_EXTEND_MS)),
-        max_cue_seconds=max(1.0, _float("SUBTITLE_MAX_CUE_SECONDS", _DEFAULT_MAX_CUE_SECONDS)),
+        max_cue_seconds=min(_MAX_CUE_SECONDS_CEILING,
+                            max(1.0, _float("SUBTITLE_MAX_CUE_SECONDS", _DEFAULT_MAX_CUE_SECONDS))),
         cue_gap_split_s=max(0.0, _float("SUBTITLE_CUE_GAP_SPLIT_S", _DEFAULT_CUE_GAP_SPLIT_S)),
     )
 
@@ -119,6 +125,52 @@ PROTECTED_WORDS = (
     "如果", "那么", "就是", "因此", "其实", "另外", "然后", "于是", "而且",
     "并且", "或者", "还是", "一般", "目前", "现在", "确实",
 )
+
+# ---------------------------------------------------------------------------
+# 药名保护词（阶段2 2026-11-18：「药名不可断开」）
+# 来源两层：①内置常见药 starter 表（零依赖兜底）②medical_lexicon TSV 里
+# type=drug 的标准词（本机构词表，可运营扩充）。别名/错写**不**入表（字幕
+# 显示的是纠错后文本，保护错写无意义）。加载失败/词典缺失 → 仅内置表生效，
+# 绝不抛错（字幕问题不阻断渲染）。匹配按长度降序交替（长名优先，防被短名
+# 截断成两截）。
+# ---------------------------------------------------------------------------
+_BUILTIN_DRUG_NAMES = (
+    # 内科/抗感染常见
+    "阿莫西林", "头孢曲松", "头孢克肟", "阿奇霉素", "左氧氟沙星", "甲硝唑",
+    "奥美拉唑", "雷贝拉唑", "蒙脱石散", "布洛芬", "对乙酰氨基酚", "氯雷他定",
+    # 心血管/内分泌常见
+    "阿司匹林", "华法林", "美托洛尔", "氨氯地平", "硝苯地平", "卡托普利",
+    "缬沙坦", "二甲双胍", "格列美脲", "胰岛素", "阿托伐他汀", "瑞舒伐他汀",
+    # 肿瘤科常见（与本项目病种对齐）
+    "紫杉醇", "顺铂", "卡铂", "多西他赛", "环磷酰胺", "伊马替尼",
+    "曲美替尼", "达拉非尼", "维莫非尼", "帕博利珠单抗", "纳武利尤单抗",
+    "干扰素", "白介素", "干扰素α", "聚乙二醇干扰素",
+)
+
+
+def _drug_names() -> tuple[str, ...]:
+    """药名保护词全集：内置 starter + 词典 type=drug 标准词，长度降序去重。"""
+    names = set(_BUILTIN_DRUG_NAMES)
+    try:
+        from . import medical_lexicon
+        for entry in medical_lexicon.load_lexicon().get("entries") or []:
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("type") or "") != "drug":
+                continue
+            word = str(entry.get("standard") or entry.get("word") or "").strip()
+            if len(word) >= 2:
+                names.add(word)
+    except Exception:
+        pass  # 词典缺失/损坏：仅内置表生效（字幕链路绝不因词典阻断）
+    return tuple(sorted((w for w in names if len(w) >= 2), key=len, reverse=True))
+
+
+@_lru_cache(maxsize=1)
+def _protected_token_pattern() -> "re.Pattern[str]":
+    """保护词 + 药名合并交替式（长度降序由调用方保证先长后短）。"""
+    words = tuple(PROTECTED_WORDS) + _drug_names()
+    return re.compile("|".join(re.escape(w) for w in words))
 
 _STRONG_PUNCT = "。！？!?…；;"
 _SOFT_PUNCT = "，、：,;:"
@@ -191,11 +243,11 @@ class Token:
 
 
 def _atomic_tokens(text: str) -> list[str]:
-    """无标点文本 → 原子 token：数字单位/数字的名词、拉丁串、保护词、单字。"""
+    """无标点文本 → 原子 token：数字单位/数字的名词、拉丁串、保护词、药名、单字。"""
     tokens: list[str] = []
     pos = 0
     n = len(text)
-    protected_re = re.compile("|".join(re.escape(w) for w in PROTECTED_WORDS))
+    protected_re = _protected_token_pattern()
     while pos < n:
         for pat in (_NUM_RE, _LATIN_RE, protected_re):
             m = pat.match(text, pos)
@@ -640,15 +692,19 @@ def _tile_cues(cues: list[dict], cfg: CueConfig, warnings: list[str], window: fl
         return
     min_s = cfg.min_cue_seconds
     max_ext = cfg.gap_extend_ms / 1000.0
+    max_dur = cfg.max_cue_seconds
     # 1) 去重叠：后条起点钳到前条终点
     for i in range(1, len(cues)):
         if cues[i]["start"] < cues[i - 1]["end"]:
             cues[i]["start"] = cues[i - 1]["end"]
             cues[i]["end"] = max(cues[i]["end"], cues[i]["start"])
-    # 2) 补缝隙：短停顿闭合到后条起点；长停顿最多延伸 gap_extend_ms（留白）
+    # 2) 补缝隙：短停顿闭合到后条起点；长停顿最多延伸 gap_extend_ms（留白）；
+    #    延伸不得突破 max_cue_seconds 上限（阶段2 验收「>6s cue = 0」的整平侧护栏）
     for i in range(1, len(cues)):
         if cues[i]["start"] - cues[i - 1]["end"] > 0.001:
-            cues[i - 1]["end"] = min(cues[i]["start"], cues[i - 1]["end"] + max_ext)
+            cues[i - 1]["end"] = min(cues[i]["start"],
+                                     cues[i - 1]["end"] + max_ext,
+                                     cues[i - 1]["start"] + max_dur)
 
     # 3) 短条处理：并入相邻条（合并后可排出 ≤max_lines×limit 才并），否则原地延伸
     def cap_ok(a: dict, b: dict) -> bool:
@@ -656,7 +712,10 @@ def _tile_cues(cues: list[dict], cfg: CueConfig, warnings: list[str], window: fl
         # ≤max_lines 行、每行 ≤limit（2026-11-12 行宽修复：原 visible_len+1
         # 判据配合 _join_texts 盲拼会产出 >16 字超宽行）
         joined = (a["text"] + b["text"]).replace("\n", "")
-        return len(joined) <= cfg.cue_capacity
+        if len(joined) > cfg.cue_capacity:
+            return False
+        # 合并后显示时长 ≤ max_cue_seconds（阶段2：防短条合并把 cue 顶破 6s 上限）
+        return (b["end"] - a["start"]) <= max_dur + 1e-6
 
     i = 0
     while i < len(cues):
@@ -725,14 +784,22 @@ BURN_PRIMARY_COLOR = "&H00FFFFFF"   # 白
 BURN_OUTLINE_COLOR = "&H00000000"   # 纯黑
 BURN_BACK_COLOR = "&H00000000"
 
-_BURN_STYLE_LINE = (
-    f"Style: Sub,{BURN_FONT_NAME},{BURN_FONT_SIZE_PX},"
-    f"{BURN_PRIMARY_COLOR},&H00000000,{BURN_OUTLINE_COLOR},{BURN_BACK_COLOR},"
-    f"0,0,0,0,100,100,0,0,{BURN_BORDER_STYLE},{BURN_OUTLINE_PX},{BURN_SHADOW},2,0,0,{BURN_MARGIN_V_PX},1"
-)
+def _burn_style_line(font_name: str = BURN_FONT_NAME) -> str:
+    return (
+        f"Style: Sub,{font_name},{BURN_FONT_SIZE_PX},"
+        f"{BURN_PRIMARY_COLOR},&H00000000,{BURN_OUTLINE_COLOR},{BURN_BACK_COLOR},"
+        f"0,0,0,0,100,100,0,0,{BURN_BORDER_STYLE},{BURN_OUTLINE_PX},{BURN_SHADOW},2,0,0,{BURN_MARGIN_V_PX},1"
+    )
 
-_BURN_ASS_HEADER = f"""[Script Info]
-; 字幕烧录规范（2026-10-29 固化）：白字 + 纯黑 2px 描边（BorderStyle=1/Outline=2），无阴影（Shadow=0）
+
+def burn_ass_header(font_name: str = BURN_FONT_NAME) -> str:
+    """固化样式 ASS 头（阶段2 2026-11-18：字体可参数化，样式其余项一律不动）。
+
+    ``font_name`` 必须是 libass 可按族名解析的**真实字体族名**（经
+    :func:`resolve_burn_font` 从字体文件解码得到，不要手填显示名）。
+    """
+    return f"""[Script Info]
+; 字幕烧录规范（2026-10-29 固化；2026-11-18 阶段2 字体参数化）：白字 + 纯黑 2px 描边（BorderStyle=1/Outline=2），无阴影（Shadow=0）
 ScriptType: v4.00+
 PlayResX: {BURN_PLAYRES_W}
 PlayResY: {BURN_PLAYRES_H}
@@ -741,11 +808,71 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-{_BURN_STYLE_LINE}
+{_burn_style_line(font_name)}
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
+
+
+# 兼容旧引用（默认字体 = 文泉驿，与历史产物逐字节一致）
+_BURN_ASS_HEADER = burn_ass_header()
+
+
+# 品牌字体解析链（阶段2 2026-11-18「品牌字体」）：**未配置 SUBTITLE_BRAND_FONT
+# 时保持文泉驿历史默认（产物字节兼容，版权确认前不默认换字）**；配置后按
+# 品牌字体 → MicrosoftYaHeiBold → 文泉驿正黑 逐级回退。注意：现存
+# fonts/MicrosoftYaHeiBold.ttc 是 0 字节占位（历史遗留，studio 金黄字幕回退链
+# 同样跳过它）——上传真实雅黑文件替换后该链自然生效。env 值=字体文件名或
+# 文件 stem，经 font_registry 查找，只认 FONTS_DIR 子树与系统 CJK 白名单
+# （与 clip_render._subtitle_font 同款安全约束）。返回 (真实字体族名, fontsdir)
+# ——fontsdir 必须是字体文件所在目录，libass 靠它解析。任何失败逐级回退，绝不抛错。
+_BRAND_FALLBACK_CHAIN = ("MicrosoftYaHeiBold.ttc",)
+
+
+def resolve_burn_font(env: dict | None = None) -> tuple[str, str]:
+    e = os.environ if env is None else env
+    brand = str(e.get("SUBTITLE_BRAND_FONT") or "").strip()
+    if not brand:
+        return BURN_FONT_NAME, _burn_fontsdir(e)
+    from . import font_registry
+
+    allowed_dirs = {font_registry.FONTS_DIR.resolve()}
+    system_paths = {p.resolve() for p in font_registry.SYSTEM_CJK_FONT_PATHS}
+
+    def _try(name: str) -> tuple[str, str] | None:
+        try:
+            font = font_registry.find_font_path(name)
+        except Exception:
+            return None
+        if font is None:
+            return None
+        resolved = font.resolve()
+        # 实体校验：0 字节占位文件（如现存 fonts/MicrosoftYaHeiBold.ttc 占位）
+        # 直接跳过，防止 libass 解析失败静默退化。
+        try:
+            if not resolved.is_file() or resolved.stat().st_size == 0:
+                return None
+        except OSError:
+            return None
+        in_fonts_dir = any(resolved.is_relative_to(d) for d in allowed_dirs)
+        if not in_fonts_dir and resolved not in system_paths:
+            return None
+        family = font_registry.get_font_family_name(resolved)
+        if not family:
+            return None
+        return family, str(resolved.parent)
+
+    candidates = (brand,) + _BRAND_FALLBACK_CHAIN
+    for candidate in candidates:
+        resolved = _try(candidate)
+        if resolved is not None:
+            return resolved
+    return BURN_FONT_NAME, _burn_fontsdir(e)
+
+
+def _burn_fontsdir(e: dict) -> str:
+    return str(e.get("BURN_FONTSDIR") or "/usr/share/fonts/truetype/wqy")
 
 
 def hardburn_enabled(env: dict | None = None) -> bool:
@@ -772,12 +899,15 @@ def _srt_ts_to_ass(ts: str) -> str:
     return f"{h}:{mi:02d}:{s:02d}.{ms // 10:02d}"
 
 
-def srt_to_styled_ass(srt_text: str) -> str:
+def srt_to_styled_ass(srt_text: str, font_name: str | None = None) -> str:
     """规范 SRT（cue 合成产物，含预折行）→ 固化样式 ASS 文本。
 
-    纯 Python 解析，不依赖 ffmpeg；样式全部来自 :data:`_BURN_ASS_HEADER`
+    纯 Python 解析，不依赖 ffmpeg；样式全部来自 :func:`burn_ass_header`
     （白字 / 纯黑 Outline=2 / Shadow=0 / BorderStyle=1，PlayRes 1080x1920）。
+    ``font_name``：烧录字体族名（阶段2 品牌字体管道）；None = 历史默认文泉驿，
+    产物与旧版逐字节一致。
     """
+    header = burn_ass_header(font_name) if font_name else _BURN_ASS_HEADER
     dialogues: list[str] = []
     for block in re.split(r"\n\s*\n", srt_text.strip()):
         lines = [ln for ln in block.split("\n") if ln.strip()]
@@ -787,7 +917,7 @@ def srt_to_styled_ass(srt_text: str) -> str:
         text = "\\N".join(ln.strip() for ln in lines[2:])
         dialogues.append(
             f"Dialogue: 0,{_srt_ts_to_ass(t0)},{_srt_ts_to_ass(t1)},Sub,,0,0,0,,{text}")
-    return _BURN_ASS_HEADER + "\n".join(dialogues) + "\n"
+    return header + "\n".join(dialogues) + "\n"
 
 
 def _visible_len(text: str) -> int:

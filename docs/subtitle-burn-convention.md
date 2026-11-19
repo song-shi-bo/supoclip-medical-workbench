@@ -1,4 +1,4 @@
-# 字幕硬烧录规范（2026-10-29 固化；2026-11-09 烧录源升级精修稿优先）
+# 字幕硬烧录规范（2026-10-29 固化；2026-11-09 烧录源升级精修稿优先；2026-11-18 阶段2 P1 升级）
 
 > 依据用户两轮需求固化：①字幕切分逻辑（6 条规则）②字幕样式（去阴影只留描边）。
 > 适用：supoclip-medical-workbench 成片硬字幕（SRT→ASS→ffmpeg subtitles 滤镜烧录链）。
@@ -18,16 +18,17 @@
    `subtitle_source = corrected_transcript`，绝不冒充精修。
 
 渲染指纹含精修身份串（`clip_render._refined_identity`）；指纹版本串自
-2026-11-09 起为 `refined-burn/1`——旧「纠错转写烧录」缓存（含语气词字幕）
-全部失效，重跑规划→渲染（重新剪辑）后成片字幕自动切换为精修稿。
+2026-11-18 起为 `subtitle-v2/1`（有词）/`subtitle-v2-base/1`（无词）——阶段2
+P1（cue 上限 6s/药名保护词/品牌字体管道）变更烧录产物，旧 `words-align/1`、
+`purify-concat/1` 及更早缓存全部失效，重新剪辑后按新规范重渲。
 
 ## 1. 切分规则（按优先级从高到低，实现在 `src/subtitle_cueing.py`；输入为 §0 选定的分段文本）
 
 1. **断句单位**：先按语音停顿（分段间隔 ≥ `SUBTITLE_SENTENCE_PAUSE_MS`）和标点（。？！，；）切句；超长句在语义短语边界（连接词/词边界）二次切分；**禁止按固定字数硬切**。
 2. **单行长度**：竖屏每行 ≤ `SUBTITLE_MAX_LINE_CHARS`（默认 **16** 汉字），超长在最近语义边界换行，不在词中间断。
-3. **不可拆分**：数字与单位完整（「0.5公分」「0.4的厚度」「0.4个毫米」）；标点不出现在行首；常用词不拆（因为/所以/这样/原则上等 `PROTECTED_WORDS`）。
+3. **不可拆分**：数字与单位完整（「0.5公分」「0.4的厚度」「0.4个毫米」）；标点不出现在行首；常用词不拆（因为/所以/这样/原则上等 `PROTECTED_WORDS`）；**药名不拆（2026-11-18 阶段2）**——常见药内置 starter 表 + `medical_lexicon` TSV `type=drug` 标准词全部进原子 token（长名优先匹配；别名/错写不入表；词典缺失只降级不阻断）。
 4. **口语冗余**（`SUBTITLE_STRIP_FILLERS`，默认开）：去叠词（因为因为→因为、对对对→对；谢谢等例外保留）与填充词（是这样子的/来讲/「他要看XX呢」从句等 `_FILLER_SPANS` 显式清单）；时间码用原区间，不压缩。
-5. **时间轴**：每条显示 ≥ `SUBTITLE_MIN_CUE_SECONDS`（默认 **0.8s**）；同一屏最多 `SUBTITLE_MAX_LINES`（默认 **2**）行；相邻条不重叠、无缝隙。
+5. **时间轴**：每条显示 ≥ `SUBTITLE_MIN_CUE_SECONDS`（默认 **0.8s**）；同一屏最多 `SUBTITLE_MAX_LINES`（默认 **2**）行；相邻条不重叠、无缝隙；**单条最长 `SUBTITLE_MAX_CUE_SECONDS`（2026-11-18 阶段2 起 12s 收紧为默认 6s，env >6 钳回 6）**——切分、装箱合并、整平缝隙延伸、短条合并四处全部受该上限约束（验收项「超过 6 秒的 cue：0」的机制保证）。
 6. **标点风格**：`SUBTITLE_PUNCT_STYLE` = `omit`（默认，全省略）或 `keep`（全保留），全局二选一。
 
 ## 2. 烧录样式（固化在 `src/subtitle_cueing.py` BURN_* 常量与 ASS 头）
@@ -39,7 +40,7 @@
 | 阴影 | `Shadow=0`（**无**，任何偏移投影都不允许） |
 | BorderStyle | `1`（描边模式） |
 | PlayRes | 1080×1920（与视频 1:1，Outline 即字面像素） |
-| 字体 | WenQuanYi Zen Hei（容器唯一 CJK 字体），字号 63px |
+| 字体 | WenQuanYi Zen Hei（容器唯一 CJK 字体），字号 63px；**品牌字体管道（2026-11-18 阶段2）**：配置 `SUBTITLE_BRAND_FONT`（字体文件名/stem，经 font_registry 查找，只认 FONTS_DIR 子树与系统 CJK 白名单）后按 品牌字体 → MicrosoftYaHeiBold → 文泉驿 逐级回退，ASS 族名取字体内部真实族名（`resolve_burn_font` 同产 fontsdir）；0 字节占位文件自动跳过（现存 `fonts/MicrosoftYaHeiBold.ttc` 即占位）。**未配置时保持文泉驿，产物字节兼容** |
 | 位置 | 底部居中（Alignment=2，MarginV=360，2026-11-09 用户选定 C 档：下三分之一黄金位，避开平台底部交互 UI；原 160 过贴底） |
 
 **验收方法**：①纯白背景烧录帧（最严苛投影检测）②真实画面亮部抽帧，字幕区放大目检——白字周围只允许一圈干净纯黑描边，无任何灰色/黑色偏移残留。
@@ -50,9 +51,13 @@
 SUBTITLE_MAX_LINE_CHARS=16      # 每行最大汉字数
 SUBTITLE_MAX_LINES=2            # 每屏最大行数
 SUBTITLE_MIN_CUE_SECONDS=0.8    # 单条最短显示时长
+SUBTITLE_MAX_CUE_SECONDS=6      # 单条最长显示时长（2026-11-18 阶段2：12→6；env >6 钳回 6）
 SUBTITLE_STRIP_FILLERS=true     # 口语冗余清理开关
 SUBTITLE_PUNCT_STYLE=omit       # omit=全省略 | keep=全保留
 SUBTITLE_SENTENCE_PAUSE_MS=500  # 语音停顿判定阈值
+SUBTITLE_GAP_EXTEND_MS=800      # 长停顿前条最大延伸（延伸后仍受 6s 上限约束）
+SUBTITLE_CUE_GAP_SPLIT_S=1.5    # 词间停顿切分阈值
+SUBTITLE_BRAND_FONT=            # 品牌字体文件名（空=文泉驿字节兼容默认）
 SUBTITLE_HARDBURN=true          # 渲染时直接烧字进成片（false=紧急停机：有cue切片硬失败，见§4）
 BURN_FONTSDIR=/usr/share/fonts/truetype/wqy   # 烧录字体目录（容器默认已带文泉驿）
 ```
@@ -64,9 +69,11 @@ BURN_FONTSDIR=/usr/share/fonts/truetype/wqy   # 烧录字体目录（容器默�
   - 紧急停机开关：`SUBTITLE_HARDBURN=false` 不再产出 sidecar_only 底片——有 cue 的切片直接 `ClipRenderError`（2026-11-04 固化契约：切片预览必须显示字幕）。发布层另有纵深防御：`subtitle_mode=sidecar_only` 的成片禁止登记/发布；旧 sidecar_only 缓存命中时视为过期强制重渲染。
 - **运维 CLI**：`cd backend && .venv/bin/python scripts/burn_subtitles.py <子命令>`（`ass` / `burn` / `regen-srt` / `meta` / `auto`）。用于：存量 sidecar 成片补烧、样式调整后重烧、worker 重渲染后的补烧（`auto` 一条龙含元数据同步）。
 - **底片要求**：烧录必须以**无字幕的干净渲染**为底；对已烧字视频再烧会二次压字。
-- **元数据契约**：烧录后同步 ①`warnings.json`：`subtitle_mode=burned` + `srt_sha256` + `subtitle_hard_burn`；②`cover_realframe_v2.json` 账本 `intro_clip_final_sha256`（防「应用封面」重复烧 0.8s 片头）。`meta` 子命令自动完成。
+- **元数据契约**：烧录后同步 ①`warnings.json`：`subtitle_mode=burned` + `srt_sha256` + `subtitle_hard_burn`（2026-11-18 起含 `fontsdir`）+ **`subtitle_qc`**（阶段2 验收块：sync p95/行宽行数/时长违例/词缺失占比，只报告不拦截）+ `subtitle_provenance`；②`cover_realframe_v2.json` 账本 `intro_clip_final_sha256`（防「应用封面」重复烧 0.8s 片头）。`meta` 子命令自动完成。
 
 ## 5. 历史变更
+
+- 2026-11-18：**阶段2 P1 字幕升级**（方案《剪辑工作台阶段2优化方案-2026-11-18》）——①cue 上限 12s→6s（验收「>6s cue = 0」，切分/装箱/整平/合并四处护栏）；②药名保护词（内置 starter + medical_lexicon type=drug，原子 token 不拆）；③品牌字体解析链 `SUBTITLE_BRAND_FONT`（未配置保持文泉驿字节兼容；发现现存 `fonts/MicrosoftYaHeiBold.ttc` 为 0 字节占位的历史遗留问题，解析链自动跳过）；④新 `subtitle_qc.py`：warnings.json `subtitle_qc` 验收块（p95≤200ms 目标、行宽/行数/时长违例、words_missing 占比），指纹 bump `subtitle-v2/1`（有词）/`subtitle-v2-base/1`（无词），旧缓存全量失效。2026-10-29 验收 case 期望同步更新（7.8s 双行 cue 按新规合法拆为两条单行）。
 
 - 2026-11-09：**烧录源升级「精修稿优先」**（用户提问「字幕为什么还有语气词」后拍板）——source=llm 的切片烧精修稿（语气词/无价值句已删），缺失/fallback 如实回退纠错转写；指纹版本 refined-burn/1 全量失效旧缓存，重新剪辑后生效。同日右侧切片转写去重：切片视图只保留「切片精修文案」面板（医生/患者标注），删除下方转写分段列表（用户指令「切片转写只保留一个板块」）。
 - 2026-10-29 上午：cue 合成层上线（切分 6 规则），6 成片首次按新逻辑烧录。
