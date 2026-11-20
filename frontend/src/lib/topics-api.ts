@@ -143,6 +143,14 @@ export interface GenerateScriptResult {
   warnings: string[];
 }
 
+export interface ScriptDetail extends ScriptItem {
+  hook: string;
+  body: string;
+  cta: string;
+  shooting_notes: string;
+  refs: string[];
+}
+
 /** 后端 detail 为可读中文（FastAPI HTTPException），原样透出给 UI。 */
 export class TopicsApiError extends Error {
   status: number;
@@ -270,6 +278,9 @@ export function createTopicsApi(baseUrl: string) {
     listScripts(status = "approved"): Promise<{ items: ScriptItem[] }> {
       const params = new URLSearchParams({ status });
       return requestJson(`${base}/scripts?${params.toString()}`);
+    },
+    scriptDetail(scriptId: string): Promise<ScriptDetail> {
+      return requestJson(`${base}/scripts/${encodeURIComponent(scriptId)}`);
     },
     listReviewers(): Promise<{ items: ReviewerItem[] }> {
       return requestJson(`${base}/reviewers`);

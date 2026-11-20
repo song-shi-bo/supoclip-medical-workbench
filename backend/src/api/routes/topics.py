@@ -309,6 +309,41 @@ async def list_scripts(
     }
 
 
+@router.get("/scripts/{script_id}")
+async def get_script_detail(script_id: str, db: AsyncSession = Depends(get_db)):
+    """文稿全文（正文/依据/拍摄备注），供选题板查看与审批前通读。"""
+    row = (
+        await db.execute(
+            text(
+                "SELECT s.id, s.topic_id, s.origin, s.version, s.title, s.hook, s.body, s.cta, "
+                "s.shooting_notes, s.refs, s.status, s.task_id, s.created_by, s.created_at, "
+                "t.title AS topic_title "
+                "FROM scripts s LEFT JOIN hot_topics t ON t.id = s.topic_id WHERE s.id = :id"
+            ),
+            {"id": script_id},
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(404, "script not found")
+    return {
+        "id": row.id,
+        "topic_id": row.topic_id,
+        "topic_title": row.topic_title,
+        "origin": row.origin,
+        "version": row.version,
+        "title": row.title,
+        "hook": row.hook,
+        "body": row.body,
+        "cta": row.cta,
+        "shooting_notes": row.shooting_notes,
+        "refs": _as_str_list(row.refs),
+        "status": row.status,
+        "task_id": row.task_id,
+        "created_by": row.created_by,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
 @router.get("/{topic_id}")
 async def get_topic(topic_id: str, db: AsyncSession = Depends(get_db)):
     row = await _load_topic(db, topic_id)

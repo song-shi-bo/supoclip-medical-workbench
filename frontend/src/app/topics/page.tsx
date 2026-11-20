@@ -46,6 +46,7 @@ import {
   type BriefDraftResult,
   type GenerateScriptResult,
   type ReviewerItem,
+  type ScriptDetail,
   type ScriptItem,
   type TopicItem,
   type TopicsApiError,
@@ -149,6 +150,8 @@ export default function TopicsPage() {
   const [lastDraft, setLastDraft] = useState<BriefDraftResult | null>(null);
   const [lastScript, setLastScript] = useState<GenerateScriptResult | null>(null);
   const [doctorNotes, setDoctorNotes] = useState("");
+  const [scriptDetail, setScriptDetail] = useState<ScriptDetail | null>(null);
+  const [viewScriptId, setViewScriptId] = useState<string>("");
   // 白名单管理（管理员）：探测 403 → 自动隐藏入口
   const [canManageReviewers, setCanManageReviewers] = useState(false);
   const [reviewersOpen, setReviewersOpen] = useState(false);
@@ -280,6 +283,14 @@ export default function TopicsPage() {
       await api.approveScript(scriptId);
       setMessage("文稿审批通过，可进入拍摄。");
       await refreshSelected();
+    });
+
+  const runViewScript = (scriptId: string) =>
+    withBusy(`view-${scriptId}`, async () => {
+      if (viewScriptId === scriptId) { setViewScriptId(""); setScriptDetail(null); return; }
+      const detail = await api.scriptDetail(scriptId);
+      setScriptDetail(detail);
+      setViewScriptId(scriptId);
     });
 
   const runAddReviewer = () =>
@@ -541,6 +552,11 @@ export default function TopicsPage() {
                         <Badge variant="secondary" className="text-[10px]">{SCRIPT_STATUS_LABELS[script.status] ?? script.status}</Badge>
                         {script.task_id ? <span className="text-stone-400">任务 {script.task_id.slice(0, 8)}…</span> : null}
                         <span className="ml-auto" />
+                        <Button variant="ghost" size="sm" className="h-6 px-2 text-xs"
+                          onClick={() => void runViewScript(script.id)}
+                          disabled={busy.startsWith("view-")}>
+                          {busy === `view-${script.id}` ? <LoaderCircle size={12} className="animate-spin" /> : viewScriptId === script.id ? "收起" : "看全文"}
+                        </Button>
                         {script.status === "draft" && script.origin === "shooting_script" ? (
                           <Button variant="outline" size="sm" className="h-6 px-2 text-xs"
                             onClick={() => void runApproveScript(script.id)}
@@ -552,6 +568,26 @@ export default function TopicsPage() {
                     ))}
                   </ul>
                 )}
+                {/* 文稿全文视图 */}
+                {viewScriptId && scriptDetail ? (
+                  <div className="mt-2 rounded-md border bg-stone-50 p-3 text-xs">
+                    <div className="mb-1 flex items-center gap-2 font-medium">
+                      {scriptDetail.title || "(无标题)"}
+                      <Badge variant="secondary" className="text-[10px]">
+                        {SCRIPT_STATUS_LABELS[scriptDetail.status] ?? scriptDetail.status} · v{scriptDetail.version}
+                      </Badge>
+                    </div>
+                    <p className="whitespace-pre-wrap"><strong>钩子：</strong>{scriptDetail.hook}</p>
+                    <p className="mt-1.5 whitespace-pre-wrap"><strong>正文：</strong>{scriptDetail.body}</p>
+                    <p className="mt-1.5 whitespace-pre-wrap"><strong>CTA：</strong>{scriptDetail.cta}</p>
+                    {scriptDetail.refs?.length ? (
+                      <p className="mt-1.5 text-stone-500"><strong>依据：</strong>{scriptDetail.refs.join("；")}</p>
+                    ) : null}
+                    {scriptDetail.shooting_notes ? (
+                      <p className="mt-1.5 text-stone-500"><strong>拍摄备注：</strong>{scriptDetail.shooting_notes}</p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : (
