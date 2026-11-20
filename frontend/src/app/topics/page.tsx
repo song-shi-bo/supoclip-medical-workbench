@@ -494,6 +494,10 @@ export default function TopicsPage() {
                   生 成 稿
                 </Button>
               </div>
+              {/* 抽屉内也要能看到操作反馈（页面顶部的 message 会被 Sheet 遮罩挡住） */}
+              {message ? (
+                <p className={`text-xs ${/失败|不允许|缺失|重复/.test(message) ? "text-red-600" : "text-emerald-700"}`}>{message}</p>
+              ) : null}
               <div>
                 <Label className="text-xs">医生补充说明（生稿输入：口播习惯/称呼/强调点，可空）</Label>
                 <Input className="mt-1" value={doctorNotes} onChange={(e) => setDoctorNotes(e.target.value)} />

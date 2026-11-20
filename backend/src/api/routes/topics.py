@@ -10,12 +10,14 @@
 豆包 ingest 通道（ingest_kb.py）写入的永远是 transcript_reference。
 """
 
+import hashlib
 import json
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ... import topic_pipeline as tp
@@ -528,29 +530,38 @@ async def generate_script(topic_id: str, payload: GenerateScriptIn, request: Req
     ).scalar() or 0
     runtime_config = tp.get_config()
     title = (draft.title or row.title or "").strip()[:300]
-    inserted = (
-        await db.execute(
-            text(
-                "INSERT INTO scripts (id, topic_id, version, title, hook, body, cta, "
-                "shooting_notes, refs, model, generated_by, origin, status) "
-                "VALUES (gen_random_uuid()::text, :tid, :ver, :title, :hook, :body, :cta, "
-                ":notes, CAST(:refs AS text[]), :model, 'workbench', :origin, 'draft') "
-                "RETURNING id, version"
-            ),
-            {
-                "tid": topic_id,
-                "ver": int(version_row) + 1,
-                "title": title,
-                "hook": draft.hook,
-                "body": draft.body,
-                "cta": draft.cta,
-                "notes": draft.shooting_notes,
-                "refs": [r.strip() for r in (draft.refs or []) if r.strip()],
-                "model": runtime_config.llm,
-                "origin": tp.SCRIPT_ORIGIN_SHOOTING,
-            },
-        )
-    ).first()
+    # content_hash：按标题+正文归一化计算（双库去重约定；正文入哈希使不同版本可共存）
+    _norm = "".join(ch for ch in f"{title}{draft.body}".lower() if ch.isalnum())
+    content_hash = hashlib.sha256(_norm.encode("utf-8")).hexdigest()
+    try:
+        inserted = (
+            await db.execute(
+                text(
+                    "INSERT INTO scripts (id, topic_id, version, title, hook, body, cta, "
+                    "shooting_notes, refs, model, generated_by, origin, status, content_hash) "
+                    "VALUES (gen_random_uuid()::text, :tid, :ver, :title, :hook, :body, :cta, "
+                    ":notes, CAST(:refs AS text[]), :model, 'workbench', :origin, 'draft', :content_hash) "
+                    "RETURNING id, version"
+                ),
+                {
+                    "tid": topic_id,
+                    "ver": int(version_row) + 1,
+                    "title": title,
+                    "hook": draft.hook,
+                    "body": draft.body,
+                    "cta": draft.cta,
+                    "notes": draft.shooting_notes,
+                    "refs": [r.strip() for r in (draft.refs or []) if r.strip()],
+                    "model": runtime_config.llm,
+                    "origin": tp.SCRIPT_ORIGIN_SHOOTING,
+                    "content_hash": content_hash,
+                },
+            )
+        ).first()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "生稿内容与已有文稿完全重复（content_hash 冲突）。"
+                                 "如需重新生成，请微调选题卡的核心结论或标题后再试。")
     # 首次生稿后进入 scheduled
     if row.status == tp.TOPIC_STATUS_DOCTOR_APPROVED:
         await db.execute(

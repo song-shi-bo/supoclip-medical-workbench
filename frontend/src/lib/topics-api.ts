@@ -213,12 +213,26 @@ export function topicsPath(base: string): string {
 export function createTopicsApi(baseUrl: string) {
   const base = topicsPath(baseUrl);
   return {
-    list(status = "", q = "", limit = 200): Promise<{ total: number; items: TopicItem[] }> {
+    async list(status = "", q = "", limit = 200): Promise<{ total: number; items: TopicItem[] }> {
       const params = new URLSearchParams();
       if (status) params.set("status", status);
       if (q) params.set("q", q);
-      params.set("limit", String(limit));
-      return requestJson(`${base}?${params.toString()}`);
+
+      const items: TopicItem[] = [];
+      let total = 0;
+      do {
+        const pageSize = Math.min(200, limit - items.length);
+        params.set("limit", String(pageSize));
+        if (items.length > 0) params.set("offset", String(items.length));
+        const page = await requestJson<{ total: number; items: TopicItem[] }>(
+          `${base}?${params.toString()}`,
+        );
+        total = page.total;
+        items.push(...page.items);
+        if (page.items.length < pageSize) break;
+      } while (items.length < Math.min(limit, total));
+
+      return { total, items };
     },
     get(topicId: string): Promise<TopicItem> {
       return requestJson(`${base}/${encodeURIComponent(topicId)}`);

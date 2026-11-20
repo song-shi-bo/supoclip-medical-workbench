@@ -59,6 +59,21 @@ describe("topic board facts", () => {
 });
 
 describe("topics api client", () => {
+  it("loads a 300-card board in requests capped at 200 cards", async () => {
+    const cards = Array.from({ length: 300 }, (_, index) => topic({ id: String(index) }));
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({ total: 310, items: cards.slice(0, 200) }))
+      .mockResolvedValueOnce(Response.json({ total: 310, items: cards.slice(200) }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await createTopicsApi("/video-api").list("", "", 300);
+    expect(result).toEqual({ total: 310, items: cards });
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/video-api/api/v1/topics?limit=200",
+      "/video-api/api/v1/topics?limit=100&offset=200",
+    ]);
+  });
+
   it("lists topics and surfaces backend detail as TopicsApiError", async () => {
     const fetchMock = vi
       .fn()
