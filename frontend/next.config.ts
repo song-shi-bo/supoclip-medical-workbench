@@ -19,7 +19,9 @@ const nextConfig: NextConfig = {
     // /video-api 转发到隔离后端；生产/共线（3107）未设置该变量 → 默认 8000，行为不变。
     const videoApiOrigin = process.env.VIDEO_API_ORIGIN || "http://127.0.0.1:8000";
     return [
-      ...["studio", "api/jobs", "api/uploads"].map((path) => ({
+      // api/v1（2026-11-20）：选题卡 /topics 页与双库/指南库 API 走同源代理；
+      // 缺这条时 /video-api/api/v1/* 在前端层直接 404（后端路由存在但没被转发）。
+      ...["studio", "api/jobs", "api/uploads", "api/v1"].map((path) => ({
         source: `/video-api/${path}/:path*`,
         destination: `${videoApiOrigin}/${path}/:path*`,
       })),
