@@ -7,7 +7,7 @@ import { normalizeWorkflowJob, isWorkflowTerminal, workflowSourceLabel, workflow
   generateProjectId, downloadWorkflowArtifact, workflowClipExportUrl, revisionEdits, revisionRequest, reusableWorkflowRequest, revisionWarnings, revisionWarningLabel, type WorkflowJob, type WorkflowSource, type WorkflowArtifact,
   type RecoveryMode, type RevisionDocument } from "@/lib/studio-workflow";
 import { ChangeEvent, DragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent, SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Check, Download, Film, FolderOpen, House, ListVideo, LoaderCircle, Menu, Plus, RotateCcw, Save, Scissors, Search, Settings2, Trash2, Upload, X } from "lucide-react";
+import { AudioLines, Check, ClipboardList, Download, Film, FolderOpen, House, ListVideo, LoaderCircle, Menu, Plus, RotateCcw, Save, Scissors, Search, Settings2, Trash2, Upload, X } from "lucide-react";
 import "./studio.css";
 import { ProjectManager } from "@/components/studio/project-manager";
 import RefinedTranscriptPanel from "@/components/studio/refined-transcript-panel";
@@ -877,6 +877,20 @@ export default function StudioPage() {
   };
 
 
+  // 选题卡（阶段3 M5）：上传时可关联一张医生已批准的原创稿；job 提交后自动 link-job
+  // （scripts.task_id 回填 + studio_jobs.config 挂 script_id/topic_id，选题→used）。
+  const [linkedScriptId, setLinkedScriptId] = useState<string>("");
+  const [approvedScripts, setApprovedScripts] = useState<Array<{ id: string; title: string; topic_title: string | null; version: number }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/video-api/api/v1/topics/scripts?status=approved", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((data: { items?: Array<{ id: string; title: string; topic_title: string | null; version: number }> }) => {
+        if (!cancelled) setApprovedScripts(data.items ?? []);
+      })
+      .catch(() => { /* 静默：无已批准文稿或未登录时隐藏选择器 */ });
+    return () => { cancelled = true; };
+  }, []);
   const startTranscription = async () => {
     if (!file || transcriptionState === "processing") return;
     const generation = workflowGenerationRef.current;
@@ -971,8 +985,25 @@ export default function StudioPage() {
       // ② 轮询统一任务状态（queued → 提取音轨/转写/纠错 → transcript_ready）；
       // 自动剪辑不再是这个 job 的一部分，完成处理只载入分段与凭据。
       if (generation !== workflowGenerationRef.current) return;
+      // 选题卡挂链（阶段3 M5）：best-effort，失败不阻断转写，可稍后在选题板补挂。
+      if (linkedScriptId) {
+        try {
+          const linkResponse = await fetch(`${transcribeBase}/api/v1/topics/scripts/${encodeURIComponent(linkedScriptId)}/link-job`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ job_id: jobId }),
+          });
+          if (linkResponse.ok) {
+            setMessage("已提交转写任务，并已关联所选文稿。等待本机执行器处理…");
+          } else {
+            const linkText = await linkResponse.text();
+            setMessage(`已提交转写任务；关联文稿失败（${linkResponse.status}）${linkText ? `：${linkText.slice(0, 160)}` : ""}。可稍后在选题板补挂。`);
+          }
+        } catch {
+          setMessage("已提交转写任务；关联文稿时网络异常，可稍后在选题板补挂。");
+        }
+      }
       setWorkflowJob(normalizeWorkflowJob({ status: "queued" }, jobId, "transcribe"));
-      setMessage("已提交转写任务，等待本机执行器处理…");
+      setMessage((prev) => prev || "已提交转写任务，等待本机执行器处理…");
       const startedAt = Date.now();
       for (;;) {
         await new Promise((resolve) => setTimeout(resolve, 2500));
@@ -4017,7 +4048,9 @@ export default function StudioPage() {
       {/* 精简顶栏（v2）：左侧只有菜单图标 + 标题，右侧只有「已保存 / 开始自动剪辑 / 导出成片 / 设置」。
           文件·编辑·视图·工具·帮助菜单、规则中心入口、规则版本横幅与「按修订规则重新生成」一律移出顶栏；
           规则版本信息改由成片卡片、剪辑助手执行结果与规则快照面板呈现（顶栏不再承载规则提示）。 */}
-      <button className="top-icon" aria-label="项目管理" title="项目管理" onClick={() => setProjectManagerOpen(true)}><House size={22} /></button><strong>AI 视频剪辑工作台</strong>
+      <button className="top-icon" aria-label="项目管理" title="项目管理" onClick={() => setProjectManagerOpen(true)}><House size={22} /></button>
+      <button className="top-icon" aria-label="选题板" title="选题板：热点→选题卡→医生审批→原创稿" onClick={() => { window.location.href = "/topics"; }}><ClipboardList size={22} /></button>
+      <strong>AI 视频剪辑工作台</strong>
       {activeProjectId?.startsWith("timeline_") && projectDisplayName && (projectNameEditing
         ? <span className="project-name-edit">
             <input value={projectNameDraft} maxLength={60} autoFocus aria-label="项目名称" disabled={projectNameSaving}
@@ -4236,6 +4269,18 @@ export default function StudioPage() {
                   enabled={subtitleOverlayEnabled}
                 />
               )}
+              {!previewUrl && approvedScripts.length > 0 ? (
+                <label className="mb-2 flex items-center gap-2 text-xs text-stone-500">
+                  关联文稿（可选，医生已批准的原创稿）：
+                  <select className="rounded border border-stone-300 bg-white px-1.5 py-0.5 text-xs" value={linkedScriptId}
+                    onChange={(e) => setLinkedScriptId(e.target.value)}>
+                    <option value="">不关联</option>
+                    {approvedScripts.map((s) => (
+                      <option key={s.id} value={s.id}>{`${s.topic_title || s.title}（v${s.version}）`}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               {!previewUrl && <button className="drop-placeholder" onClick={() => inputRef.current?.click()}><Upload size={26} /><strong>导入原始视频</strong><span>拖入视频或点击选择文件</span></button>}
               {/* video 加载失败占位（error 事件降级）：源 404/JSON/被清理时 <video> 只会黑屏，
                   这里盖一层可读提示；不清空选中态、不改 src（防错误循环），成功加载后由

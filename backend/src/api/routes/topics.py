@@ -259,6 +259,54 @@ async def list_reviewers(request: Request, db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.get("/scripts")
+async def list_scripts(
+    status: str = Query(default="approved", description="按状态过滤，逗号分隔可多值"),
+    origin: str = Query(default="shooting_script", description="文稿身份过滤"),
+    topic_id: str = Query(default="", description="限定选题"),
+    limit: int = Query(default=100, le=300),
+    db: AsyncSession = Depends(get_db),
+):
+    """文稿列表（供上传「关联文稿」选择器与一般检索）。静态路由，先于 /{topic_id} 注册。"""
+    statuses = [s.strip() for s in status.split(",") if s.strip()]
+    where = ["origin = :origin"]
+    params: dict[str, Any] = {"origin": origin, "limit": limit}
+    if statuses:
+        where.append("status = ANY(:statuses)")
+        params["statuses"] = statuses
+    if topic_id.strip():
+        where.append("topic_id = :tid")
+        params["tid"] = topic_id.strip()
+    rows = (
+        await db.execute(
+            text(
+                "SELECT s.id, s.topic_id, t.title AS topic_title, s.version, s.title, s.status, "
+                "s.task_id, s.created_by, s.created_at "
+                "FROM scripts s LEFT JOIN hot_topics t ON t.id = s.topic_id "
+                f"WHERE {' AND '.join(where)} "
+                "ORDER BY s.created_at DESC LIMIT :limit"
+            ),
+            params,
+        )
+    ).fetchall()
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "topic_id": r.topic_id,
+                "topic_title": r.topic_title,
+                "version": r.version,
+                "title": r.title,
+                "status": r.status,
+                "task_id": r.task_id,
+                "created_by": r.created_by,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+    }
+
+
 @router.get("/{topic_id}")
 async def get_topic(topic_id: str, db: AsyncSession = Depends(get_db)):
     row = await _load_topic(db, topic_id)
