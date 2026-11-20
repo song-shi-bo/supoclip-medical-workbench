@@ -184,6 +184,10 @@ def create_app(
     # 第三库：医学指南库（入库/检索独立 token；entries/{id}/review 走 Studio 登录态）
     app.include_router(medical_kb_router)
 
+    # 选题卡（阶段3）：拆解/两级审批/生稿/挂链，全部走 Studio 登录态；医生审批限 topic_reviewers 白名单
+    from .api.routes.topics import router as topics_router
+    app.include_router(topics_router, dependencies=[Depends(enforce_studio_access)])
+
     app.include_router(media_router, dependencies=[Depends(enforce_studio_access)])
     app.include_router(feedback_router)
     app.include_router(billing_router)
