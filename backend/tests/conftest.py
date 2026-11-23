@@ -79,6 +79,24 @@ async def db_session(initialized_database):
             await session.close()
 
 
+@pytest.fixture(autouse=True)
+def _isolated_manifest_mirror(monkeypatch):
+    """阶段5·点1：单测默认关闭台账 PG 镜像/修复。
+
+    镜像按 project_id 落库且跨测试进程持久——固定 pid 的文件级测试会通过
+    「磁盘缺失→修复」路径读到其它测试提交的台账（实测污染 clip_config /
+    inspector / active_clip 等数十个用例）。默认双 no-op 保住旧的文件隔离语义；
+    需要真实验证镜像链路的用例，接收本 fixture 的返回值（原始实现二元组）并
+    在用例内 monkeypatch 恢复（见 test_studio_project_store 的两个 PG 用例）。
+    """
+    from src import studio_project_store as store
+
+    saved = (store._mirror_manifest_to_pg, store._restore_manifest_from_pg)
+    monkeypatch.setattr(store, "_mirror_manifest_to_pg", lambda *a, **k: None)
+    monkeypatch.setattr(store, "_restore_manifest_from_pg", lambda *a, **k: None)
+    yield saved
+
+
 @pytest.fixture()
 async def app(db_session):
     config = Config()

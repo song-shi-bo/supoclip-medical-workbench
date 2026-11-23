@@ -17,6 +17,9 @@ class Result:
     def mappings(self): return self
     def first(self): return self.rows[0] if self.rows else None
     def all(self): return self.rows
+    def scalar(self):
+        row=self.rows[0] if self.rows else None
+        return row[0] if isinstance(row,(tuple,list)) else row
 
 
 class TransactionDB:
@@ -73,10 +76,23 @@ class Session:
             return Result(count=1)
         if q.startswith("SELECT") and "FROM studio_artifacts" in q:
             rows=[a for a in self.db.artifacts if a["job_id"]==p["job_id"]]
+            if "COALESCE(MAX(revision)" in q:
+                # save_artifact 新 object_key 的 revision 单调递增查询（clip_id None 安全）
+                rows=[a for a in rows if a["kind"]==p["kind"] and a.get("clip_id")==p["clip_id"]]
+                max_rev=max([int(a.get("revision") or 1) for a in rows] or [0])
+                return Result([(max_rev+1,)])
             if "kind=:kind" in q:
-                rows=[a for a in rows if a["kind"]==p["kind"] and a["clip_id"]==p["clip_id"] and a["object_key"]==p["object_key"]]
-                return Result([(a["id"],) for a in rows])
+                rows=[a for a in rows if a["kind"]==p["kind"] and a.get("clip_id")==p["clip_id"] and a["object_key"]==p["object_key"]]
+                # 阶段5·点1：同 key 回传改为 mappings 行（id/sha256/size_bytes）供覆盖检测
+                return Result([dict(a) for a in rows])
             return Result(rows)
+        if q.startswith("UPDATE studio_artifacts"):
+            for a in self.db.artifacts:
+                if a["id"]==p["id"]:
+                    if "size_bytes" in p: a["size_bytes"]=p["size_bytes"]
+                    if "sha256" in p: a["sha256"]=p["sha256"]
+                    a["revision"]=int(a.get("revision") or 1)+1
+            return Result(count=1)
         if q.startswith("INSERT INTO studio_artifacts"):
             self.db.artifacts.append(copy.deepcopy(p));return Result(count=1)
         raise AssertionError("Unhandled synthetic SQL: "+q)
@@ -358,3 +374,54 @@ def test_r2_upload_hooks_real_ledger_verified_bytes_and_failure_release(backend,
                 assert conn.execute("SELECT active FROM reservations WHERE operation_id=?",("upload:"+sid,)).fetchone()[0]==0
     finally:
         access._principal.reset(principal_token);access._access.reset(ledger_token)
+
+
+# ---------------------------------------------------------------------------
+# 阶段5·点1（2026-11-22）：save_artifact revision 单调 + 同 key 覆盖留痕
+# ---------------------------------------------------------------------------
+
+def _fenced_job(db):
+    job=db.jobs[JOB]
+    job.update(worker_id="worker",lease_alive=True,status="rendering")
+    job["config"]={"_lifecycle":{"lease_token":"tok"}}
+    return job
+
+
+def test_save_artifact_new_key_revision_increments(backend):
+    db,access,queue,events,source=backend
+    async def run():
+        _fenced_job(db)
+        common=dict(clip_id="c",worker_id="worker",lease_token="tok")
+        first=await store.save_artifact(JOB,"clip_final","studio-artifacts/run/c/clip_final.mp4",100,sha256="aa",**common)
+        second=await store.save_artifact(JOB,"clip_final","studio-artifacts/run/c/clip_final-v2.mp4",120,sha256="bb",**common)
+        assert first and second and first!=second
+        assert [a["revision"] for a in db.artifacts]==[1,2]
+        assert not any("UPDATE studio_artifacts" in e for e in db.events)
+    asyncio.run(run())
+
+
+def test_save_artifact_same_key_same_content_idempotent(backend):
+    db,access,queue,events,source=backend
+    async def run():
+        _fenced_job(db)
+        common=dict(clip_id="c",worker_id="worker",lease_token="tok")
+        first=await store.save_artifact(JOB,"clip_final","studio-artifacts/run/c/clip_final.mp4",100,sha256="aa",**common)
+        again=await store.save_artifact(JOB,"clip_final","studio-artifacts/run/c/clip_final.mp4",100,sha256="aa",**common)
+        assert first==again and len(db.artifacts)==1
+        assert not any("UPDATE studio_artifacts" in e for e in db.events)
+    asyncio.run(run())
+
+
+def test_save_artifact_same_key_content_change_marks_overwrite(backend):
+    db,access,queue,events,source=backend
+    async def run():
+        _fenced_job(db)
+        common=dict(clip_id="c",worker_id="worker",lease_token="tok")
+        key="studio-artifacts/run/c/clip_final.mp4"
+        first=await store.save_artifact(JOB,"clip_final",key,100,sha256="aa",**common)
+        again=await store.save_artifact(JOB,"clip_final",key,150,sha256="cc",**common)
+        # 台账不新增行，但同址覆盖必须显式留痕（size/sha 刷新 + UPDATE 语句）
+        assert first==again and len(db.artifacts)==1
+        assert any("UPDATE studio_artifacts" in e for e in db.events)
+        assert db.artifacts[0]["sha256"]=="cc" and db.artifacts[0]["size_bytes"]==150
+    asyncio.run(run())

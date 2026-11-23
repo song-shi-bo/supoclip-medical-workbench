@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 
 import pytest
 
@@ -21,8 +22,10 @@ from src import studio_project_store as store
 
 @pytest.fixture
 def project(tmp_path, monkeypatch):
+    # 阶段5·点1：PG 镜像按 project_id 隔离——固定 pid 会让前面测试提交的镜像
+    # 泄漏进后面测试的「磁盘缺失→修复」路径，必须每测试唯一。
     monkeypatch.setattr(store, "TASKS_ROOT", tmp_path / "tasks")
-    return "timeline_abc123def456"
+    return "timeline_test" + uuid.uuid4().hex[:20]
 
 
 def _clips(task_id: str, count: int = 2) -> list[dict]:
@@ -211,9 +214,15 @@ def test_load_manifest_of_missing_project_is_empty_not_error(project):
 
 
 def test_corrupt_manifest_does_not_raise(project):
-    store.register_clips(project, "autoedit_aaaaaaaaaaaa", _clips("autoedit_aaaaaaaaaaaa"))
-    store.manifest_path(project).write_text("{not json", encoding="utf-8")
-    assert store.list_cards(project) == []
+    """损坏台账 + 无 PG 镜像 → 清空返回（读路径永不抛错契约，阶段5·点1 保留）。
+
+    有镜像时的「损坏→自动修复」契约由 test_load_manifest_restores_from_pg_when_disk_missing
+    覆盖（磁盘缺失与损坏走同一条修复路径）。"""
+    path = store.manifest_path(project)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("{not json", encoding="utf-8")
+    manifest = store.load_manifest(project)
+    assert manifest["clips"] == {} and manifest["clip_order"] == []
 
 
 def test_card_view_exposes_video_path(project):
@@ -363,3 +372,99 @@ def test_authoritative_staged_missing_clip_never_returns_existing_legacy(project
     card=store.card_view({"clip_id":"clip-missing","render_task_id":run})
     assert card["video_path"] == f"output/{run}/clips/clip-missing/{store.CLIP_FILENAME}"
     assert not (store.TASKS_ROOT/card["video_path"]).exists()
+
+
+# ---------------------------------------------------------------------------
+# 阶段5·点1 统一事实源（2026-11-22）：PG 镜像写穿 + 磁盘缺失修复
+# ---------------------------------------------------------------------------
+
+async def _mirror_session_maker_for(initialized_database, monkeypatch):
+    """把 conftest 的测试 AsyncEngine 包成镜像 session maker（确定性：镜像与断言同库）。"""
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+    maker = async_sessionmaker(initialized_database, class_=AsyncSession, expire_on_commit=False)
+    monkeypatch.setattr(store, "_mirror_session_maker", maker)
+    return maker
+
+
+async def _delete_mirror_row(db_session, project_id: str) -> None:
+    from sqlalchemy import text
+    await db_session.execute(
+        text("DELETE FROM project_manifests WHERE project_id = :project_id"),
+        {"project_id": project_id},
+    )
+    await db_session.commit()
+
+
+async def test_save_manifest_mirrors_write_through_to_pg(
+    project, db_session, initialized_database, monkeypatch, _isolated_manifest_mirror
+):
+    import asyncio
+
+    from sqlalchemy import text
+
+    # autouse 夹具默认关闭镜像；本用例恢复真实实现以验证写穿链路
+    monkeypatch.setattr(store, "_mirror_manifest_to_pg", _isolated_manifest_mirror[0])
+    await _mirror_session_maker_for(initialized_database, monkeypatch)
+    manifest = store._empty_manifest(project)
+    manifest["clips"] = {"clip-wt": {"clip_id": "clip-wt", "name": "写穿"}}
+    store.save_manifest(project, manifest)
+
+    row = None  # 镜像是后台 loop 的 fire-and-forget 写，轮询等待落库
+    for _ in range(40):
+        result = await db_session.execute(
+            text("SELECT generation FROM project_manifests WHERE project_id = :project_id"),
+            {"project_id": project},
+        )
+        row = result.scalar()
+        if row == 1:
+            break
+        await asyncio.sleep(0.25)
+    try:
+        assert row == 1
+    finally:
+        await _delete_mirror_row(db_session, project)
+
+
+async def test_load_manifest_restores_from_pg_when_disk_missing(
+    project, db_session, initialized_database, monkeypatch, _isolated_manifest_mirror
+):
+    import asyncio
+
+    from sqlalchemy import text
+
+    # autouse 夹具默认关闭修复；本用例恢复真实实现以验证镜像修复链路
+    monkeypatch.setattr(store, "_restore_manifest_from_pg", _isolated_manifest_mirror[1])
+    await _mirror_session_maker_for(initialized_database, monkeypatch)
+    authoritative = store._empty_manifest(project)
+    authoritative["generation"] = 3
+    authoritative["clips"] = {"clip-rs": {"clip_id": "clip-rs", "name": "权威镜像"}}
+    try:
+        await db_session.execute(
+            text(
+                "INSERT INTO project_manifests(project_id, manifest, generation) "
+                "VALUES(:project_id, CAST(:manifest AS JSONB), :generation) "
+                "ON CONFLICT (project_id) DO UPDATE SET "
+                "manifest = EXCLUDED.manifest, generation = EXCLUDED.generation"
+            ),
+            {
+                "project_id": project,
+                "manifest": json.dumps(authoritative, ensure_ascii=False),
+                "generation": 3,
+            },
+        )
+        await db_session.commit()
+
+        loaded: dict = {}
+        # load_manifest 是同步函数：放到无事件循环的线程里调用（真实 worker/线程池上下文）
+        def _load() -> None:
+            document = store.load_manifest(project)
+            loaded["clips"] = list(document.get("clips", {}).keys())
+            loaded["generation"] = document.get("generation")
+            loaded["repaired"] = store.manifest_path(project).is_file()
+
+        await asyncio.to_thread(_load)
+        assert loaded["clips"] == ["clip-rs"]
+        assert loaded["generation"] == 3
+        assert loaded["repaired"] is True  # 已从镜像修复回盘
+    finally:
+        await _delete_mirror_row(db_session, project)

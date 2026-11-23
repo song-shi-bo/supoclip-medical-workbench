@@ -1,5 +1,15 @@
 """
 Job queue setup using arq (async Redis queue).
+
+任务事实源边界（阶段5·点1，2026-11-22）
+--------------------------------------
+Studio 链路的任务事实源是 **PostgreSQL `studio_jobs`**（租约 + lease_token
+fencing，见 `studio_job_store.py`）。本模块现只承担 **Redis 连接池** 角色：
+`JobQueue.get_pool()` 供 studio stores 使用（`studio:lease:*` 辅助键可降级、
+心跳键、事件发布）。`enqueue_job` / `enqueue_processing_job` 为 A 线（legacy
+arq 管线，2026-10-30 已删除）遗留的入队 API，**当前无任何生产调用方**
+（tests/conftest 的 FakeQueueAdapter 镜像其签名以保持适配器兼容），不得在
+新代码中使用——新任务一律走 studio_job_store。
 """
 
 import logging

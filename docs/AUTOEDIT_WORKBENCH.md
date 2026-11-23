@@ -242,6 +242,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 ### 4.1 项目台账与时间线工程
 - 台账 `tasks/projects/<project_id>/clips.json`：卡片/封面/修订历史/`generation` 乐观锁；`POST /studio/projects/{id}/sync` 从任务产物同步。
+- **统一事实源（阶段5·点1，2026-11-22）**：PG `project_manifests` 表是台账的**权威镜像**（迁移 `20261122_0001_unified_sources.sql`）。`save_manifest` 磁盘原子写成功后由常驻后台 loop 写穿镜像（best-effort 可降级：PG 不可用只记 debug，绝不阻断本地链路）；`load_manifest` 磁盘优先（健康路径零额外查询），磁盘缺失/损坏时从镜像**自动修复回盘**并记 warning。clips.json 由唯一事实源降级为本地可重建视图；读写签名与 `generation` 并发契约不变。镜像走专用 loop + 专用小 engine（与主 API pool 隔离，避免 asyncpg 连接跨事件循环复用）。
 - 时间线 EDL `edit/edl.json` + 轨道/视图/历史：`/studio/timeline/{id}` 路由组（tracks/undo/redo/revision/peaks/audio）；画面变换 `PUT .../transform`（裁切/缩放/旋转，`clip_transform.py`）。
 
 ### 4.2 转写三态、修订与说话人标注（2026-11-06/08 新近固化）
@@ -260,7 +261,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 - **阶段2 P1 验收指标（2026-11-18）**：每次渲染 warnings.json 新增 `subtitle_qc` 块——sync p95（cue 首尾 vs 词首尾，目标 ≤200ms，无词记 `words_missing` 占比不计失败）、行宽/行数违例（≤16 字/行、≤2 行/条）、超时长 cue 清单（>6s 应为 0）。**只报告不拦截**（沿用字幕问题不阻断渲染契约）；P1 验收=对真实项目重渲后读该块断言全部达标。
 - **阶段2 P2 可读性/强调/安全区（2026-11-18）**：warnings.json 另有 `subtitle_readability`（mode=analyzed/off/fallback、逐 cue 采样与底板判定、`pre_mitigation_readability` 如实透出）、`subtitle_safezone`（平台档案校验，当前 MarginV=360 过 douyin 16% 档）、`subtitle_emphasis_mode` 留痕。「复杂背景可读率≥98%」验收口径=pre_mitigation 低读 cue **全部**获得底板补偿（post-mitigation 100%），raw 比例不粉饰；真 OCR（tesseract）未装，当前判定为亮度+边缘密度像素代理，装齐后可升级采样器不动链路。
 - **烧录文本来源（2026-11-09 固化）**：成片硬字幕=精修稿优先（§3.2 第 5 步）——`source=llm` 切片烧精修稿（无语气词），缺失/fallback 如实回退纠错转写；`warnings.json.subtitle_provenance.subtitle_source` 可审计。字幕编辑器人工修订（rev-NNN ASS）只对 sidecar 底片生效，burned 底片以画面为准；要换字幕文本需重新剪辑（渲染指纹识别精修/转写/字幕规范变化，当前 `subtitle-v3/1`）。
-- **words 接线与存量成片重烧（2026-11-12）**：words 进入渲染后指纹升至 `words-align/1`，此后所有新渲染自动带词级对齐；存量成片换新字幕必须重编码（字幕烧录在画面里，无法只换文件）。run `c6cd115b` 的 5 条成片已执行**就地字幕重烧维护**（`backend/scripts/subtitle_reburn_inplace_once.py`，用户授权）：同 plan/sub_ranges/源片/编码参数原位重渲 → 抽帧对比确认长停顿留白生效、发布副本原子覆盖、`clips.json.published` 哈希刷新为真实新值；旧副本备份于 `tasks/output/<run>/.pre-subtitle-reburn-*`。**注意两条系统约束**：(1) `studio_artifacts` 行按 (job,kind,clip,object_key) 去重且不更新已有行——同路径重发布时行内 sha/size 保持首次登记值，文件为权威内容；(2) 规划 provenance 冻结含实现文件哈希与闸门/overlay 身份，**任何 skill 实现变更后 reedit/`_plan_cache` 缓存必然失效**（protected resume 路径会硬失败 E_CACHE_CONTEXT_CHANGED）——跨实现变更的「只重渲」只能走直连 render + 原位发布，不能走 reedit（会重新 LLM 规划）。
+- **words 接线与存量成片重烧（2026-11-12）**：words 进入渲染后指纹升至 `words-align/1`，此后所有新渲染自动带词级对齐；存量成片换新字幕必须重编码（字幕烧录在画面里，无法只换文件）。run `c6cd115b` 的 5 条成片已执行**就地字幕重烧维护**（`backend/scripts/subtitle_reburn_inplace_once.py`，用户授权）：同 plan/sub_ranges/源片/编码参数原位重渲 → 抽帧对比确认长停顿留白生效、发布副本原子覆盖、`clips.json.published` 哈希刷新为真实新值；旧副本备份于 `tasks/output/<run>/.pre-subtitle-reburn-*`。**注意两条系统约束**：(1) `studio_artifacts` 台账（阶段5·点1 2026-11-22 起收紧）：同 (job,kind,clip,object_key) 且内容一致（sha/size 相同）仍幂等返回原行；**同 key 内容变化视为同址覆盖**——显式刷新行内 size/sha 并 `revision+1` + `overwritten_at` 留痕（warning 日志），不再静默；同 (job,kind,clip) 下的**新 object_key** 插入新行且 `revision` 单调递增（`20261122_0001_unified_sources.sql` 加列）。(2) 规划 provenance 冻结含实现文件哈希与闸门/overlay 身份，**任何 skill 实现变更后 reedit/`_plan_cache` 缓存必然失效**（protected resume 路径会硬失败 E_CACHE_CONTEXT_CHANGED）——跨实现变更的「只重渲」只能走直连 render + 原位发布，不能走 reedit（会重新 LLM 规划）。
 - `POST /studio/clips/{p}/{c}/subtitles`：cues→overrides、`clip_config.update_config`（真变化才 bump `render_revision`，`task_history` 记 `UPDATE_SUBTITLE`），生成 `subtitles/rev-00N/{clip}.ass|.srt`。
 - `GET` 返回 cues+config+overrides+版本列表 + **`subtitles_burned_in`**（读成片 `warnings.json`：`subtitle_mode=burned`）——前端据此**关闭播放器实时叠加层防重影**（2026-11-08 修复）；叠加层只服务未烧录（Phase 2 导出）场景。时间线字幕轨不受影响。
 - 字幕合成公式与后端 ASS 生成器一致（`subtitle_compose.py`、`caption_templates.py`、`emoji_captions.py`；默认 44px 金黄 #FFD700、y_pct 78.125）。
@@ -296,7 +297,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 | 人脸重构图（阶段2 P4） | `reframe.py`（`REFRAME_MODE=auto`，默认 off；`video_utils.build_crop_trajectory`/`build_smooth_pan_expression` 平滑资产接线） | 横宽源单脸跟踪横转竖、上半身定位、手势保护、多人保守回退；审计 `reframe.json` |
 | B-roll | `broll.py`（Pexels API，`PEXELS_API_KEY`） | 备用素材（可选） |
 | 存储 | 本地 `tasks/`（in/processing/completed/failed/output/plans/analysis/status/transcripts/projects/logs）；R2 可选（`r2.py`，无凭据时降级本地） | 任务与产物事实源 |
-| 数据库/队列 | PostgreSQL 16（`.tools/pg16`）、Redis 7.2（`.tools/redis-src`） | studio_jobs 租约、台账、计费、缓存 |
+| 数据库/队列 | PostgreSQL 16（`.tools/pg16`）、Redis 7.2（`.tools/redis-src`） | studio_jobs 租约、台账权威镜像 `project_manifests`（阶段5·点1）、artifact revision、计费、缓存 |
 | 访问控制 | `studio_access.py`（`AccessLedger`，默认 `/domain/.studio-resources/access/access.sqlite3`）+ 全局 `enforce_studio_access` | 对象级 ACL（task/project/clip），未登记 → 403 `studio_object_unregistered` |
 | API Keys | `api_keys.py` + `auth_headers.resolve_authenticated_user_id`（只存 SHA-256） | 程序化访问 /fonts、/studio/transcribe |
 | 额度台账 | `llm_budget.py`（按日、按 kind） | 所有 LLM 调用记账；超限走各阶段自动回退 |

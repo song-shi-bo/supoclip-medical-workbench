@@ -1,4 +1,9 @@
-"""项目资产台账：Project → SourceVideo → Clip 的稳定层级（文件系统事实源）。
+"""项目资产台账：Project → SourceVideo → Clip 的稳定层级（PG 权威镜像 + clips.json 本地视图）。
+
+阶段5·点1（2026-11-22）：PG ``project_manifests`` 表是台账的权威镜像，
+``clips.json`` 从唯一事实源降级为**本地可重建视图**——save 磁盘原子写成功后
+后台写穿镜像（best-effort 可降级），load 磁盘优先、缺失/损坏时从镜像修复回盘。
+读写函数签名与 generation 并发契约对调用方完全不变（见文末「统一事实源」一节）。
 
 为什么需要它
 ------------
@@ -61,8 +66,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 import threading
@@ -172,18 +179,178 @@ def _empty_manifest(project_id: str) -> dict[str, Any]:
     }
 
 
+# ---------------------------------------------------------------------------
+# 阶段5·点1 统一事实源（2026-11-22）：PG 镜像写穿 + 磁盘缺失修复
+# ---------------------------------------------------------------------------
+# 契约（与 studio_job_store「Redis 可降级」同款）：
+# - 镜像写/修复读全部 best-effort，任何 PG 异常只记 debug/warning，绝不抛给调用方；
+# - 镜像走常驻后台 loop：写按提交顺序落库，修复读与镜像写同 loop 天然有序；
+# - 事件循环线程内不做同步 PG 等待（会阻塞 loop），该场景直接放弃修复走空台账。
+
+logger = logging.getLogger("studio_project_store")
+
+# 镜像专用常驻 loop + 专用 engine：asyncpg 连接绑定创建它的事件循环，若与主 API loop
+# 共享连接池，连接跨 loop 复用会炸「Future attached to a different loop」（2026-11-22
+# 冒烟实测）。因此镜像线程自带一个 loop 和一个小 engine，与主 pool 完全隔离。
+_mirror_loop: asyncio.AbstractEventLoop | None = None
+_mirror_loop_lock = threading.Lock()
+
+
+def _get_mirror_loop() -> asyncio.AbstractEventLoop:
+    global _mirror_loop
+    with _mirror_loop_lock:
+        if _mirror_loop is None or _mirror_loop.is_closed():
+            _mirror_loop = asyncio.new_event_loop()
+            threading.Thread(
+                target=_mirror_loop.run_forever,
+                name="manifest-mirror",
+                daemon=True,
+            ).start()
+        return _mirror_loop
+
+
+def _import_database_module() -> Any:
+    try:  # 包内（Studio 后端 / 测试）
+        from . import database
+    except ImportError:  # pragma: no cover - 执行器按顶层模块导入
+        import database  # type: ignore[no-redef]
+    return database
+
+
+_mirror_session_maker: Any = None
+
+
+def _get_mirror_session_maker() -> Any:
+    """镜像专用 session maker（独立小 engine，连接只活在镜像 loop 上）。"""
+    global _mirror_session_maker
+    if _mirror_session_maker is None:
+        database = _import_database_module()
+        engine = database.create_async_engine(
+            database.get_database_url(),
+            echo=False,
+            pool_size=2,
+            max_overflow=3,
+            pool_pre_ping=True,
+            pool_recycle=3600,
+            connect_args={
+                "server_settings": {"idle_in_transaction_session_timeout": "300000"}
+            },
+        )
+        _mirror_session_maker = database.async_sessionmaker(
+            engine, class_=database.AsyncSession, expire_on_commit=False
+        )
+    return _mirror_session_maker
+
+
+async def _mirror_manifest_pg_write(project_id: str, payload: str, generation: int) -> None:
+    from sqlalchemy import text
+
+    async with _get_mirror_session_maker()() as session:
+        await session.execute(
+            text(
+                "INSERT INTO project_manifests(project_id, manifest, generation, updated_at) "
+                "VALUES(:project_id, CAST(:payload AS JSONB), :generation, CURRENT_TIMESTAMP) "
+                "ON CONFLICT (project_id) DO UPDATE SET "
+                "manifest = EXCLUDED.manifest, generation = EXCLUDED.generation, "
+                "updated_at = CURRENT_TIMESTAMP "
+                "WHERE project_manifests.generation <= EXCLUDED.generation"
+            ),
+            {"project_id": project_id, "payload": payload, "generation": generation},
+        )
+        await session.commit()
+
+
+async def _load_manifest_pg(project_id: str) -> str | None:
+    from sqlalchemy import text
+
+    async with _get_mirror_session_maker()() as session:
+        row = await session.execute(
+            text("SELECT manifest FROM project_manifests WHERE project_id = :project_id"),
+            {"project_id": project_id},
+        )
+        payload = row.scalar()
+        if payload is None:
+            return None
+        if isinstance(payload, (dict, list)):
+            # SQLAlchemy asyncpg 方言可能把 JSONB 解码成 Python 对象（2026-11-22 冒烟实测）：
+            # 统一序列化回 JSON 文本，调用方 json.loads 的契约不变。
+            return json.dumps(payload, ensure_ascii=False)
+        return str(payload)
+
+
+def _mirror_manifest_to_pg(project_id: str, manifest: dict[str, Any]) -> None:
+    """磁盘写成功后调度一次 PG 镜像写（fire-and-forget，失败只记 debug）。"""
+    try:
+        payload = json.dumps(manifest, ensure_ascii=False)
+        generation = int(manifest.get("generation") or 0)
+    except (TypeError, ValueError):
+        logger.debug("manifest mirror skipped: manifest not serializable (project=%s)", project_id)
+        return
+
+    try:
+        future = asyncio.run_coroutine_threadsafe(
+            _mirror_manifest_pg_write(project_id, payload, generation),
+            _get_mirror_loop(),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("manifest mirror submit skipped (project=%s): %s", project_id, exc)
+        return
+
+    def _done(done: Any) -> None:
+        exc = done.exception()
+        if exc is not None:  # 镜像失败绝不影响本地链路
+            logger.debug("manifest mirror skipped (project=%s): %s", project_id, exc)
+
+    future.add_done_callback(_done)
+
+
+def _restore_manifest_from_pg(project_id: str) -> dict[str, Any] | None:
+    """磁盘缺失/损坏时从 PG 镜像取回台账（同步、限时 5s、失败返回 None）。"""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+    else:
+        logger.debug("manifest restore skipped: called inside event loop (project=%s)", project_id)
+        return None
+    try:
+        future = asyncio.run_coroutine_threadsafe(
+            _load_manifest_pg(project_id), _get_mirror_loop()
+        )
+        payload = future.result(timeout=5)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("manifest restore skipped (project=%s): %s", project_id, exc)
+        return None
+    if not payload:
+        return None
+    try:
+        document = json.loads(payload)
+    except ValueError:
+        return None
+    return document if isinstance(document, dict) else None
+
+
 def load_manifest(project_id: str) -> dict[str, Any]:
-    """读项目台账；不存在/损坏时返回空台账（读路径永不抛错，UI 不会白屏）。"""
+    """读项目台账；磁盘缺失/损坏时先尝试 PG 镜像修复，仍无则返回空台账（读路径永不抛错）。"""
     project_id = validate_project_id(project_id)
     path = manifest_path(project_id)
-    if not path.is_file():
-        return _empty_manifest(project_id)
-    try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return _empty_manifest(project_id)
+    document: Any = None
+    if path.is_file():
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            document = None
     if not isinstance(document, dict):
-        return _empty_manifest(project_id)
+        repaired = _restore_manifest_from_pg(project_id)
+        if repaired is not None:
+            logger.warning("manifest restored from PG mirror (project=%s)", project_id)
+            document = repaired
+            try:  # 修复回盘：后续读路径回到磁盘优先，不再依赖 PG
+                _atomic_json(path, document)
+            except OSError:
+                logger.debug("manifest repair write-back failed (project=%s)", project_id)
+        else:
+            return _empty_manifest(project_id)
     document.setdefault("schema_version", SCHEMA_VERSION)
     document.setdefault("project_id", project_id)
     document.setdefault("source_video", None)
@@ -252,6 +419,8 @@ def _save_manifest_locked(project_id: str, manifest: dict[str, Any]) -> dict[str
             order.append(clip_id)
     manifest["clip_order"] = order
     _atomic_json(manifest_path(project_id), manifest)
+    # 阶段5·点1：磁盘写成功后写穿 PG 权威镜像（best-effort，见「统一事实源」一节）。
+    _mirror_manifest_to_pg(project_id, manifest)
     return manifest
 
 

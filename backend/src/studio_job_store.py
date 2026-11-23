@@ -308,15 +308,30 @@ async def save_artifact(job_id,kind,object_key,size_bytes,clip_id=None,sha256=No
         row=owner.mappings().first()
         if row is None: return None
         job=dict(row)
-        existing=await session.execute(text("""SELECT id FROM studio_artifacts WHERE job_id=:job_id AND kind=:kind
+        existing=await session.execute(text("""SELECT id,sha256,size_bytes FROM studio_artifacts WHERE job_id=:job_id AND kind=:kind
             AND clip_id IS NOT DISTINCT FROM :clip_id AND object_key=:object_key LIMIT 1"""),
             {"job_id":job_id,"kind":kind,"clip_id":clip_id,"object_key":object_key})
-        found=existing.first()
-        if found: return str(found[0])
+        found=existing.mappings().first()
+        if found:
+            # 阶段5·点1（2026-11-22）：同 key 回传不再对台账静默——内容一致保持幂等；
+            # 内容变化 = 发生过同址覆盖，刷新 size/sha + revision+1 + overwritten_at 留痕。
+            if (found["sha256"] or "")!=(sha256 or "") or (found["size_bytes"] or 0)!=(size_bytes or 0):
+                await session.execute(text("""UPDATE studio_artifacts SET size_bytes=:size_bytes,sha256=:sha256,
+                    revision=revision+1,overwritten_at=CURRENT_TIMESTAMP WHERE id=:id"""),
+                    {"id":found["id"],"size_bytes":size_bytes,"sha256":sha256})
+                logger.warning("artifact overwritten in place (job=%s kind=%s clip=%s key=%s)",
+                    job_id,kind,clip_id,str(object_key)[:160])
+            await session.commit()
+            return str(found["id"])
+        # 新 object_key：同一 (job, kind, clip) 内 revision 单调递增，形成可审计的版本链。
+        next_rev=await session.execute(text("""SELECT COALESCE(MAX(revision),0)+1 FROM studio_artifacts
+            WHERE job_id=:job_id AND kind=:kind AND clip_id IS NOT DISTINCT FROM :clip_id"""),
+            {"job_id":job_id,"kind":kind,"clip_id":clip_id})
+        revision=int(next_rev.scalar() or 1)
         artifact_id=uuid.uuid4().hex
-        await session.execute(text("""INSERT INTO studio_artifacts(id,job_id,kind,clip_id,object_key,size_bytes,sha256)
-            VALUES(:id,:job_id,:kind,:clip_id,:object_key,:size_bytes,:sha256)"""),
-            {"id":artifact_id,"job_id":job_id,"kind":kind,"clip_id":clip_id,"object_key":object_key,"size_bytes":size_bytes,"sha256":sha256})
+        await session.execute(text("""INSERT INTO studio_artifacts(id,job_id,kind,clip_id,object_key,size_bytes,sha256,revision)
+            VALUES(:id,:job_id,:kind,:clip_id,:object_key,:size_bytes,:sha256,:revision)"""),
+            {"id":artifact_id,"job_id":job_id,"kind":kind,"clip_id":clip_id,"object_key":object_key,"size_bytes":size_bytes,"sha256":sha256,"revision":revision})
         _access().register_created_object("artifact",artifact_id,job["project_id"],size_bytes=size_bytes)
         await session.commit()
     return artifact_id
@@ -329,7 +344,7 @@ async def list_artifacts(job_id):
     prefix=f"studio-artifacts/{render_run_id(job)}/"
     maker=get_session_maker()
     async with maker() as session:
-        result=await session.execute(text("SELECT id,kind,clip_id,object_key,size_bytes,sha256 FROM studio_artifacts WHERE job_id=:job_id ORDER BY created_at ASC"),{"job_id":job_id})
+        result=await session.execute(text("SELECT id,kind,clip_id,object_key,size_bytes,sha256,revision,overwritten_at FROM studio_artifacts WHERE job_id=:job_id ORDER BY created_at ASC"),{"job_id":job_id})
         rows=[dict(row) for row in result.mappings().all()]
     return [row for row in rows if row.get("kind") not in {"clip","clip_final","srt","clip_warnings"}
             or str(row.get("object_key") or "").removeprefix("local:").startswith(prefix)]
