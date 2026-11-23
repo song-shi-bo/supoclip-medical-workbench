@@ -3,6 +3,15 @@
  *
  * 从 page.tsx 原地外移：领域类型、封面风格常量、轮询常量与纯辅助函数。
  * 不包含任何 React 状态/副作用——page.tsx 的 StudioPage 组件行为保持逐行等价。
+ *
+ * **前端拆分边界决策（阶段5·点2 收束，2026-11-23）**：
+ * - 已外移的自包含簇：本模型层、use-local-tasks（局部任务轮询/执行）、
+ *   use-workflow-rules（规则中心）、use-clip-delivery（豆包投递+术语表）。
+ * - page.tsx 保留的部分是**核心编辑编排状态机**（预览/时间线/变换/转写/自动剪辑
+ *   流，100+ 互相纠缠的 useState 与巨量 JSX 渲染树）：其拆分等于实质性状态接口
+ *   重设计，回归风险大于结构收益，与后端 job-orchestrator 边界决策同理刻意保留。
+ * - 后续如需继续：按「自包含逻辑簇 + 参数化 hook + tsc/vitest 安全网」的既有
+ *   模式逐簇外移（候选：cover 工具条簇、规则快照面板组件化）。
  */
 
 import { adaptCardToClip } from "@/lib/studio-clip-cards";
