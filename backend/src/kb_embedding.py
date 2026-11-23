@@ -1,64 +1,28 @@
-"""双库向量：fastembed 本地模型（BAAI/bge-small-zh-v1.5，512 维）。
+"""兼容垫片（阶段5·点2）：本模块已迁移至 `src/domains/analysis/kb_embedding.py`。
 
-- 模型走 HF 镜像（HF_ENDPOINT，默认 https://hf-mirror.com）懒加载单例；
-- 任何失败（包缺失/模型下载失败/推理异常）返回 None，调用方降级为无向量，
-  绝不阻塞入库/检索主流程；
-- 文本截断 2000 字（覆盖标题+摘要+全文的有效语义）。
+旧导入路径继续有效。本垫片是 impl 模块的**代理**：读属性动态转发到 impl；
+对垫片属性的 setattr（测试 monkeypatch 的既有方式）同样落到 impl 模块全局——
+impl 内部调用即刻可见，与单文件时代语义完全一致。新代码一律从领域包导入。
 """
-from __future__ import annotations
 
-import os
-import threading
-from pathlib import Path
+import sys as _sys
+import types as _types
 
-MODEL_NAME = "BAAI/bge-small-zh-v1.5"
-_MAX_CHARS = 2000
-
-_lock = threading.Lock()
-_model = None
-_state: bool | None = None  # None=未尝试；True=可用；False=不可用（缓存失败，不再重试）
+from src.domains.analysis import kb_embedding as _impl
 
 
-def _load():
-    global _model, _state
-    if _state is not None:
-        return _model if _state else None
-    with _lock:
-        if _state is not None:
-            return _model if _state else None
-        try:
-            os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
-            from fastembed import TextEmbedding  # 可选依赖，未安装则降级
+class _ProxyModule(_types.ModuleType):
+    """impl 模块的代理：读转发 + 写转发（patch 语义与单文件时代一致）。"""
 
-            # 缓存显式放大盘：fastembed 默认落 /tmp（128M tmpfs），91M 模型缓存
-            # 会把系统临时区挤到近乎满盘，殃及封面抽帧等（2026-11-09 Errno 2）。
-            cache_dir = os.getenv("FASTEMBED_CACHE_DIR", "/domain/.tools/fastembed-cache")
-            Path(cache_dir).mkdir(parents=True, exist_ok=True)
-            _model = TextEmbedding(MODEL_NAME, cache_dir=cache_dir)
-            _state = True
-        except Exception:
-            _model = None
-            _state = False
-    return _model if _state else None
+    def __getattr__(self, name: str):
+        return getattr(_impl, name)
+
+    def __setattr__(self, name: str, value) -> None:
+        setattr(_impl, name, value)
+        super().__setattr__(name, value)
+
+    def __dir__(self):
+        return dir(_impl)
 
 
-def embed_texts(texts: list[str]) -> Optional[list[list[float]]]:
-    """批量向量化；不可用/失败返回 None。"""
-    model = _load()
-    if model is None:
-        return None
-    try:
-        clipped = [(t or "")[:_MAX_CHARS] for t in texts]
-        return [v.tolist() for v in model.embed(clipped)]
-    except Exception:
-        return None
-
-
-def embed_topic(title: str, summary: str = "", raw_text: str = "") -> Optional[list[float]]:
-    vectors = embed_texts([f"{title}\n{summary or ''}\n{raw_text or ''}"])
-    return vectors[0] if vectors else None
-
-
-def embed_script(title: str, hook: str = "", body: str = "") -> Optional[list[float]]:
-    vectors = embed_texts([f"{title}\n{hook or ''}\n{body or ''}"])
-    return vectors[0] if vectors else None
+_sys.modules[__name__].__class__ = _ProxyModule
