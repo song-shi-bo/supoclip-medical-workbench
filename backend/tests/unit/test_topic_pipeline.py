@@ -109,6 +109,42 @@ class TestValidateScriptDraft:
         assert not any("前提" in v for v in soft2)
 
 
+class TestDoctorFeedbackRegression:
+    """2026-11-20 医生审稿反馈沉淀：这三类问题句式不允许再漏进成稿。"""
+
+    def test_absolute_blocking_claims_are_hard(self):
+        # 医生反馈①：'三次完全可以阻断癌变'/'规范干预就能完全稳住'超出指南口径
+        draft = _draft(body="胃炎到胃癌的过程中有三次完全可以阻断癌变的机会，"
+                            "只要规范干预就能完全稳住病情，不必过度担心。")
+        hard, _ = validate_script_draft(draft, duration_seconds=60)
+        assert any("完全" in v for v in hard)
+
+    def test_promissory_patterns_are_soft_warnings(self):
+        # 医生反馈②：'就能/也能'句式承诺化 → soft 警告提示软化
+        draft = _draft(body="在浅表性胃炎阶段及时处理，规范干预就能控制进展；"
+                            "到了萎缩性胃炎阶段，及时处理也能阻断癌变进程，"
+                            "这两类情况都需要在正规消化科医生指导下进行调整和治疗，"
+                            "同时配合规律作息与均衡饮食，把胃部负担降到比较低的水平，"
+                            "并且按医生建议的频率复查，随时掌握自己的恢复情况。")
+        hard, soft = validate_script_draft(draft, duration_seconds=60)
+        assert hard == []
+        assert any("就能" in v for v in soft)
+        assert any("也能" in v for v in soft)
+
+    def test_evidence_aligned_phrasing_passes_clean(self):
+        # 医生建议的合规口径：'明显降低癌变风险'/'大多能稳住' 不应被误伤
+        draft = _draft(body="从胃炎到胃癌，有三次明显降低癌变风险的关键机会。"
+                            "浅表性胃炎阶段及时规范干预，病情大多能稳住；"
+                            "即使到了癌前病变阶段，遵医嘱处理也有机会中断这条进展链。"
+                            "平时注意饮食规律、少吃刺激性的食物，出现长期胃部不适不要硬扛，"
+                            "尽早到消化科做系统评估，按医生建议的频率做胃镜复查，"
+                            "把小问题在早期就管理起来，避免拖到难以处理的地步。"
+                            "把这些习惯坚持下来，就是给胃健康最实在的投入。")
+        hard, soft = validate_script_draft(draft, duration_seconds=60)
+        assert hard == []
+        assert soft == []
+
+
 class TestPrompts:
     def test_brief_prompt_wraps_transcript(self):
         prompt = build_brief_draft_prompt("这是一条转写稿内容")

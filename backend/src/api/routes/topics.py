@@ -516,6 +516,14 @@ async def generate_script(topic_id: str, payload: GenerateScriptIn, request: Req
     forbidden = _as_str_list(row.forbidden_expr)
     prerequisites = _as_str_list(row.prerequisites)
     reference = await _reference_transcript(db, topic_id)
+    # 引用核准白名单：核准库（medical_guidelines.source_name，approved）进提示词 + 事后核对
+    registry_rows = (
+        await db.execute(text(
+            "SELECT DISTINCT source_name FROM medical_guidelines "
+            "WHERE status = 'approved' AND source_name <> '' ORDER BY source_name"
+        ))
+    ).fetchall()
+    approved_refs = [r.source_name.strip() for r in registry_rows if r.source_name and r.source_name.strip()]
 
     try:
         draft = await tp.run_script_generation(
@@ -527,6 +535,7 @@ async def generate_script(topic_id: str, payload: GenerateScriptIn, request: Req
             duration_seconds=duration,
             reference_transcript=reference,
             doctor_notes=payload.doctor_notes,
+            approved_refs=approved_refs,
         )
     except RuntimeError as exc:
         raise HTTPException(503, str(exc)) from exc
@@ -546,6 +555,7 @@ async def generate_script(topic_id: str, payload: GenerateScriptIn, request: Req
             duration_seconds=duration,
             reference_transcript=reference,
             doctor_notes=(payload.doctor_notes + "\n\n" + repair_note).strip(),
+            approved_refs=approved_refs,
         )
         _, script_agent = tp._get_agents()
         result = await script_agent.run(retry_prompt)
@@ -556,6 +566,14 @@ async def generate_script(topic_id: str, payload: GenerateScriptIn, request: Req
         if hard:
             raise HTTPException(422, {"message": "生稿未通过硬校验（已重试一次）",
                                       "violations": hard})
+
+    # 引用核准（2026-11-20 医生反馈沉淀）：引用名须能对上核准库，对不上只警告不拦截
+    if approved_refs:
+        registry_lower = [n.lower() for n in approved_refs]
+        for ref in (draft.refs or []):
+            rl = ref.strip().lower()
+            if rl and not any(name and (name in rl or rl in name) for name in registry_lower):
+                soft.append(f"引用未在核准指南库中找到，发布前请人工核准名称与出处：《{ref.strip()}》")
 
     version_row = (
         await db.execute(

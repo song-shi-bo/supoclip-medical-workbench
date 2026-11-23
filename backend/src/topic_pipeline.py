@@ -96,12 +96,24 @@ class ShootingScriptDraft(BaseModel):
 # 硬校验器
 # ---------------------------------------------------------------------------
 
-# 粗筛红线：宁可漏报不可误报的保守模式（精准管控靠医生填写的 forbidden_expr）
+# 粗筛红线（hard，命中即拒绝）：宁可漏报不可误报的保守模式（精准管控靠医生填写的 forbidden_expr）
 _RED_LINE_PATTERNS = (
     (re.compile(r"(每天|每日|一次)?(吃|服用|口服)\s*\d+\s*(mg|毫克|片|粒)", re.IGNORECASE), "出现具体服药剂量表述"),
     (re.compile(r"(直接|可以|可)(自行|自己)?(停药|停用|减量|减半)"), "出现自行停药/减量类表述"),
     (re.compile(r"(不用|不需要|没必要)(去|看)(医院|医生)"), "出现劝阻就医类表述"),
     (re.compile(r"(保证|肯定|百分之?百)(治好|治愈|根治)"), "出现绝对化疗效承诺"),
+    # —— 绝对化强度超纲（hard）：指南口径是"降低风险"，不是"完全阻断/稳住" ——
+    (re.compile(r"完全(阻断|稳住|避免|消除|治愈|防止|杜绝)"), "绝对化表述（完全…）：依据只能支撑'降低风险'类口径"),
+    (re.compile(r"(保证|肯定|一定)(能|可以)?(阻断|稳住|避免|治愈|不得)"), "绝对化承诺（保证/肯定/一定…）"),
+    (re.compile(r"彻底(治愈|根治|消除|解决)"), "绝对化表述（彻底…）"),
+)
+
+# 承诺化句式（soft，命中仅提示人工核对/软化，不拦截）
+# 2026-11-20 医生审稿反馈沉淀（负例回归）：'就能控制进展''也能阻断癌变进程'等搭配建议软化
+_SOFT_PATTERNS = (
+    (re.compile(r"就能(控制|阻断|稳住|解决|避免|预防)"), "承诺化句式（就能…）：建议改'有机会控制/大多能稳住'"),
+    (re.compile(r"也能(阻断|控制|稳住|避免)"), "承诺化句式（也能…）：建议改'也有机会/同样有助于'"),
+    (re.compile(r"阻断癌变(进程|风险|链)"), "'阻断癌变'需核对依据原文口径（指南多写'降低发生风险'）"),
 )
 
 _PUNCT_RE = re.compile(r"[\s，。、；：？！,.;:?!\"'“”‘’（）()\[\]【】·\-—_/\\]+")
@@ -154,10 +166,13 @@ def validate_script_draft(
     if not [r for r in (draft.refs or []) if (r or "").strip()]:
         hard.append("缺少医学依据（refs 为空）：核心结论须可溯源")
 
-    # 3) 粗筛红线模式
+    # 3) 粗筛红线模式 + 承诺化句式（soft）
     for pattern, label in _RED_LINE_PATTERNS:
         if pattern.search(full_text):
             hard.append(f"红线表述（{label}）")
+    for pattern, label in _SOFT_PATTERNS:
+        if pattern.search(full_text):
+            soft.append(f"{label}（命中：{pattern.search(full_text).group(0)}）")
 
     # 4) 时长-字数约束（soft：剪辑可再取舍）
     total_chars = speakable_char_count(full_text)
@@ -209,9 +224,14 @@ SCRIPT_SYSTEM_PROMPT = (
     "1. 只写医生本人可以照读的口播原话（hook/body/cta），不要写舞台指示或旁白标注。\n"
     "2. 严禁复用参考稿的原句；只允许借鉴其立意、钩子类型与结构。\n"
     "3. 严禁出现：具体剂量、处方调整方案、绝对化疗效承诺；风险边界与禁止表达一条都不能碰。\n"
-    "4. 核心结论必须与选题卡一致；必要前提需在正文中交代。\n"
-    "5. refs 每条写明依据来源（如：指南名称+要点）；没有可靠依据的结论不要写。\n"
-    "6. 总字数贴合建议时长（中文口播约 3.5 字/秒）。用简体中文。"
+    "4. 【表述强度锚定】结论的强度不得超过依据原文：指南/共识写'降低风险'，"
+    "文稿就只能写'降低风险/明显降低风险'，不得升格为'完全阻断/彻底避免/保证不发生'。\n"
+    "5. 【承诺句式禁令】不用'完全…''就能…''也能…''彻底…''根治'等承诺化搭配；"
+    "改用'有机会控制''大多能稳住''明显降低…风险''有助于…'等循证表述。\n"
+    "6. 核心结论必须与选题卡一致；必要前提需在正文中交代。\n"
+    "7. refs 每条写明依据来源（如：指南名称+要点）；没有可靠依据的结论不要写；"
+    "若提供『核准引用白名单』，refs 必须逐字使用其中的名称，白名单外的依据不得引用。\n"
+    "8. 总字数贴合建议时长（中文口播约 3.5 字/秒）。用简体中文。"
 )
 
 
@@ -225,6 +245,7 @@ def build_script_prompt(
     duration_seconds: int,
     reference_transcript: str,
     doctor_notes: str = "",
+    approved_refs: Optional[list[str]] = None,
 ) -> str:
     brief_payload = {
         "目标人群": brief.get("target_audience", ""),
@@ -242,6 +263,11 @@ def build_script_prompt(
     parts = [
         "选题卡：\n" + json.dumps(brief_payload, ensure_ascii=False, indent=2),
     ]
+    if approved_refs:
+        parts.append(
+            "核准引用白名单（refs 必须逐字引用下列名称，名单外的依据一律不得引用）：\n- "
+            + "\n- ".join(approved_refs[:25])
+        )
     if reference_transcript:
         parts.append(
             "热点参考稿（只学立意/结构/钩子类型，禁止复用原句）：\n<reference>\n"
@@ -321,6 +347,7 @@ async def run_script_generation(
     duration_seconds: int,
     reference_transcript: str,
     doctor_notes: str = "",
+    approved_refs: Optional[list[str]] = None,
 ) -> ShootingScriptDraft:
     """选题卡 → 医生原创拍摄稿草稿（落库前必须通过硬校验 + 医生审批）。"""
     _, script_agent = _get_agents()
@@ -333,6 +360,7 @@ async def run_script_generation(
         duration_seconds=duration_seconds,
         reference_transcript=reference_transcript,
         doctor_notes=doctor_notes,
+        approved_refs=approved_refs,
     )
     result = await script_agent.run(prompt)
     return result.output
