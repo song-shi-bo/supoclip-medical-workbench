@@ -43,17 +43,22 @@ def _routes() -> list[str]:
 
 
 def _worker_stages() -> list[str]:
-    path = REPO / "backend/src/studio_job_worker.py"
-    text = path.read_text(encoding="utf-8")
+    # 阶段5·点2：studio_job_worker 已拆为包——扫描包内全部模块
+    worker_pkg = REPO / "backend/src/studio_job_worker"
+    paths = sorted(worker_pkg.glob("*.py")) if worker_pkg.is_dir() else []
+    if not paths:
+        paths = [REPO / "backend/src/studio_job_worker.py"]
     out: list[str] = []
-    for match in STAGE_RE.finditer(text):
-        name = match.group(1)
-        tail = text[match.end():match.end() + 400]
-        doc = ""
-        m = re.search(r'"""(.+?)(?:。|\n)', tail, re.S)
-        if m:
-            doc = m.group(1).strip().replace("\n", " ")[:60]
-        out.append(f"- `{name}`——{doc}")
+    for path in paths:
+        text = path.read_text(encoding="utf-8")
+        for match in STAGE_RE.finditer(text):
+            name = match.group(1)
+            tail = text[match.end():match.end() + 400]
+            doc = ""
+            m = re.search(r'"""(.+?)(?:。|\n)', tail, re.S)
+            if m:
+                doc = m.group(1).strip().replace("\n", " ")[:60]
+            out.append(f"- `{name}`——{doc}")
     return out or ["- （未扫描到阶段函数）"]
 
 
@@ -93,7 +98,7 @@ def build_snapshot() -> str:
         "",
         *_routes(),
         "",
-        "### worker 任务阶段（studio_job_worker.py）",
+        "### worker 任务阶段（studio_job_worker 包）",
         "",
         *_worker_stages(),
         "",

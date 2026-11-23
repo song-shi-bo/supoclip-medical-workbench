@@ -339,7 +339,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 
 ## 附录 · 代码事实快照（自动生成）
 
-- 生成时间：2026-11-23 04:09 UTC · 代码版本：`45f0a85` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
+- 生成时间：2026-11-23 04:49 UTC · 代码版本：`0a935ff` · 生成器：`docs/generate_workbench_doc.py`（`--check` 可做漂移检测）
 
 ### HTTP 端点（backend/src/api/routes）
 
@@ -353,9 +353,8 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 - `medical_kb.py`（3）：`POST /ingest`、`GET /search`、`POST /entries/{entry_id}/review`
 - `topics.py`（15）：`GET /reviewers`、`GET /scripts`、`GET /scripts/{script_id}`、`POST /modifications`、`GET /modifications`、`POST /modifications/{mod_id}/resolve`、`GET /{topic_id}`、`POST /{topic_id}/brief`、`POST /{topic_id}/brief/draft`、`POST /{topic_id}/approve`、`POST /scripts/{script_id}/approve`、`POST /{topic_id}/generate-script`、`POST /scripts/{script_id}/link-job`、`POST /reviewers`、`DELETE /reviewers/{user_id}`
 
-### worker 任务阶段（studio_job_worker.py）
+### worker 任务阶段（studio_job_worker 包）
 
-- `run_transcribe_only`——TRANSCRIBE_ONLY：提取音轨 → 转写 → 纠错 → transcript_ready（终态）
 - `_run_id`——
 - `_run_content_analysis_stage`——第三步（2026-10-14）：AUTO_EDIT 的模型内容分析阶段
 - `_run_clip_planning_stage`——第四步（2026-10-14）：完整内容切片规划——产出 clip_plan.json
@@ -363,6 +362,7 @@ worker（每任务独立子进程，3600s 上限）—— staged 全自动流水
 - `_run_clip_cover_stage`——每条切片发布前的固化封面步骤（realframe_v2：真实帧+文字叠加，纯本地）
 - `_run_clip_render_stage`——第五步（2026-10-14）：clip_plan → 本地 FFmpeg 渲染，生成多个视频成品
 - `_run_reedit_replace`——重新剪辑并替换旧切片（2026-10-15，replacement_mode=delete_old_after_succ
+- `run_transcribe_only`——TRANSCRIBE_ONLY：提取音轨 → 转写 → 纠错 → transcript_ready（终态）
 - `run_auto_edit_only`——AUTO_EDIT：读取既有纠错转写 → 分析 → 规划 → 渲染（第五步正式链）
 - `run_legacy_full`——legacy 全链（config 无 job_kind 的存量/重试任务）：行为与拆分前完全一致
 - `run_isolated_job`——

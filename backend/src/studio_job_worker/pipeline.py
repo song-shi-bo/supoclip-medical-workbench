@@ -1,31 +1,4 @@
-"""Studio Job 执行器：认领 R2/本地任务，按任务类型执行并回传产物.
-
-三类任务（config.job_kind 分派，缺省 legacy_full 兼容存量）：
-  transcribe_only（TRANSCRIBE_ONLY）
-    claim → extracting_audio（准备源片+音轨校验）
-          → transcribing（faster-whisper small/CPU/int8/VAD/zh/word_timestamps=True）
-          → correcting（DSH 模型全文纠错，普通中文校对；不可用回退保守规整）
-          → transcript_ready（终态：纠错转写入版本化存储 + artifact 回传）
-    禁止：金句/关键词、剪辑规则、切片规划、渲染、封面、台账写入。
-  auto_edit（AUTO_EDIT，前置=已有有效纠错转写）
-    config.stop_after="analysis"（第三步，兼容旧 analysis_only=true）：
-          claim → retrieving_rules → extracting_highlights（DSH 模型内容分析）
-          → analysis_ready（终态：tasks/analysis/<id>.json，不渲染）
-    config.stop_after="plan"（第四步默认）：
-          claim → retrieving_rules → extracting_highlights（内容分析）
-          → planning（完整切片规划：连续区间/柔性时长/warning 不拦截）
-          → plan_ready（终态：tasks/plans/<id>/clip_plan.json，不渲染）
-    完整链（无停住配置）：claim → retrieving_rules（读取规则/冻结快照）→ extracting_highlights（金句/关键词）
-          → editing（时间线工程）→ rendering（video-brain，transcript_pre_corrected 跳过重复纠错）
-          → uploading → completed / failed
-  legacy_full（存量全链，行为与拆分前一致）
-    claim → downloading → transcribing → correcting → analyzing → editing
-          → rendering → uploading → completed / failed
-
-运行前提：与后端共用 backend/.env（R2_*/WORKER_SHARED_SECRET/BACKEND_INTERNAL_URL/STUDIO_TASKS_ROOT）。
-"""
-
-from __future__ import annotations
+"""Studio worker：规则冻结/知识上下文/分析·规划·精修·封面·渲染·重编缓存与执行。"""
 
 import asyncio
 import inspect
@@ -43,385 +16,52 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(BASE_DIR))
-
 from dotenv import load_dotenv  # noqa: E402
 from src.source_store import materialise_source as _source_materialise  # noqa: E402
 from src.studio_runtime import process_lock, terminate_with_parent  # noqa: E402
 
-load_dotenv(BASE_DIR / ".env")
 
-WORKER_ID = os.getenv("STUDIO_WORKER_ID") or f"worker-{uuid.uuid4().hex[:8]}"
-# 阶段5·点3：本 worker 角色只认领的资源队列（逗号分隔；空 = 全队列）。
-# 例：STUDIO_WORKER_QUEUES=asr 启动转写专用 worker，与渲染 worker 并行不互抢。
-WORKER_QUEUES = tuple(q.strip() for q in os.getenv("STUDIO_WORKER_QUEUES", "").split(",") if q.strip())
-WORKER_ROLE_TAG = "-" + "-".join(WORKER_QUEUES) if WORKER_QUEUES else ""
-
-BACKEND_INTERNAL_URL = os.getenv("BACKEND_INTERNAL_URL", "http://127.0.0.1:8000/api").rstrip("/")
-WORKER_SHARED_SECRET = os.getenv("WORKER_SHARED_SECRET", "")
-POLL_SECONDS = float(os.getenv("WORKER_POLL_SECONDS", "5"))
-JOB_TIMEOUT_SECONDS = float(os.getenv("WORKER_JOB_TIMEOUT_SECONDS", "3600"))
-VIDEO_BRAIN_URL = os.getenv("VIDEO_BRAIN_URL", "http://127.0.0.1:8940").rstrip("/")
-VIDEO_BRAIN_HOME = Path(os.getenv("VIDEO_BRAIN_HOME", "/domain/video-brain"))
-STUDIO_TASKS_ROOT = Path(os.getenv("STUDIO_TASKS_ROOT", str(BASE_DIR / "tasks")))
-
-
-def _log(message: str) -> None:
-    print(f"[studio-worker {WORKER_ID} {time.strftime('%H:%M:%S')}] {message}", flush=True)
-
-
-def _http(method: str, url: str, payload: dict | None = None, timeout: float = 60) -> dict:
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode() if payload is not None else None,
-        headers={"Content-Type": "application/json", "X-Worker-Id": WORKER_ID,
-                 "X-Worker-Secret": WORKER_SHARED_SECRET,
-                 "X-Worker-Lease": str(_CURRENT_JOB.get("lease_token") or "")},
-        method=method,
-    )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode() or "{}")
-
-
-# ---------------------------------------------------------------------------
-# 各阶段实现
-# ---------------------------------------------------------------------------
-
-def materialise_source(canonical, target):
-    from src.capacity_guard import reserve_capacity
-    canonical, target = Path(canonical), Path(target)
-    if target.exists():
-        return target
-    # 先试零副本硬链接，确实需要复制时再登记完整新增峰值。
-    with reserve_capacity("source_link", 64 * 1024, path=target.parent):
-        target.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            os.link(canonical, target)
-            return target
-        except FileExistsError:
-            return target
-        except OSError:
-            pass
-    with reserve_capacity("source_copy", canonical.stat().st_size + 64 * 1024, path=target.parent):
-        return _source_materialise(canonical, target)
-
-
-def _guarded_upload_file(path, object_key):
-    from src import r2
-    from src.capacity_guard import reserve_capacity, estimate_publish_peak
-    with reserve_capacity("publish", estimate_publish_peak([path]), path=r2.local_path_for(object_key)):
-        return r2.upload_file(path, object_key)
-
-
-def _local_object_path(object_key: str) -> Path | None:
-    """本地对象模式下，object_key 指向本机一个已存在的文件时返回该路径。
-
-    ``local:`` 前缀是对象存储的本地回退驱动（未配置 R2），此时「下载」本质
-    只是同盘搬运——历史实现走 ``copy_file``，于是同一份 3GB 源片在
-    ``studio-uploads/`` 之外又多出一份完整物理副本。返回真实路径后由
-    :func:`src.source_store.materialise_source` 走硬链接，零额外占用。
-
-    R2 模式（真·网络下载）和本地对象文件缺失时返回 ``None``，调用方退回
-    既有下载路径，保持失败语义不变。
-    """
-
-    from src import r2
-
-    if not object_key.startswith(r2.LOCAL_SCHEME):
-        return None
-    candidate = r2.local_path_for(object_key)
-    return candidate if candidate.is_file() else None
-
-
-def stage_downloading(object_key: str, job_id: str) -> Path:
-    from src import r2
-
-    _state(job_id, "downloading", "下载源视频", 0.05)
-    target = Path(os.getenv("TEMP_DIR", str(BASE_DIR / "temp"))) / "studio-jobs" / job_id / "source.mp4"
-    canonical = _local_object_path(object_key)
-    if canonical is not None:
-        # 本地对象就是源片本身：硬链接进 job 目录，链路仍只有一份物理数据。
-        materialise_source(canonical, target)
-    else:
-        # R2 模式必须真正落盘一份——这是整条链路里唯一必要的源片写入。
-        r2.download_to_file(object_key, target)
-    return target
-
-
-def stage_transcribing(video_path: Path, config: dict, project_id: str | None = None) -> tuple[list[dict], dict]:
-    from src.config import get_config
-    from src.video_utils import transcribe_with_faster_whisper
-
-    # 云端转写分支（火山豆包 ASR 录音文件识别 2.0）：TRANSCRIPTION_PROVIDER=volc_cloud 时启用；
-    # 默认仍是本地 faster-whisper。云端不受本机 3GB 内存 cgroup 限制，准确率更高。
-    if (getattr(config, "transcription_provider", "") or "") == "volc_cloud":
-        return stage_transcribing_cloud(video_path, project_id)
-
-    hotwords = None
-    try:
-        from src.project_glossary import hotwords_string
-        hotwords = hotwords_string(project_id or "")
-    except Exception:  # noqa: BLE001 — 词表故障绝不影响转写主链路
-        hotwords = None
-    _state(_current_job_id(), "transcribing",
-           "语音转写（faster-whisper small/CPU/int8/VAD/zh，词级时间戳）" + ("，含项目热词" if hotwords else ""), 0.15)
-    runtime_config = get_config()
-    transcript = transcribe_with_faster_whisper(video_path, runtime_config, hotwords=hotwords)
-    # Rendering runs in another process; release this worker's unused ASR model.
-    import gc
-    import ctypes
-    from src.video_utils import _FASTER_WHISPER_MODEL_CACHE
-    _FASTER_WHISPER_MODEL_CACHE.clear()
-    gc.collect()
-    try:
-        ctypes.CDLL(None).malloc_trim(0)
-    except (AttributeError, OSError):
-        pass
-    raw_segments = transcript.get("segments", [])
-    words = transcript.get("words", [])
-    return raw_segments, {"language": transcript.get("language", "zh"), "words": words, "segments": raw_segments}
-
-
-def _accepts_keyword(callable_obj, keyword: str) -> bool:
-    """Keep compatibility with legacy stage replacements used by tests/plugins."""
-    return any(
-        parameter.name == keyword or parameter.kind == inspect.Parameter.VAR_KEYWORD
-        for parameter in inspect.signature(callable_obj).parameters.values()
-    )
-
-
-def _call_stage_transcribing(video_path: Path, config: dict,
-                             project_id: str | None) -> tuple[list[dict], dict]:
-    if _accepts_keyword(stage_transcribing, "project_id"):
-        return stage_transcribing(video_path, config, project_id=project_id)
-    return stage_transcribing(video_path, config)
-
-
-def _job_owner_subject(project_id: str) -> str:
-    """ACL 只读查询项目归属 subject（云端转写上传音频时的溯源标识）。"""
-    try:
-        import sqlite3
-        acl = os.environ.get("STUDIO_ACCESS_ACL", "/domain/.studio-resources/access/access.sqlite3")
-        c = sqlite3.connect(f"file:{acl}?mode=ro", uri=True)
-        try:
-            row = c.execute("SELECT owner FROM objects WHERE project_id=? LIMIT 1", (project_id,)).fetchone()
-            return str(row[0]) if row and row[0] else "unknown"
-        finally:
-            c.close()
-    except Exception:  # noqa: BLE001 — 溯源标识失败不影响转写
-        return "unknown"
-
-
-def stage_transcribing_cloud(video_path: Path, project_id: str | None = None) -> tuple[list[dict], dict]:
-    """云端转写（豆包 ASR 录音文件识别 2.0）：提音频 → 经 95 投递 → 公网 URL → 提交任务 → 轮询。
-
-    前置：① 95 侧已把 drop 收件文件以 HTTPS 暴露（VOLC_ASR_AUDIO_URL_TEMPLATE）；
-          ② VOLC_ASR_API_KEY；③ 术语表自动作为 ASR 热词直传（corpus.context）。
-    """
-    import time as _time
-
-    from src import volc_asr
-
-    job_id = _current_job_id()
-    glossary_terms: list[str] = []
-    try:
-        from src.project_glossary import load_glossary
-        glossary_terms = load_glossary(project_id or "")
-    except Exception:  # noqa: BLE001 — 词表故障不影响转写
-        glossary_terms = []
-
-    _state(job_id, "transcribing", "提取音频（云端转写用）", 0.08)
-    audio = volc_asr.extract_audio_mp3(video_path)
-
-    _state(job_id, "transcribing", "上传音频到中转（95）", 0.12)
-    remote = volc_asr.upload_audio(audio, _job_owner_subject(project_id or ""), project_id or "")
-
-    audio_url = volc_asr.audio_public_url(remote)
-    _state(job_id, "transcribing", "提交云端转写任务（豆包大模型 ASR）", 0.18)
-    task_id = volc_asr.submit_task(audio_url, glossary_terms)
-
-    _state(job_id, "transcribing", "云端转写中（每 20 秒查询，长视频约数分钟）", 0.22)
-    deadline = _time.time() + 3600
-    while _time.time() < deadline:
-        q = volc_asr.query_task(task_id)
-        done = volc_asr.is_done(q)
-        if done is True:
-            parsed = volc_asr.parse_result(q.get("json") or {})
-            segs = parsed["asr_segments"]
-            if not segs:
-                raise RuntimeError("云端转写返回空结果")
-            # 中转音频自动清理：95 侧文件 + 本地临时 mp3（成功即删，不占存储）
-            try:
-                volc_asr.cleanup_remote_audio(remote)
-            finally:
-                audio.unlink(missing_ok=True)
-            _state(job_id, "transcribing", f"云端转写完成：{len(segs)} 段（中转音频已清理）", 0.3)
-            return segs, {"language": parsed.get("language", "zh-CN"), "words": [],
-                          "segments": segs, "provider": "volc_cloud"}
-        if done is None:
-            raise RuntimeError(f"云端转写任务异常：{str(q)[:200]}")
-        _time.sleep(20)
-    raise RuntimeError("云端转写超时（>1 小时）")
-
-
-def stage_correcting(raw_segments: list[dict], job_id: str, project_id: str | None = None) -> dict:
-    """纠错：DSH 文本模型按完整上下文做普通中文校对（见 transcript_correction_llm）。
-
-    * 只修错别字/同音字/漏字/重复字/标点/断句，不润色、不强制医学术语表；
-    * 项目术语表注入 prompt（有参照才改术语，拿不准保留标 uncertain）；
-    * 拿不准保留原文并标 uncertain；时间戳由原始分段复制，模型无权改动；
-    * 模型未配置/单批失败 → 保守规整回退，engine/fallback_reasons 留痕。
-    """
-    from src.transcript_correction_llm import correct_segments_with_model
-
-    glossary_terms: list[str] = []
-    try:
-        from src.project_glossary import load_glossary
-        glossary_terms = load_glossary(project_id or "")
-    except Exception:  # noqa: BLE001 — 词表故障绝不影响纠错主链路
-        glossary_terms = []
-
-    def _progress(message: str) -> None:
-        _state(_current_job_id(), "correcting", message, 0.35)
-
-    return correct_segments_with_model([
-        {"start": round(float(item["start"]), 3), "end": round(float(item["end"]), 3), "text": str(item["text"]).strip()}
-        for item in raw_segments
-    ], progress=_progress, job_id=job_id or _current_job_id(), glossary_terms=glossary_terms)
-
-
-def _call_stage_correcting(raw_segments: list[dict], job_id: str,
-                           project_id: str | None) -> dict:
-    if _accepts_keyword(stage_correcting, "project_id"):
-        return stage_correcting(raw_segments, job_id, project_id=project_id)
-    return stage_correcting(raw_segments, job_id)
-
-
-def stage_analyzing(corrected_segments: list[dict], job_id: str) -> dict:
-    import asyncio as _asyncio
-    from src.studio_insights import extract_studio_insights
-
-    _state(_current_job_id(), "analyzing", "金句与关键词提取", 0.45)
-    return _asyncio.run(extract_studio_insights(corrected_segments))
-
-
-def stage_editing(video_path: Path, raw_segments: list[dict], corrected: dict, job_id: str, *,
-                  project_id: str | None = None) -> dict:
-    from src.timeline_copilot import create_timeline_project
-    from src.config import get_config
-
-    _state(_current_job_id(), "editing", "生成时间线（EDL/SRT/FCPXML）", 0.5)
-    return create_timeline_project(
-        video_path=video_path,
-        raw_segments=raw_segments,
-        corrected_segments=corrected["asr_segments"],
-        uploads_root=Path(get_config().temp_dir),
-        project_id=project_id,
-    )
-
-
-def stage_rendering(project_id: str, video_path: Path, corrected_segments: list[dict],
-                    insights: dict, job_id: str, *, project_override: str | None = None,
-                    transcript_pre_corrected: bool = False) -> tuple[list[dict], dict]:
-    """提交既有固定剪辑流程（video-brain）并等待成片，返回本地成片文件列表。
-
-    * ``project_override``：AUTO_EDIT 用它把时间线工程/bridge/台账固定到前端传入的
-      ``timeline_*`` 项目 id；legacy 不传，仍为 ``timeline_{job_id[:12]}``（行为不变）；
-    * ``transcript_pre_corrected``：asr_segments 来自工作台已纠错转写存储，透传给
-      video-brain 跳过重复纠错（AUTO_EDIT 全程不出现 transcribing/correcting 改写）。
-    """
-    from src.studio_auto_edit_bridge import submit_auto_edit_task, read_auto_edit_task
-    from src.config import get_config
-
-    _state(_current_job_id(), "rendering", "固定剪辑流程渲染中", 0.6)
-    ledger_project = str(project_override or f"timeline_{job_id[:12]}")
-    uploads_root = Path(get_config().temp_dir) / "studio-jobs" / job_id
-    project_dir = uploads_root / "studio-projects" / ledger_project
-    (project_dir / "raw").mkdir(parents=True, exist_ok=True)
-    source_copy = project_dir / "raw" / "source.mp4"
-    if video_path.resolve() != source_copy.resolve():
-        # 同盘硬链接：渲染项目不再为同一份源片多占一份 3GB 物理副本。
-        materialise_source(video_path, source_copy)
-    (project_dir / "project.json").write_text(json.dumps({"project_id": ledger_project}, ensure_ascii=False), encoding="utf-8")
-
-    # 统一项目入口（2026-10-19）：写任务 JSON 前先确保**真实用户级**项目记录合法
-    # （真 root 下的 timeline 工程 + 台账），堵住 bridge 路径只经 job 隔离目录、
-    # 由 sync_from_tasks 回填出孤儿台账的缺口（timeline_b677b1639a1c 即实例）。
-    # incomplete → 任务显式失败（E_PROJECT_INCOMPLETE），绝不留下只有 clips.json
-    # 的台账；已合法 → reused；历史孤儿（ledger_only）→ 报错指引迁移入口，
-    # 不静默补建。禁止在本步触发 ASR/纠错/分析/渲染。
-    from src.project_registry import ensure_project
-    ensured = ensure_project(
-        ledger_project, origin="bridge",
-        source_path=video_path,
-        raw_segments=insights.get("raw_segments") or None,
-        corrected_segments=corrected_segments,
-        uploads_root=Path(get_config().temp_dir),
-    )
-    if ensured["state"] not in {"created", "reused"}:
-        raise ValueError(
-            f"E_PROJECT_INCOMPLETE: 项目 {ledger_project} 记录不完整"
-            f"（state={ensured['state']}, missing={ensured['missing']}，{ensured.get('detail') or ''}）；"
-            "已停止自动剪辑，未创建成片台账。历史孤儿项目请走迁移入口重建工程。"
-        )
-
-    task = submit_auto_edit_task(
-        project_id=ledger_project,
-        uploads_root=uploads_root,
-        asr_segments=corrected_segments,
-        golden_sentences=insights.get("golden_sentences", []),
-        keywords=insights.get("keywords", []),
-        transcript_pre_corrected=transcript_pre_corrected,
-    )
-    task_id = task["task_id"]
-    started = time.time()
-    while time.time() - started < JOB_TIMEOUT_SECONDS:
-        status_path = STUDIO_TASKS_ROOT / "status" / f"{task_id}.json"
-        if status_path.is_file():
-            status = json.loads(status_path.read_text(encoding="utf-8"))
-            _state(_current_job_id(), "rendering",
-                   f"{status.get('stage', status.get('status', ''))}",
-                   0.6 + 0.3 * float(status.get("progress", 0)))
-            if status.get("status") in {"completed", "failed"}:
-                if status.get("status") != "completed":
-                    raise RuntimeError(str(status.get("error") or "固定剪辑流程失败"))
-                break
-        time.sleep(5)
-    else:
-        raise TimeoutError("固定剪辑流程超时")
-
-    output_dir = STUDIO_TASKS_ROOT / "output" / task_id
-    rendered = []
-    for clip_dir in sorted(output_dir.glob("clip-*")):
-        final = clip_dir / "clip_final.mp4"
-        cover = clip_dir / "cover.jpg"
-        if final.is_file():
-            rendered.append({"clip_id": clip_dir.name, "video": final, "cover": cover if cover.is_file() else None})
-    if not rendered:
-        raise RuntimeError("固定剪辑流程完成但没有可用成片")
-    _ = VIDEO_BRAIN_URL, VIDEO_BRAIN_HOME  # 渲染由既有执行器/桥接完成，此处仅消费其产物
-    return rendered, read_auto_edit_task(task_id)
-
-
-# ---------------------------------------------------------------------------
-# 状态上报
-# ---------------------------------------------------------------------------
-
-_CURRENT_JOB = {"id": None, "lease_token": None, "run_id": None, "metadata": {}}
-
-
-def _current_job_id() -> str:
-    return _CURRENT_JOB["id"] or ""
-
-
-def _state(job_id: str, status: str, stage: str, progress: float, error: str | None = None) -> None:
-    try:
-        _http("POST", f"{BACKEND_INTERNAL_URL}/internal/jobs/{job_id}/state",
-              {"status": status, "stage": stage, "progress": progress, "error": error,
-               **(_CURRENT_JOB.get("metadata") or {})})
-    except Exception as exc:
-        raise RuntimeError(f"无法提交任务状态: {type(exc).__name__}") from exc
+from .config import (  # noqa: F401
+    _base_dir,
+    BACKEND_INTERNAL_URL,
+    JOB_TIMEOUT_SECONDS,
+    POLL_SECONDS,
+    STUDIO_TASKS_ROOT,
+    VIDEO_BRAIN_HOME,
+    VIDEO_BRAIN_URL,
+    WORKER_ID,
+    WORKER_QUEUES,
+    WORKER_ROLE_TAG,
+    WORKER_SHARED_SECRET,
+)
+from .reporting import (  # noqa: F401
+    _current_job,
+    _current_job_id,
+    _http,
+    _log,
+    _state,
+)
+from .staging import (  # noqa: F401
+    _guarded_upload_file,
+    _job_owner_subject,
+    _local_object_path,
+    _sha256_file,
+    _transcribe_recovery,
+    materialise_source,
+    stage_downloading,
+)
+from .stages import (  # noqa: F401
+    _accepts_keyword,
+    _call_stage_correcting,
+    _call_stage_transcribing,
+    _stage_metadata,
+    stage_analyzing,
+    stage_correcting,
+    stage_editing,
+    stage_rendering,
+    stage_transcribing,
+    stage_transcribing_cloud,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -443,7 +83,7 @@ def _materialise_source_for_job(object_key: str, job_id: str) -> Path:
     """
     from src import r2
 
-    target = Path(os.getenv("TEMP_DIR", str(BASE_DIR / "temp"))) / "studio-jobs" / job_id / "source.mp4"
+    target = Path(os.getenv("TEMP_DIR", str(_base_dir() / "temp"))) / "studio-jobs" / job_id / "source.mp4"
     canonical = _local_object_path(object_key)
     if canonical is not None:
         materialise_source(canonical, target)
@@ -474,88 +114,14 @@ def _upload_transcript_artifact(job_id: str, video_path: Path, payload: dict) ->
            "size_bytes": stored["size"]})
 
 
-def run_transcribe_only(job: dict) -> None:
-    """TRANSCRIBE_ONLY：提取音轨 → 转写 → 纠错 → transcript_ready（终态）。
-
-    明确禁止：金句/关键词提取、剪辑规则读取、切片规划、渲染、封面、台账写入。
-    """
-    from src import studio_transcript_store
-
-    job_id = job["job_id"]
-    started = time.time()
-    _state(job_id, "extracting_audio", "提取音轨与准备源片", 0.05)
-    video_path = _materialise_source_for_job(job["object_key"], job_id)
-    _assert_audio_stream(video_path)
-
-    recovery_path,recovery,identity=_transcribe_recovery(job,video_path)
-    if recovery.get("raw_segments") is not None:
-        raw_segments,transcript_meta=recovery["raw_segments"],recovery["transcript_meta"]
-    else:
-        raw_segments,transcript_meta=_call_stage_transcribing(video_path, job.get("config") or {}, job.get("project_id"))
-        recovery.update(raw_segments=raw_segments,transcript_meta=transcript_meta)
-        _save_recovery(recovery_path,recovery,identity)
-    corrected=recovery.get("corrected")
-    if corrected is None:
-        corrected=_call_stage_correcting(raw_segments, job_id, job.get("project_id"))
-        recovery["corrected"]=corrected
-        _save_recovery(recovery_path,recovery,identity)
-
-    # 纠错结果已统一带 segment_id/start_ms/end_ms/raw_text/uncertain/correction_reason
-    # （transcript_correction_llm._enrich 补齐）；这里只兜底补 raw_text，保证字段齐全。
-    audit = list(corrected.get("correction_audit") or [])
-    merged: list[dict] = []
-    for index, seg in enumerate(corrected["asr_segments"]):
-        item = dict(seg)
-        if not str(item.get("raw_text", "")).strip():
-            if index < len(audit):
-                item["raw_text"] = str(audit[index].get("raw_text", "")).strip()
-            elif index < len(raw_segments):
-                item["raw_text"] = str(raw_segments[index].get("text", "")).strip()
-        merged.append(item)
-
-    summary = dict(corrected.get("correction_summary") or {})
-    _stage_metadata("correction",summary)
-    ref = recovery.get("transcript_ref")
-    if ref is None:
-        ref = studio_transcript_store.save_corrected_transcript(
-            job["object_key"], job["project_id"],
-            asr_segments=merged,
-            raw_segments=list(raw_segments),
-            correction_audit=audit,
-            correction_summary=summary,
-            correction_provider=str(summary.get("engine") or "dictionary"),
-            language=str(transcript_meta.get("language", "zh")),
-            words=list(transcript_meta.get("words", [])),
-        )
-
-        recovery["transcript_ref"]=ref
-        _save_recovery(recovery_path,recovery,identity)
-
-    _state(job_id, "uploading", "回传转写产物", 0.9)
-    _upload_transcript_artifact(job_id, video_path, {
-        "asr_segments": merged,
-        "correction_audit": audit,
-        "correction_summary": summary,
-        "language": transcript_meta.get("language", "zh"),
-        "words": list(transcript_meta.get("words", []))[:20000],
-        "insights": None,
-        "timeline": None,
-        "auto_edit_task": None,
-        "transcript_id": ref["transcript_id"],
-        "transcript_version": ref["transcript_version"],
-    })
-    _state(job_id, "transcript_ready", "转写与纠错已完成，可点击顶部「开始自动剪辑」", 1.0)
-    _log(f"job {job_id}（transcribe_only）完成，用时 {time.time() - started:.0f}s")
-
-
 def _generation(job):
     return int(((job.get("config") or {}).get("_lifecycle") or {}).get("render_generation") or 0)
 
 
 def _run_id(job_id):
-    if _CURRENT_JOB.get("id")!=job_id: return job_id
-    run=str(_CURRENT_JOB.get("run_id") or job_id)
-    token=_CURRENT_JOB.get("lease_token")
+    if _current_job().get("id")!=job_id: return job_id
+    run=str(_current_job().get("run_id") or job_id)
+    token=_current_job().get("lease_token")
     return run+"/attempt-"+str(token)[:12] if token else run
 
 
@@ -597,7 +163,7 @@ def _persist_workflow_snapshot(job,plan_record=None):
     if not isinstance(manifest,dict) or not manifest:
         return None  # 无来源旧计划保持未知，不能补造版本。
     run_id=_job_run_id(job)
-    root=Path(os.getenv("STUDIO_TASKS_ROOT",str(BASE_DIR/"tasks")))
+    root=Path(os.getenv("STUDIO_TASKS_ROOT",str(_base_dir()/"tasks")))
     target=studio_workflow.snapshot_dir(root,run_id)
     if target.resolve()!=root.resolve()/"output"/run_id:
         raise RuntimeError("E_RULE_SNAPSHOT_PATH: 规则快照目录非法")
@@ -719,33 +285,6 @@ def _plan_cache(job,job_id,transcript,analysis):
     if ((job.get("config") or {}).get("_lifecycle") or {}).get("retry_mode")=="resume_render" and (cp.plans_root()/job_id/"clip_plan.json").is_file():
         raise RuntimeError("E_CACHE_CONTEXT_CHANGED: 当前输入与已保存计划不符，请重新模型规划")
     return None
-
-
-def _stage_metadata(stage,record):
-    metadata=_CURRENT_JOB.setdefault("metadata",{})
-    sources=metadata.setdefault("stage_sources",{k:"unknown" for k in ("correction","analysis","planning")})
-    raw=str(record.get("plan_source") or record.get("engine") or "unknown")
-    source={"llm":"llm","mixed":"mixed","heuristic_fallback":"rules","rules":"rules","dictionary":"rules"}.get(raw,"unknown")
-    reasons=list(record.get("fallback_reasons") or record.get("degradations") or [])
-    if stage=="correction":
-        if record.get("llm_batches") is not None:
-            source="mixed" if record["llm_batches"]>0 and record.get("fallback_batches",0)>0 else "llm" if record["llm_batches"]>0 else "rules"
-        elif raw in {"local-conservative-rules","dictionary"}: source="rules"
-        elif source=="unknown":
-            source="mixed" if reasons and ("model" in raw or "llm" in raw) else "llm" if "model" in raw or "llm" in raw else "unknown"
-    sources[stage]=source
-    old=metadata.setdefault("degradation_reasons",[])
-    for reason in reasons:
-        text=str(reason)
-        if text not in old: old.append(text)
-    if source in {"rules","mixed"} and not reasons:
-        text=f"{stage}:{source}"
-        if text not in old: old.append(text)
-    usages=dict((metadata.get("llm_usage") or {}).get("by_stage") or {})
-    usages[stage]=record.get("llm_usage") or {"status":"unknown","total_tokens":None}
-    known=all(value.get("status")=="known" and isinstance(value.get("total_tokens"),(int,float)) for value in usages.values())
-    metadata["llm_usage"]={"status":"known" if known else "unknown",
-        "total_tokens":sum(value["total_tokens"] for value in usages.values()) if known else None,"by_stage":usages}
 
 
 def _existing_published(job_id,kind,clip_id,path):
@@ -960,8 +499,8 @@ def _spawn_speaker_labeling_backfill(job: dict, transcript: dict, record: dict) 
     if total and labeled * 2 >= total:
         return None  # 精修自带足够说话人，无需兜底
 
-    from . import speaker_labeling
-    from .studio_transcript_store import source_id_for, transcripts_root
+    from .. import speaker_labeling
+    from ..studio_transcript_store import source_id_for, transcripts_root
 
     object_key = str(job.get("object_key") or "")
     segments = list(transcript.get("asr_segments") or [])
@@ -1248,7 +787,7 @@ def _run_clip_cover_stage(job: dict, job_id: str, plan_record: dict, transcript:
     # 指纹不符/缺失 → None 如实回退纠错稿；绝不冒充精修。
     refinement = _load_refinement_for_render(job_id, plan_record)
     plan_clips = {str(item.get("clip_id")): item for item in plan_record.get("clips") or []}
-    llm_fn = _COVER_LLM_FN          # 测试桩注入口；None = 生产走真实文本 LLM（一次/切片）
+    llm_fn = _cover_llm_fn()          # 测试桩注入口；None = 生产走真实文本 LLM（一次/切片）
     results: dict[str, dict] = {}
     for entry in aggregate["entries"]:
         if entry.get("status") not in {"rendered", "skipped_playable"}:
@@ -1408,7 +947,7 @@ def _run_clip_render_stage(job: dict, job_id: str, transcript: dict,
     _state(job_id, "rendering", "准备源片（本地硬链接，不重新上传/下载）", 0.7)
     source = _materialise_source_for_job(job["object_key"], job_id)
     out_root = Path(os.getenv("STUDIO_TASKS_ROOT",
-                              str(BASE_DIR / "tasks"))) / "output" / _job_run_id(job,job_id)
+                              str(_base_dir() / "tasks"))) / "output" / _job_run_id(job,job_id)
 
     def _progress(message: str) -> None:
         _state(job_id, "rendering", message, 0.8)
@@ -1503,6 +1042,7 @@ def _run_clip_render_stage(job: dict, job_id: str, transcript: dict,
 
 
 def _run_reedit_replace(job: dict, job_id: str, transcript: dict) -> None:
+    from .runner import _upload_reedit_clip_artifacts  # 惰性导入避免 pipeline→runner→pipeline 循环
     """重新剪辑并替换旧切片（2026-10-15，replacement_mode=delete_old_after_success）。
 
     复用源片与指定版本纠错转写（绝不重新上传/ASR/纠错）；重新执行内容分析、
@@ -1626,387 +1166,10 @@ def _run_reedit_replace(job: dict, job_id: str, transcript: dict) -> None:
     _log(f"job {job_id}（reedit）替换完成：{json.dumps(report, ensure_ascii=False)[:200]}")
 
 
-def run_auto_edit_only(job: dict) -> None:
-    """AUTO_EDIT：读取既有纠错转写 → 分析 → 规划 → 渲染（第五步正式链）。
-
-    前置条件：transcript 存储里必须已有有效纠错转写，否则显式失败；
-    全程禁止调用 stage_transcribing / stage_correcting。
-
-    分阶段（config.stop_after 仅用于测试/开发诊断，正式任务不带该配置）：
-    * stop_after="analysis"（兼容旧 analysis_only=true）：分析 → ``analysis_ready``；
-    * stop_after="plan"：分析 → 规划 → ``plan_ready``（内部诊断停点）；
-    * 正式（无 stop_after）：分析 → 规划 → 渲染，全自动不等待确认，终态
-      ``completed`` / ``completed_with_warnings`` / ``partial_succeeded`` /
-      ``technical_failed``。
-
-    恢复语义：分析/计划工件已持久化则直接复用（不重复调用模型、不重新规划、
-    不重新 ASR/纠错）；已可解码的成片直接跳过。
-    """
-    from src import studio_transcript_store
-
-    job_id = job["job_id"]
-    started = time.time()
-    config = job.get("config") or {}
-    if str(config.get("replacement_mode") or "") == "delete_old_after_success":
-        from src import reedit_replace
-        if reedit_replace.activation_done(_job_run_id(job,job_id)):
-            _run_reedit_replace(job, job_id, {})
-            return
-    transcript = studio_transcript_store.load_corrected_transcript(
-        job["object_key"],
-        transcript_id=config.get("transcript_id") or None,
-        transcript_version=config.get("transcript_version") or None,
-    )
-    if transcript is None:
-        raise RuntimeError("E_TRANSCRIPT_REQUIRED: 请先完成转写与纠错。")
-
-    if str(config.get("replacement_mode") or "") == "delete_old_after_success":
-        _run_reedit_replace(job, job_id, transcript)
-        return
-
-    stop_after = str(config.get("stop_after") or "").strip().lower()
-    if not stop_after and config.get("analysis_only"):
-        stop_after = "analysis"  # 第三步旧开关兼容
-    if stop_after in {"analysis", "plan"}:
-        # 恢复优先（第四步）：同一任务此前已持久化分析结果 → 直接复用继续规划，
-        # 绝不重新分析、不重新 ASR/纠错、不因恢复额外调用模型；
-        # 只有分析工件确实缺失或损坏（load 返回 None）才重新分析。
-        from src import content_analysis
-
-        knowledge_context = _knowledge_context_for(job, job_id, transcript)
-        job["_knowledge_context"] = knowledge_context
-        analysis_record = _analysis_cache(job,job_id,transcript,knowledge_context)
-        resumed = analysis_record is not None
-        if resumed:
-            analysis_record["_resumed"] = True
-            _state(job_id, "extracting_highlights",
-                   "检测到已保存的内容分析结果，恢复继续（不重新分析、不重新调用模型）", 0.4)
-            _log(f"job {job_id} 恢复：复用已保存分析 {analysis_record.get('analysis_artifact_path')}")
-        else:
-            analysis_record = _run_content_analysis_stage(job, job_id, transcript)
-        if stop_after == "analysis":
-            if not resumed:
-                summary = "内容分析完成"
-            else:
-                summary = "内容分析已存在（恢复复用）"
-            _state(job_id, "analysis_ready", f"{summary}；本阶段到此为止，未渲染。", 1.0)
-            return
-        plan_record = _run_clip_planning_stage(job, job_id, transcript, analysis_record)
-        # 两步制（2026-11-05）：plan_ready 停点后移——规划（提示词A）+ 精修
-        # （提示词B）都完成后才发射诊断停点（用户拍板）。
-        _run_clip_refinement_stage(job, job_id, transcript, plan_record)
-        _state(job_id, "plan_ready",
-               "clip_plan.json + clip_refinement.json 已保存（两步完成；诊断停点，正式任务自动继续渲染）。",
-               0.75)
-        return
-
-    # 正式 AUTO_EDIT（第五步）：分析 → 规划 → 渲染，全自动不等待确认。
-    # 恢复语义：分析/计划工件已存在则直接复用（不重复调用模型、不重新规划）。
-    from src import clip_planning
-    from src import content_analysis
-
-    knowledge_context = _knowledge_context_for(job, job_id, transcript)
-    job["_knowledge_context"] = knowledge_context
-    analysis_record = _analysis_cache(job,job_id,transcript,knowledge_context)
-    if analysis_record is not None:
-        analysis_record["_resumed"] = True
-        _state(job_id, "extracting_highlights",
-               "检测到已保存的内容分析结果，恢复继续（不重新分析、不重新调用模型）", 0.4)
-    else:
-        analysis_record = _run_content_analysis_stage(job, job_id, transcript)
-
-    plan_record = _plan_cache(job,job_id,transcript,analysis_record)
-    if plan_record is not None:
-        _state(job_id, "planning", "检测到已保存的切片计划，恢复继续渲染（不重新规划）。", 0.7)
-    else:
-        plan_record = _run_clip_planning_stage(job, job_id, transcript, analysis_record)
-
-    # 两步制（2026-11-05）：规划完成后立即逐条精修，产物随规划落盘；渲染不动。
-    _run_clip_refinement_stage(job, job_id, transcript, plan_record)
-    _run_clip_render_stage(job, job_id, transcript, plan_record)
-    _log(f"job {job_id}（auto_edit）全部阶段完成，用时 {time.time() - started:.0f}s")
 
 
-def run_legacy_full(job: dict) -> None:
-    """legacy 全链（config 无 job_kind 的存量/重试任务）：行为与拆分前完全一致。"""
-    job_id = job["job_id"]
-    started = time.time()
-    object_key = job["object_key"]
-    project_id = job["project_id"]
-
-    video_path = stage_downloading(object_key, job_id)
-    raw_segments, transcript_meta = _call_stage_transcribing(video_path, job.get("config") or {}, project_id)
-    corrected = _call_stage_correcting(raw_segments, job_id, project_id)
-    insights = stage_analyzing(corrected["asr_segments"], job_id)
-    timeline = stage_editing(video_path, raw_segments, corrected, job_id, project_id=project_id)
-    rendered, auto_edit_task = stage_rendering(project_id, video_path, corrected["asr_segments"], insights, job_id, project_override=project_id)
-
-    _upload_auto_edit_artifacts(job_id, video_path, {
-        "asr_segments": corrected["asr_segments"],
-        "correction_audit": corrected.get("correction_audit", []),
-        "language": transcript_meta.get("language", "zh"),
-        "words": transcript_meta.get("words", [])[:20000],
-        "insights": insights,
-        "timeline": timeline,
-        "auto_edit_task": auto_edit_task,
-    }, timeline, rendered)
-    _state(job_id, "completed", "成片与转写产物已就绪", 1.0)
-    _log(f"job {job_id}（legacy_full）完成，用时 {time.time() - started:.0f}s")
-
-
-def _upload_auto_edit_artifacts(job_id: str, video_path: Path, transcript_payload: dict,
-                                timeline: dict, rendered: list[dict]) -> None:
-    """uploading 阶段：转写/时间线/成片/封面上传对象存储并登记 artifact。"""
-    from src import r2
-
-    _state(job_id, "uploading", "回传转写与成片产物", 0.95)
-    _upload_transcript_artifact(job_id, video_path, transcript_payload)
-    for artifact in (timeline.get("artifacts") or {}).values():
-        artifact_path = Path(artifact) if isinstance(artifact, str) else None
-        if artifact_path and artifact_path.is_file() and artifact_path.suffix in {".srt", ".edl", ".fcpxml", ".json"}:
-            key = f"studio-artifacts/{_run_id(job_id)}/timeline/{artifact_path.name}"
-            stored = _guarded_upload_file(artifact_path, key)
-            _http("POST", f"{BACKEND_INTERNAL_URL}/internal/jobs/{job_id}/artifacts",
-                  {"kind": {".srt": "srt", ".edl": "edl", ".fcpxml": "fcpxml"}.get(artifact_path.suffix, "timeline_file"),
-                   "object_key": stored["object_key"], "size_bytes": stored["size"]})
-    for item in rendered:
-        video_key = f"studio-artifacts/{_run_id(job_id)}/{item['clip_id']}/clip_final.mp4"
-        stored_video = _guarded_upload_file(item["video"], video_key)
-        _http("POST", f"{BACKEND_INTERNAL_URL}/internal/jobs/{job_id}/artifacts",
-              {"kind": "clip", "clip_id": item["clip_id"], "object_key": stored_video["object_key"],
-               "size_bytes": stored_video["size"]})
-        if item["cover"]:
-            cover_key = f"studio-artifacts/{_run_id(job_id)}/{item['clip_id']}/cover.jpg"
-            stored_cover = _guarded_upload_file(item["cover"], cover_key)
-            _http("POST", f"{BACKEND_INTERNAL_URL}/internal/jobs/{job_id}/artifacts",
-                  {"kind": "cover", "clip_id": item["clip_id"], "object_key": stored_cover["object_key"],
-                   "size_bytes": stored_cover["size"]})
-
-
-def _sha256_file(path: Path) -> str:
-    """流式计算文件 SHA-256（发布登记用；1MB 分块，长视频安全）。"""
-    import hashlib
-
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        while True:
-            block = handle.read(1024 * 1024)
-            if not block:
-                break
-            digest.update(block)
-    return digest.hexdigest()
-
-
-def _upload_reedit_clip_artifacts(job_id, aggregate):
-    from src.capacity_guard import reserve_capacity,estimate_publish_peak
-    from src import r2
-    pending=[]
-    for entry in aggregate.get("entries") or []:
-        if entry.get("status") not in {"rendered","skipped_playable"}: continue
-        path=Path(entry.get("path") or "")
-        if not path.is_file(): raise RuntimeError("E_REEDIT_PUBLISH: 新切片产物缺失")
-        for kind,candidate in (("clip",path),("srt",path.parent/"subtitles.srt"),("clip_warnings",path.parent/"warnings.json")):
-            if candidate.is_file() and _existing_published(job_id,kind,entry["clip_id"],candidate) is None:
-                pending.append(candidate)
-    if not pending: return _upload_reedit_clip_artifacts_reserved(job_id,aggregate)
-    with reserve_capacity("publish",estimate_publish_peak(pending),path=r2.local_path_for(f"studio-artifacts/{_run_id(job_id)}")):
-        return _upload_reedit_clip_artifacts_reserved(job_id,aggregate)
-
-
-
-def _upload_reedit_clip_artifacts_reserved(job_id,aggregate):
-    from src import r2
-    from src.clip_render import _ffprobe_playable
-    published=[]
-    for entry in aggregate.get("entries") or []:
-        if entry.get("status") not in {"rendered","skipped_playable"}: continue
-        clip_id=str(entry.get("clip_id") or "");path=Path(entry.get("path") or "")
-        if not clip_id or not path.is_file(): raise RuntimeError("E_REEDIT_PUBLISH: 新切片产物缺失")
-        ready=_existing_published(job_id,"clip",clip_id,path)
-        if ready is None:
-            digest=_sha256_file(path);size=path.stat().st_size
-            key=f"studio-artifacts/{_run_id(job_id)}/{clip_id}/clip_final.mp4"
-            stored=r2.upload_file(path,key);copied=r2.local_path_for(stored["object_key"])
-            if not copied.is_file() or copied.stat().st_size!=size or _sha256_file(copied)!=digest:
-                raise RuntimeError("E_REEDIT_PUBLISH: 发布副本大小或摘要不一致")
-            ok,reason=_ffprobe_playable(copied)
-            if not ok: raise RuntimeError(f"E_REEDIT_PUBLISH: 发布副本不可解码: {reason}")
-            _http("POST",f"{BACKEND_INTERNAL_URL}/internal/jobs/{job_id}/artifacts",
-                  {"kind":"clip","clip_id":clip_id,"object_key":stored["object_key"],"size_bytes":size,"sha256":digest})
-            ready={"clip_id":clip_id,"path":str(copied),"object_key":stored["object_key"],"size_bytes":size,"sha256":digest}
-        for kind,name in (("srt","subtitles.srt"),("clip_warnings","warnings.json")):
-            sidecar=path.parent/name
-            if not sidecar.is_file() or _existing_published(job_id,kind,clip_id,sidecar) is not None: continue
-            stored=r2.upload_file(sidecar,f"studio-artifacts/{_run_id(job_id)}/{clip_id}/{name}")
-            copied=r2.local_path_for(stored["object_key"]);digest=_sha256_file(sidecar)
-            if not copied.is_file() or _sha256_file(copied)!=digest:
-                raise RuntimeError("E_REEDIT_PUBLISH: 字幕/来源侧车发布校验失败")
-            _http("POST",f"{BACKEND_INTERNAL_URL}/internal/jobs/{job_id}/artifacts",
-                {"kind":kind,"clip_id":clip_id,"object_key":stored["object_key"],"size_bytes":stored["size"],"sha256":digest})
-        published.append(ready)
-    if not published: raise RuntimeError("E_REEDIT_PUBLISH: 没有任何可发布的切片产物")
-    return published
-
-
-
-def process_job(job: dict) -> None:
-    job_id = job["job_id"]
-    _CURRENT_JOB["id"] = job_id
-    _CURRENT_JOB["lease_token"] = job.get("lease_token")
-    _CURRENT_JOB["run_id"] = _job_run_id(job,job_id)
-    _CURRENT_JOB["metadata"] = {}
-    kind = _job_kind(job)
-    if kind == "transcribe_only":
-        run_transcribe_only(job)
-    elif kind == "auto_edit":
-        run_auto_edit_only(job)
-    else:
-        run_legacy_full(job)
-
-
-def _heartbeat(stop: threading.Event) -> None:
-    last_success = time.monotonic()
-    while not stop.is_set():
-        heartbeat_job = _CURRENT_JOB["id"]
-        try:
-            _http("POST", f"{BACKEND_INTERNAL_URL}/internal/heartbeat",
-                  {"job_id": heartbeat_job}, timeout=10)
-            last_success = time.monotonic()
-        except Exception as exc:
-            _log(f"心跳失败: {type(exc).__name__}")
-            if isinstance(exc, urllib.error.HTTPError) and exc.code == 409 and heartbeat_job == _CURRENT_JOB["id"]:
-                _LEASE_LOST.set()
-            elif time.monotonic() - last_success > 80:
-                _LEASE_LOST.set()
-        stop.wait(20)
-
-
-def main() -> int:
-    try:
-        with process_lock(STUDIO_TASKS_ROOT / f".studio-worker{WORKER_ROLE_TAG}.lock", blocking=False):
-            stop = threading.Event()
-            heartbeat = threading.Thread(target=_heartbeat, args=(stop,), daemon=True)
-            heartbeat.start()
-            try:
-                return _main_loop()
-            finally:
-                stop.set()
-                heartbeat.join(timeout=12)
-    except BlockingIOError:
-        _log("已有 Studio worker 运行，本进程退出")
-        return 0
-
-
-def _main_loop() -> int:
-    if not WORKER_SHARED_SECRET:
-        _log("未配置 WORKER_SHARED_SECRET，执行器退出")
-        return 1
-    _log(f"执行器启动 backend={BACKEND_INTERNAL_URL} worker={WORKER_ID} queues={list(WORKER_QUEUES) or '全部'}")
-    while True:
-        try:
-            payload = _http("POST", f"{BACKEND_INTERNAL_URL}/internal/jobs/claim",
-                           {"queues": list(WORKER_QUEUES) or None}, timeout=30)
-            job = payload.get("job")
-        except Exception as exc:  # noqa: BLE001
-            _log(f"认领请求失败（{exc}），{POLL_SECONDS}s 后重试")
-            time.sleep(POLL_SECONDS)
-            continue
-        if not job:
-            time.sleep(POLL_SECONDS)
-            continue
-        _log(f"认领任务 {job['job_id']} (object_key={job['object_key'][:60]})")
-        try:
-            _CURRENT_JOB["id"] = job["job_id"]
-            _CURRENT_JOB["lease_token"] = job.get("lease_token")
-            _CURRENT_JOB["run_id"] = _job_run_id(job,job["job_id"])
-            _LEASE_LOST.clear()
-            run_isolated_job(job)
-        except Exception as exc:  # noqa: BLE001
-            _log(f"任务失败: {exc}")
-            try:
-                _state(job["job_id"], "failed", "执行失败", 1.0, str(exc)[:400])
-            except Exception as report_error:
-                _log(f"任务失败上报未提交: {type(report_error).__name__}")
-        _CURRENT_JOB.update({"id":None,"lease_token":None,"run_id":None,"metadata":{}})
-
-
-_LEASE_LOST = threading.Event()
-
-
-def run_isolated_job(job: dict) -> None:
-    fd, error_name = tempfile.mkstemp(prefix='studio-job-error-', dir=STUDIO_TASKS_ROOT)
-    os.close(fd)
-    error_file = Path(error_name)
-    child = subprocess.Popen([sys.executable, '-m', 'src.studio_job_worker', '--job'],
-        stdin=subprocess.PIPE, env=dict(os.environ, STUDIO_WORKER_ID=WORKER_ID,
-                                      STUDIO_JOB_ERROR_FILE=error_name,
-                                      STUDIO_WORKER_PARENT_PID=str(os.getpid())),
-        start_new_session=True)
-    started = time.monotonic()
-    try:
-        child.stdin.write(json.dumps(job).encode())
-        child.stdin.close()
-        while child.poll() is None:
-            if _LEASE_LOST.is_set():
-                raise RuntimeError('任务租约失效，执行已停止')
-            if time.monotonic() - started > JOB_TIMEOUT_SECONDS:
-                raise TimeoutError('任务超过总执行时间限制')
-            time.sleep(1)
-        if child.returncode:
-            detail = error_file.read_text(encoding='utf-8').strip()
-            raise RuntimeError(detail or f'任务子进程退出（{child.returncode}）')
-    finally:
-        if child.poll() is None:
-            os.killpg(child.pid, signal.SIGTERM)
-            try:
-                child.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                os.killpg(child.pid, signal.SIGKILL)
-                child.wait()
-        error_file.unlink(missing_ok=True)
-
-
-
-def _transcribe_recovery(job,source):
-    """转写阶段完成点持久保存，回传失败恢复不再执行已成功ASR/纠错。"""
-    import hashlib
-    config={k:v for k,v in (job.get("config") or {}).items() if not k.startswith("_")}
-    stat=source.stat()
-    identity={"object_key":job["object_key"],"source":[stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns],
-        "config":config,"worker_sha256":_sha256_file(Path(__file__))}
-    path=Path(os.getenv("STUDIO_TASKS_ROOT",str(BASE_DIR/"tasks")))/"job-recovery"/job["job_id"]/"transcribe.json"
-    data={}
-    if path.is_file():
-        try: data=json.loads(path.read_text(encoding="utf-8"))
-        except (ValueError,OSError): data={}
-    if data.get("identity")!=identity: data={}
-    return path,data,identity
-
-
-def _save_recovery(path,data,identity):
-    import uuid
-    path.parent.mkdir(parents=True,exist_ok=True)
-    temporary=path.with_name(path.name+"."+uuid.uuid4().hex+".tmp")
-    try:
-        temporary.write_text(json.dumps({**data,"identity":identity},ensure_ascii=False),encoding="utf-8")
-        temporary.chmod(0o600)
-        os.replace(temporary,path)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
-if __name__ == "__main__":
-    if sys.argv[1:] == ['--job']:
-        terminate_with_parent(int(os.environ['STUDIO_WORKER_PARENT_PID']))
-        try:
-            process_job(json.load(sys.stdin))
-        except Exception as exc:
-            error_file = os.getenv('STUDIO_JOB_ERROR_FILE')
-            if error_file:
-                Path(error_file).write_text(str(exc)[:400], encoding='utf-8')
-            traceback.print_exc()
-            sys.exit(1)
-    else:
-        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-        sys.exit(main())
-
+def _cover_llm_fn():
+    """_cover_llm_fn() 的调用时解析：兼容测试对**包命名空间**的注桩（阶段5·点2）。"""
+    import sys
+    pkg_name = __name__.rsplit(".", 1)[0]
+    return getattr(sys.modules[pkg_name], "_COVER_LLM_FN", _COVER_LLM_FN)

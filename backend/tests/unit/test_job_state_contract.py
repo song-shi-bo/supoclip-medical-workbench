@@ -60,8 +60,9 @@ def _post_state(client: TestClient, status: str, secret: str = WORKER_SECRET):
 # ---------------------------------------------------------------------------
 
 def test_worker_emitted_statuses_subset_of_whitelist():
-    source = (Path(__file__).resolve().parents[2] / "src" / "studio_job_worker.py").read_text(
-        encoding="utf-8")
+    # 阶段5·点2：studio_job_worker 已拆为包——扫描包内全部模块的源码
+    worker_pkg = Path(__file__).resolve().parents[2] / "src" / "studio_job_worker"
+    source = "\n".join(p.read_text(encoding="utf-8") for p in sorted(worker_pkg.glob("*.py")))
     emitted = set(re.findall(r'_state\([^,]+,\s*"([a-z_]+)"', source))
     assert emitted, "扫描不到任何 _state(...) 字面状态——正则或源码路径失效"
     known = emitted | DYNAMIC_TERMINAL_STATUSES
