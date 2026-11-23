@@ -53,6 +53,8 @@ class Session:
             if "ORDER BY created_at" in q:
                 rows=[j for j in self.db.jobs.values() if j["status"] in {"queued","reedit_requested"} or
                       j["status"] not in store.TERMINAL_STATUSES and not j.get("lease_alive",False)]
+                if p.get("queues"):  # 阶段5·点3：按资源队列白名单过滤
+                    rows=[j for j in rows if j.get("queue") in p["queues"]]
                 return Result(rows[:1])
             row=self.db.jobs.get(p.get("id"))
             if row and "worker_id=:worker_id" in q and not self.valid(row,p): row=None
@@ -424,4 +426,42 @@ def test_save_artifact_same_key_content_change_marks_overwrite(backend):
         assert first==again and len(db.artifacts)==1
         assert any("UPDATE studio_artifacts" in e for e in db.events)
         assert db.artifacts[0]["sha256"]=="cc" and db.artifacts[0]["size_bytes"]==150
+    asyncio.run(run())
+
+
+# ---------------------------------------------------------------------------
+# 阶段5·点3（2026-11-23）：资源队列分类与按队列认领
+# ---------------------------------------------------------------------------
+
+def test_queue_for_job_kind_classification():
+    assert store.queue_for_job_kind("transcribe_only") == "asr"
+    assert store.queue_for_job_kind("auto_edit") == "render"
+    assert store.queue_for_job_kind(None) == "render"
+    assert store.queue_for_job_kind("legacy_full") == "render"
+
+
+def test_create_job_tags_queue_column(backend):
+    db,access,queue,events,source=backend
+    async def run():
+        _fenced_job(db)
+        await store.create_job("timeline_test", "local:/x.mp4", 1,
+                               {"job_kind": "transcribe_only"}, job_id="f"*32)
+        assert db.jobs["f"*32]["queue"] == "asr"
+        await store.create_job("timeline_test", "local:/y.mp4", 1,
+                               {"job_kind": "auto_edit"}, job_id="e"*32)
+        assert db.jobs["e"*32]["queue"] == "render"
+    asyncio.run(run())
+
+
+def test_claim_next_job_respects_queue_allowlist(backend):
+    db,access,queue,events,source=backend
+    async def run():
+        _fenced_job(db)
+        job=db.jobs[JOB]
+        job["status"]="queued"; job["queue"]="asr"
+        claimed=await store.claim_next_job("worker", queues=["render"])
+        assert claimed is None  # asr 队列任务不被 render worker 认领
+        claimed=await store.claim_next_job("worker", queues=["asr","render"])
+        assert claimed is not None
+        assert db.jobs[JOB]["status"] == "downloading"
     asyncio.run(run())

@@ -432,7 +432,16 @@ async def internal_claim(request: Request):
     _require_worker(request)
     worker_id = request.headers.get("X-Worker-Id", "worker")
     await mark_worker_heartbeat(worker_id)
-    job = await claim_next_job(worker_id)
+    # 阶段5·点3：worker 角色可携带资源队列白名单（STUDIO_WORKER_QUEUES），只认领自己的队列。
+    queues = None
+    try:
+        body = await request.json()
+        requested = (body or {}).get("queues")
+        if isinstance(requested, list) and requested:
+            queues = [str(q) for q in requested if q in lifecycle_store.JOB_QUEUES] or None
+    except Exception:  # noqa: BLE001 - 空 body / 非 JSON 一律按全队列认领
+        queues = None
+    job = await claim_next_job(worker_id, queues)
     if job is None:
         return {"job": None}
     payload = {

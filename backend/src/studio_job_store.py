@@ -20,6 +20,31 @@ WORKER_MAX_ATTEMPTS = 3
 WORKER_HEARTBEAT_TTL = 60
 EVENT_CHANNEL = "studio:jobs:events"
 
+# ---------------------------------------------------------------------------
+# 阶段5·点3（2026-11-23）：资源队列分类（Worker 资源型调度）
+# ---------------------------------------------------------------------------
+# studio_jobs.queue 取值：asr（转写，火山 ASR 账号级 QPS）/ render（自动剪辑、
+# 重剪，CPU 密集）；llm / cover / analytics 为规划保留位——cover 走进程内局部
+# 任务（studio_local_tasks）不经 studio_jobs，analytics 待数据回流落地。
+# PG 租约 + lease_token fencing 机制完全不变，队列只是认领过滤维度。
+JOB_QUEUES: tuple[str, ...] = ("asr", "llm", "render", "cover", "analytics")
+
+
+def queue_for_job_kind(job_kind) -> str:
+    """job_kind → 资源队列：转写进 asr 队列，其余（auto_edit/reedit/legacy）进 render。"""
+    return "asr" if str(job_kind or "") == "transcribe_only" else "render"
+
+
+# 每队列租约上限秒数（worker 心跳 20s 正常续租；此值只放宽长任务的过期刻度，
+# 崩溃检测灵敏度由心跳间隔决定，不随队列变化）。
+QUEUE_LEASE_SECONDS: dict[str, int] = {"asr": 600, "render": 600, "llm": 300, "cover": 300, "analytics": 300}
+
+
+def _lease_seconds_expr() -> str:
+    """SQL 片段：NOW() + 按行内 queue 的租约秒数（对齐 QUEUE_LEASE_SECONDS）。"""
+    branches = " ".join(f"WHEN '{q}' THEN '{s} seconds'" for q, s in QUEUE_LEASE_SECONDS.items())
+    return f"(CASE COALESCE(queue, 'render') {branches} ELSE '600 seconds' END)::interval"
+
 
 def _redis():
     from .workers.job_queue import JobQueue
@@ -52,10 +77,12 @@ async def create_job(project_id, object_key, object_size, config, *, job_id=None
             _access().register_created_object("task",job_id,project_id)
             config["_lifecycle"]={"creation_fingerprint":fingerprint,"generation":0,"render_generation":0,
                 "stage_sources":{k:"unknown" for k in ("correction","analysis","planning")},"operations":{},"attempt_history":[]}
-            await session.execute(text("""INSERT INTO studio_jobs(id,project_id,object_key,object_size,config)
-                VALUES(:id,:project_id,:object_key,:object_size,CAST(:config AS JSONB))"""),
+            # 阶段5·点3（2026-11-23）：创建时按 job_kind 打资源队列标签（asr/render），
+            # worker 按 STUDIO_WORKER_QUEUES 只认领自己的队列——ASR 不再阻塞渲染线。
+            await session.execute(text("""INSERT INTO studio_jobs(id,project_id,object_key,object_size,config,queue)
+                VALUES(:id,:project_id,:object_key,:object_size,CAST(:config AS JSONB),:queue)"""),
                 {"id":job_id,"project_id":project_id,"object_key":object_key,"object_size":object_size,
-                 "config":json.dumps(config,ensure_ascii=False)})
+                 "config":json.dumps(config,ensure_ascii=False),"queue":queue_for_job_kind(config.get("job_kind"))})
             await session.commit()
     except Exception:
         if reserved: _access().release_operation(job_id)
@@ -176,14 +203,22 @@ async def pg_source_reference_projects(upload_id: str, exclude_projects: set[str
                       if str(r[0]) not in exclude_projects)
 
 
-async def claim_next_job(worker_id):
+async def claim_next_job(worker_id, queues=None):
+    """认领下一个任务；queues 非空时只在该资源队列内认领（阶段5·点3）。
+
+    租约上限按队列差异化（QUEUE_LEASE_SECONDS）：心跳续租机制不变，
+    这里只是放宽长任务的过期刻度，崩溃检测灵敏度由心跳间隔决定。
+    """
     maker = get_session_maker()
     async with maker() as session:
-        result = await session.execute(text("""SELECT * FROM studio_jobs
+        queue_filter = "AND queue = ANY(CAST(:queues AS text[]))" if queues else ""
+        params = {"worker_id":worker_id,"terminal":list(TERMINAL_STATUSES)}
+        if queues: params["queues"]=list(queues)
+        result = await session.execute(text(f"""SELECT * FROM studio_jobs
             WHERE (status IN ('queued','reedit_requested') OR
               (status <> ALL(CAST(:terminal AS text[])) AND lease_expires_at < NOW()))
-              AND deleted_at_utc IS NULL
-            ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED"""),{"terminal":list(TERMINAL_STATUSES)})
+              AND deleted_at_utc IS NULL {queue_filter}
+            ORDER BY created_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED"""),params)
         row=result.mappings().first()
         if not row: return None
         job=dict(row);config=_configuration(job);state=config.setdefault("_lifecycle",{})
@@ -199,10 +234,10 @@ async def claim_next_job(worker_id):
         _worker_quota(job)
         job["config"]=config
         _access().register_created_object("task",render_run_id(job),job["project_id"])
-        await session.execute(text("""UPDATE studio_jobs SET status='downloading',stage='准备恢复执行',progress=0.02,
-            worker_id=:worker_id,lease_expires_at=NOW()+(:lease_seconds || ' seconds')::interval,
+        await session.execute(text(f"""UPDATE studio_jobs SET status='downloading',stage='准备恢复执行',progress=0.02,
+            worker_id=:worker_id,lease_expires_at=NOW()+{_lease_seconds_expr()},
             attempts=attempts+1,error=NULL,config=CAST(:config AS JSONB),updated_at=NOW() WHERE id=:id"""),
-            {"id":job["id"],"worker_id":worker_id,"lease_seconds":str(WORKER_LEASE_SECONDS),"config":json.dumps(config,ensure_ascii=False)})
+            {"id":job["id"],"worker_id":worker_id,"config":json.dumps(config,ensure_ascii=False)})
         await session.commit()
     return await get_job(job["id"])
 
@@ -220,11 +255,11 @@ async def _enqueue_lease_extend(job_id: str) -> None:
 async def renew_lease(job_id, worker_id, lease_token=""):
     maker=get_session_maker()
     async with maker() as session:
-        result=await session.execute(text("""UPDATE studio_jobs SET lease_expires_at=NOW()+(:seconds || ' seconds')::interval
+        result=await session.execute(text(f"""UPDATE studio_jobs SET lease_expires_at=NOW()+{_lease_seconds_expr()}
             WHERE id=:id AND worker_id=:worker_id AND lease_expires_at>NOW()
-            AND COALESCE(config#>>'{_lifecycle,lease_token}','')=:lease_token
+            AND COALESCE(config#>>'{{_lifecycle,lease_token}}','')=:lease_token
             AND status <> ALL(CAST(:terminal AS text[])) AND status NOT IN ('queued','reedit_requested')"""),
-            {"id":job_id,"worker_id":worker_id,"lease_token":lease_token,"seconds":str(WORKER_LEASE_SECONDS),"terminal":list(TERMINAL_STATUSES)})
+            {"id":job_id,"worker_id":worker_id,"lease_token":lease_token,"terminal":list(TERMINAL_STATUSES)})
         if result.rowcount!=1: return False
         _access().renew_operation(job_id)
         await session.commit()

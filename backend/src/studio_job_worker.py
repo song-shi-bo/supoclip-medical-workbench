@@ -53,6 +53,11 @@ from src.studio_runtime import process_lock, terminate_with_parent  # noqa: E402
 load_dotenv(BASE_DIR / ".env")
 
 WORKER_ID = os.getenv("STUDIO_WORKER_ID") or f"worker-{uuid.uuid4().hex[:8]}"
+# 阶段5·点3：本 worker 角色只认领的资源队列（逗号分隔；空 = 全队列）。
+# 例：STUDIO_WORKER_QUEUES=asr 启动转写专用 worker，与渲染 worker 并行不互抢。
+WORKER_QUEUES = tuple(q.strip() for q in os.getenv("STUDIO_WORKER_QUEUES", "").split(",") if q.strip())
+WORKER_ROLE_TAG = "-" + "-".join(WORKER_QUEUES) if WORKER_QUEUES else ""
+
 BACKEND_INTERNAL_URL = os.getenv("BACKEND_INTERNAL_URL", "http://127.0.0.1:8000/api").rstrip("/")
 WORKER_SHARED_SECRET = os.getenv("WORKER_SHARED_SECRET", "")
 POLL_SECONDS = float(os.getenv("WORKER_POLL_SECONDS", "5"))
@@ -1878,7 +1883,7 @@ def _heartbeat(stop: threading.Event) -> None:
 
 def main() -> int:
     try:
-        with process_lock(STUDIO_TASKS_ROOT / ".studio-worker.lock", blocking=False):
+        with process_lock(STUDIO_TASKS_ROOT / f".studio-worker{WORKER_ROLE_TAG}.lock", blocking=False):
             stop = threading.Event()
             heartbeat = threading.Thread(target=_heartbeat, args=(stop,), daemon=True)
             heartbeat.start()
@@ -1896,10 +1901,11 @@ def _main_loop() -> int:
     if not WORKER_SHARED_SECRET:
         _log("未配置 WORKER_SHARED_SECRET，执行器退出")
         return 1
-    _log(f"执行器启动 backend={BACKEND_INTERNAL_URL} worker={WORKER_ID}")
+    _log(f"执行器启动 backend={BACKEND_INTERNAL_URL} worker={WORKER_ID} queues={list(WORKER_QUEUES) or '全部'}")
     while True:
         try:
-            payload = _http("POST", f"{BACKEND_INTERNAL_URL}/internal/jobs/claim", {}, timeout=30)
+            payload = _http("POST", f"{BACKEND_INTERNAL_URL}/internal/jobs/claim",
+                           {"queues": list(WORKER_QUEUES) or None}, timeout=30)
             job = payload.get("job")
         except Exception as exc:  # noqa: BLE001
             _log(f"认领请求失败（{exc}），{POLL_SECONDS}s 后重试")
