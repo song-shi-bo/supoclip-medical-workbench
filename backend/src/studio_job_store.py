@@ -239,6 +239,13 @@ async def claim_next_job(worker_id, queues=None):
             attempts=attempts+1,error=NULL,config=CAST(:config AS JSONB),updated_at=NOW() WHERE id=:id"""),
             {"id":job["id"],"worker_id":worker_id,"config":json.dumps(config,ensure_ascii=False)})
         await session.commit()
+        # 阶段5·点4：认领事件 = 队列等待口径的终点（queued→downloading），best-effort
+        try:
+            from .studio_observability import emit_job_event
+            emit_job_event(job["id"], str(job.get("queue") or "render"), str(job.get("status") or "") or None,
+                           "downloading", "准备恢复执行", 0.02, worker_id)
+        except Exception as _obs_exc:  # noqa: BLE001
+            logger.debug("job event skipped: %s", _obs_exc)
     return await get_job(job["id"])
 
 
@@ -328,6 +335,14 @@ async def update_progress(job_id,status,stage,progress,error=None,extend_lease=T
         if result.rowcount!=1: return False
         if terminal: _access().release_operation(job_id)
         await session.commit()
+        # 阶段5·点4：状态或阶段变化才落事件（进度刷新不落，防流水膨胀）；best-effort 可降级
+        if status!=str(job.get("status") or "") or (stage or "")[:120]!=str(job.get("stage") or ""):
+            try:
+                from .studio_observability import emit_job_event
+                emit_job_event(job_id, str(job.get("queue") or "render"), str(job.get("status") or "") or None,
+                               status, stage, max(0,min(float(progress),1)), worker_id)
+            except Exception as _obs_exc:  # noqa: BLE001
+                logger.debug("job event skipped: %s", _obs_exc)
     await publish_event(job_id,status,stage,progress)
     return True
 
@@ -386,12 +401,18 @@ async def list_artifacts(job_id):
 
 
 
-async def mark_worker_heartbeat(worker_id: str) -> None:
+async def mark_worker_heartbeat(worker_id: str, queues=None, job_id=None) -> None:
     try:
         pool = await _redis()
         await pool.set(f"studio:worker:{worker_id}", str(int(time.time())), ex=WORKER_HEARTBEAT_TTL)
     except Exception as exc:  # noqa: BLE001
         logger.debug("worker heartbeat skipped: %s", exc)
+    # 阶段5·点4：PG worker 注册表（可查询/可告警；Redis 重启不丢心跳历史）
+    try:
+        from .studio_observability import mark_worker_seen
+        await mark_worker_seen(worker_id, list(queues) if queues else None, job_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("worker registry skipped: %s", exc)
 
 
 async def worker_online() -> bool:

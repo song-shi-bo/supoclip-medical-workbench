@@ -419,9 +419,11 @@ async def job_artifact_file(job_id: str, artifact_id: str):
 async def internal_heartbeat(request: Request):
     _require_worker(request)
     worker_id = request.headers.get("X-Worker-Id", "worker")
-    await mark_worker_heartbeat(worker_id)
     payload = await request.json()
     job_id = payload.get("job_id")
+    await mark_worker_heartbeat(worker_id,
+                                queues=payload.get("queues") if isinstance(payload.get("queues"), list) else None,
+                                job_id=str(job_id) if job_id else None)
     if job_id and not await renew_lease(job_id, worker_id, request.headers.get("X-Worker-Lease", "")):
         raise HTTPException(status_code=409, detail="任务租约不属于当前执行器")
     return {"ok": True}
@@ -441,6 +443,11 @@ async def internal_claim(request: Request):
             queues = [str(q) for q in requested if q in lifecycle_store.JOB_QUEUES] or None
     except Exception:  # noqa: BLE001 - 空 body / 非 JSON 一律按全队列认领
         queues = None
+    try:
+        from ..studio_observability import mark_worker_seen
+        await mark_worker_seen(worker_id, queues)
+    except Exception:  # noqa: BLE001
+        pass
     job = await claim_next_job(worker_id, queues)
     if job is None:
         return {"job": None}
@@ -527,3 +534,10 @@ async def internal_activate_job(job_id: str, body: ActivateRequest, request: Req
             request.headers.get("X-Worker-Lease",""),body.plan_record,body.published)
     except lifecycle_store.JobLifecycleError as exc:
         raise _lifecycle_http(exc) from exc
+
+@router.get("/internal/observability/summary")
+async def internal_observability_summary(request: Request):
+    """阶段5·点4：队列等待/阶段 p50·p95/失败率分钟窗 + worker 注册表 + 哈希巡检台账。"""
+    _require_worker(request)
+    from ..studio_observability import observability_summary
+    return await observability_summary()

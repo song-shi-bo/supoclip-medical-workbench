@@ -9,7 +9,9 @@ This is the new main entry point with:
 """
 
 from contextlib import asynccontextmanager
+import asyncio
 import logging
+import os
 import time
 
 from fastapi import FastAPI, Depends, HTTPException, Request
@@ -72,9 +74,23 @@ def create_app(
             from .studio_auto_edit_bridge import TASKS_ROOT
             resume_legacy_quota_watchers(TASKS_ROOT)
 
+            # 阶段5·点4：可观测性后台任务（分钟聚合 + 哈希巡检；best-effort 可降级）
+            obs_tasks: list[asyncio.Task] = []
+            if os.getenv("STUDIO_OBSERVABILITY_TASKS", "1") != "0":
+                try:
+                    from .studio_observability import start_background_tasks
+                    obs_tasks = start_background_tasks()
+                    logger.info("✅ Observability background tasks started (%d)", len(obs_tasks))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Observability tasks failed to start: %s", exc)
+
             yield
         finally:
             logger.info("🛑 Shutting down SupoClip API...")
+            for task in obs_tasks:
+                task.cancel()
+            if obs_tasks:
+                await asyncio.gather(*obs_tasks, return_exceptions=True)
             await close_db()
             await queue_adapter.close_pool()
             logger.info("✅ Cleanup complete")
