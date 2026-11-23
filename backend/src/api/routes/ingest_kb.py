@@ -229,6 +229,18 @@ async def ingest_scripts(payload: ScriptsIn, request: Request,
             topic_id = row.id if row else None
             if topic_id is None:
                 warnings.append(f"topic_ref 未命中: {ref}")
+        else:
+            # 兜底（2026-11-20）：豆包未带 topic_ref 时，按归一化标题精确匹配热点。
+            # 防止转写稿成孤儿 → 拆解拿不到完整素材 → 下游质量退化（素材链断裂）。
+            _t = s.title.strip()
+            if _t.startswith("【原始转写】"):
+                _t = _t[len("【原始转写】"):]
+            row = (await db.execute(text(
+                "SELECT id FROM hot_topics WHERE content_hash = :h ORDER BY created_at DESC LIMIT 1"),
+                {"h": _content_hash(_t)})).first()
+            topic_id = row.id if row else None
+            if topic_id is None:
+                warnings.append("无 topic_ref 且标题未命中热点，转写稿未关联")
         content_hash = _content_hash(s.title)
         row = await db.execute(INSERT_SCRIPT, {
             "topic_id": topic_id, "title": s.title.strip(), "hook": s.hook,
