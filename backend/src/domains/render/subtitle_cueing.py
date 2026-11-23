@@ -1,0 +1,972 @@
+"""字幕 cue 合成层：转写分段 → 符合断句/折行/冗余/时间轴规则的 cue 列表。
+
+规则（用户需求 2026-10-29，按优先级从高到低）：
+1. 断句单位：先按语音停顿（分段间隔 ≥ ``sentence_pause_ms``）和标点
+   （。？！，；）切句/切子句，超长子句再在语义短语边界二次切分；禁止按
+   固定字数硬切。
+2. 单行长度：竖屏每行 ≤ ``SUBTITLE_MAX_LINE_CHARS``（默认 16 汉字，可配置），
+   超长时在最近的语义边界换行，不在词中间断。
+3. 不可拆分：数字与单位完整（「0.5公分」「0.4的厚度」）；标点不出现在行首；
+   常用连接词不拆（因为/所以/这样/原则上，见 :data:`PROTECTED_WORDS`）。
+4. 口语冗余（开关 ``SUBTITLE_STRIP_FILLERS``，默认开）：去叠词（因为因为→因为）
+   与填充词（是这样子的/来讲等）；去重后时间码仍用原区间，不压缩。
+5. 时间轴：每条显示时长 ≥ ``SUBTITLE_MIN_CUE_SECONDS``（默认 0.8s），同一屏
+   最多 ``SUBTITLE_MAX_LINES``（默认 2）行；相邻条不重叠、无缝隙。
+6. 标点风格：``SUBTITLE_PUNCT_STYLE`` = ``omit``（默认，句尾标点全部省略）或
+   ``keep``（全部保留），全局二选一。
+
+时间实现：token 时间按字符位置在分段区间内线性插值（分段是云端 ASR 的
+utterance 级切片，片内插值误差可接受）。``build_cues_from_segments`` 输出
+逐条 ``{start, end, text}``（单位秒；text 内 ``\\n`` 为屏内换行，最多
+``max_lines`` 行）。
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from dataclasses import dataclass, field, replace as _dc_replace
+from functools import lru_cache as _lru_cache
+
+# ---------------------------------------------------------------------------
+# 配置
+# ---------------------------------------------------------------------------
+
+_DEFAULT_MAX_LINE_CHARS = 16
+_DEFAULT_MAX_LINES = 2
+_DEFAULT_MIN_CUE_SECONDS = 0.8
+_DEFAULT_SENTENCE_PAUSE_MS = 500
+# 长停顿字幕消失阈值（2026-11-12 字幕优化）：cue 间空隙超过该时长，前条不再延伸
+# （说完整句就撤，不挂到下一句开始）；≤ 该值的短停顿仍闭合（防闪烁）。
+_DEFAULT_GAP_EXTEND_MS = 800
+# 单条 cue 显示时长硬上限（秒，防挂屏）：超过即按词时间切开。
+# 阶段2（2026-11-18 用户需求「cue 最长建议控制到 4～6 秒」）：默认从 12.0 收紧到
+# 6.0（验收项「超过 6 秒的 cue：0」）；环境变量 >6 视为配置错误钳回 6。
+# 字幕停留长的根因=ASR 尾部静音 + 整平无限延伸；词间停顿切分(1.5s)+该上限兜底。
+_DEFAULT_MAX_CUE_SECONDS = 6.0
+# 上限合法区间：默认 6.0 即验收值；环境变量允许下探（更碎但合规），超过 6.0 一律钳回。
+_MAX_CUE_SECONDS_CEILING = 6.0
+# 词间停顿切分阈值：相邻词间隔超过该值 → cue 在此切开（真实沉默≠字幕停留）
+_DEFAULT_CUE_GAP_SPLIT_S = 1.5
+
+
+@dataclass(frozen=True)
+class CueConfig:
+    max_line_chars: int = _DEFAULT_MAX_LINE_CHARS
+    max_lines: int = _DEFAULT_MAX_LINES
+    min_cue_seconds: float = _DEFAULT_MIN_CUE_SECONDS
+    strip_fillers: bool = True
+    punct_style: str = "omit"          # omit | keep
+    sentence_pause_ms: int = _DEFAULT_SENTENCE_PAUSE_MS
+    gap_extend_ms: float = _DEFAULT_GAP_EXTEND_MS
+    max_cue_seconds: float = _DEFAULT_MAX_CUE_SECONDS
+    cue_gap_split_s: float = _DEFAULT_CUE_GAP_SPLIT_S
+
+    @property
+    def cue_capacity(self) -> int:
+        return self.max_line_chars * self.max_lines
+
+
+def config_from_env(env: dict | None = None) -> CueConfig:
+    e = os.environ if env is None else env
+
+    def _int(key: str, default: int) -> int:
+        try:
+            return int(e.get(key, "") or default)
+        except ValueError:
+            return default
+
+    def _float(key: str, default: float) -> float:
+        try:
+            return float(e.get(key, "") or default)
+        except ValueError:
+            return default
+
+    def _bool(key: str, default: bool) -> bool:
+        raw = e.get(key)
+        if raw is None or raw == "":
+            return default
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+    style = (e.get("SUBTITLE_PUNCT_STYLE") or "omit").strip().lower()
+    if style not in {"omit", "keep"}:
+        style = "omit"
+    return CueConfig(
+        max_line_chars=max(8, _int("SUBTITLE_MAX_LINE_CHARS", _DEFAULT_MAX_LINE_CHARS)),
+        max_lines=max(1, min(3, _int("SUBTITLE_MAX_LINES", _DEFAULT_MAX_LINES))),
+        min_cue_seconds=max(0.0, _float("SUBTITLE_MIN_CUE_SECONDS", _DEFAULT_MIN_CUE_SECONDS)),
+        strip_fillers=_bool("SUBTITLE_STRIP_FILLERS", True),
+        punct_style=style,
+        sentence_pause_ms=max(0, _int("SUBTITLE_SENTENCE_PAUSE_MS", _DEFAULT_SENTENCE_PAUSE_MS)),
+        gap_extend_ms=max(0.0, _float("SUBTITLE_GAP_EXTEND_MS", _DEFAULT_GAP_EXTEND_MS)),
+        max_cue_seconds=min(_MAX_CUE_SECONDS_CEILING,
+                            max(1.0, _float("SUBTITLE_MAX_CUE_SECONDS", _DEFAULT_MAX_CUE_SECONDS))),
+        cue_gap_split_s=max(0.0, _float("SUBTITLE_CUE_GAP_SPLIT_S", _DEFAULT_CUE_GAP_SPLIT_S)),
+    )
+
+
+# ---------------------------------------------------------------------------
+# 词法：原子 token 与保护词
+# ---------------------------------------------------------------------------
+
+# 数字与单位必须完整（规则 3）：一个正则兼顾三种形态——
+# 0.5公分 / 0.4个毫米 / 12% / 100毫克 / 0.4的厚度（数值+「的」+所指属性）
+_NUM_RE = re.compile(
+    r"\d+(?:\.\d+)?(?:[％%]|(?:[个只条次遍针轮])?"
+    r"(?:公分|毫米汞柱|毫米|厘米|公里|毫升|毫克|千克|公斤|克|吨|米|里|亩|度|岁|"
+    r"年|个月|月|周|天|日|小时|分钟|秒|倍|环|期|支|片|格|mmol|mol|mg|ml|μg|ug|cm|mm|km|kg)"
+    r"|的[\u4e00-\u9fa5]{1,4})?"
+)
+# 拉丁字母串（PET-CT / BRAF）：含内部连字符
+_LATIN_RE = re.compile(r"[A-Za-z][A-Za-z0-9\-]*")
+
+PROTECTED_WORDS = (
+    "原则上", "正常情况下", "总体上", "因为", "所以", "这样", "但是", "不过",
+    "如果", "那么", "就是", "因此", "其实", "另外", "然后", "于是", "而且",
+    "并且", "或者", "还是", "一般", "目前", "现在", "确实",
+)
+
+# ---------------------------------------------------------------------------
+# 药名保护词（阶段2 2026-11-18：「药名不可断开」）
+# 来源两层：①内置常见药 starter 表（零依赖兜底）②medical_lexicon TSV 里
+# type=drug 的标准词（本机构词表，可运营扩充）。别名/错写**不**入表（字幕
+# 显示的是纠错后文本，保护错写无意义）。加载失败/词典缺失 → 仅内置表生效，
+# 绝不抛错（字幕问题不阻断渲染）。匹配按长度降序交替（长名优先，防被短名
+# 截断成两截）。
+# ---------------------------------------------------------------------------
+_BUILTIN_DRUG_NAMES = (
+    # 内科/抗感染常见
+    "阿莫西林", "头孢曲松", "头孢克肟", "阿奇霉素", "左氧氟沙星", "甲硝唑",
+    "奥美拉唑", "雷贝拉唑", "蒙脱石散", "布洛芬", "对乙酰氨基酚", "氯雷他定",
+    # 心血管/内分泌常见
+    "阿司匹林", "华法林", "美托洛尔", "氨氯地平", "硝苯地平", "卡托普利",
+    "缬沙坦", "二甲双胍", "格列美脲", "胰岛素", "阿托伐他汀", "瑞舒伐他汀",
+    # 肿瘤科常见（与本项目病种对齐）
+    "紫杉醇", "顺铂", "卡铂", "多西他赛", "环磷酰胺", "伊马替尼",
+    "曲美替尼", "达拉非尼", "维莫非尼", "帕博利珠单抗", "纳武利尤单抗",
+    "干扰素", "白介素", "干扰素α", "聚乙二醇干扰素",
+)
+
+
+def _drug_names() -> tuple[str, ...]:
+    """药名保护词全集：内置 starter + 词典 type=drug 标准词，长度降序去重。"""
+    names = set(_BUILTIN_DRUG_NAMES)
+    try:
+        from src.domains.medical_review import medical_lexicon
+
+        for entry in medical_lexicon.load_lexicon().get("entries") or []:
+            if not isinstance(entry, dict):
+                continue
+            if str(entry.get("type") or "") != "drug":
+                continue
+            word = str(entry.get("standard") or entry.get("word") or "").strip()
+            if len(word) >= 2:
+                names.add(word)
+    except Exception:
+        pass  # 词典缺失/损坏：仅内置表生效（字幕链路绝不因词典阻断）
+    return tuple(sorted((w for w in names if len(w) >= 2), key=len, reverse=True))
+
+
+@_lru_cache(maxsize=1)
+def _protected_token_pattern() -> "re.Pattern[str]":
+    """保护词 + 药名合并交替式（长度降序由调用方保证先长后短）。"""
+    words = tuple(PROTECTED_WORDS) + _drug_names()
+    return re.compile("|".join(re.escape(w) for w in words))
+
+_STRONG_PUNCT = "。！？!?…；;"
+_SOFT_PUNCT = "，、：,;:"
+_PUNCT_CHARS = _STRONG_PUNCT + _SOFT_PUNCT + "（）()【】《》\"\"''\"'“”‘’…—·「」『』"
+
+# 口语填充词 / 冗余从句（规则 4，开关默认开）。顺序即应用顺序；显式清单可审计。
+# 「他要看XX呢」引入从句、「原则上他要求是扩切」的代词/系动词冗余，以验收
+# case（2026-10-29 用户给定）为准。条目 = (pattern, replacement)。
+_FILLER_SPANS = (
+    (re.compile(r"是这样子的[，,]?"), ""),
+    (re.compile(r"这样子的[，,]?"), ""),
+    (re.compile(r"来讲[，,]?"), ""),
+    (re.compile(r"的话[，,]?"), ""),
+    (re.compile(r"[他她它]要看[^，。；！？,;]{0,8}呢[，,]?"), ""),
+    # 连接语后的冗余主语代词：删代词、保留连接语本身
+    (re.compile(r"(原则上|其实|一般|总体上|正常情况下)[，,]?[他她它](?=要求|建议|主张|说)"),
+     r"\1"),
+    # 口语系动词冗余：「要求是扩切」→「要求扩切」
+    (re.compile(r"(?<=要求)是(?=扩|切|做|建|保)"), ""),
+)
+# 叠词去重例外（叠词本身是词义，不能去）：谢谢、常用 AABB/叠音词
+_REPETITION_KEEP_RE = re.compile(r"谢谢|常常|刚刚|慢慢|渐渐|往往|天天|人人|轻轻|默默|多多")
+_REPEAT_RE = re.compile(r"([\u4e00-\u9fa5]{1,3})\1+")
+
+
+def _dedup_repeats(text: str) -> str:
+    """相邻重复去叠词：因为因为→因为、对对对对对→对、非常非常→非常。"""
+    out: list[str] = []
+    pos = 0
+    for m in _REPETITION_KEEP_RE.finditer(text):
+        out.append(_dedup_chunk(text[pos:m.start()]))
+        out.append(m.group(0))
+        pos = m.end()
+    out.append(_dedup_chunk(text[pos:]))
+    return "".join(out)
+
+
+def _dedup_chunk(text: str) -> str:
+    prev = None
+    while prev != text:
+        prev = text
+        text = _REPEAT_RE.sub(r"\1", text)
+    return text
+
+
+def strip_filler_spans(text: str) -> str:
+    """口语冗余清理（规则 4）：填充词/冗余从句删除 + 叠词去重。"""
+    out = text
+    for pat, repl in _FILLER_SPANS:
+        out = pat.sub(repl, out)
+    out = _dedup_repeats(out)
+    out = re.sub(r"[，,]{2,}", "，", out)      # 清理后残留的连续标点收拢
+    out = re.sub(r"^[，,、]+", "", out)         # 行首残留标点
+    return out
+
+
+# ---------------------------------------------------------------------------
+# token 化
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Token:
+    text: str                       # 原文片段（词或单个标点）
+    kind: str                       # word | punct
+    soft_before: bool = False       # 词前原文位置存在软标点（，、：）
+    strong_before: bool = False     # 词前存在强标点（。？！；）
+    t_start: float = 0.0            # 毫秒（相对切片，段内线性插值）
+    t_end: float = 0.0
+
+
+def _atomic_tokens(text: str) -> list[str]:
+    """无标点文本 → 原子 token：数字单位/数字的名词、拉丁串、保护词、药名、单字。"""
+    tokens: list[str] = []
+    pos = 0
+    n = len(text)
+    protected_re = _protected_token_pattern()
+    while pos < n:
+        for pat in (_NUM_RE, _LATIN_RE, protected_re):
+            m = pat.match(text, pos)
+            if m and m.end() > pos:
+                tokens.append(m.group(0))
+                pos = m.end()
+                break
+        else:
+            tokens.append(text[pos])
+            pos += 1
+    return tokens
+
+
+def _tokenize_segment(text: str, seg_start_ms: float, seg_end_ms: float,
+                      seg_words: list[dict[str, float]] | None = None) -> list[Token]:
+    """分段文本 → token 列表。
+
+    时间实现二选一（2026-11-12 字幕优化）：
+    - ``seg_words`` 提供真实词级时间（窗口相对 ms，{text,start,end}）→
+      **词对齐**：token 时间取自真实词时间曲线——尾部静音自然裁掉、
+      语音停顿真实反映（停留长/与画面不符的根治）；
+    - 未提供 → 段内线性插值（旧行为，无词级数据的回退路径）。
+    """
+    span = max(1.0, seg_end_ms - seg_start_ms)
+    curve = None
+    if seg_words and len(seg_words) >= 1:
+        word_widths = [max(1.0, float(len(w.get("text") or ""))) for w in seg_words]
+        total_w = sum(word_widths)
+        scale = len(text) / max(1.0, total_w)
+        curve = []
+        pos = 0.0
+        for w, width in zip(seg_words, word_widths):
+            t0 = float(w.get("start"))
+            t1 = max(t0 + 1.0, float(w.get("end")))
+            curve.append((pos, pos + width * scale, t0, t1))
+            pos += width * scale
+
+    def at(offset: float) -> float:
+        if curve:
+            for a, b, t0, t1 in curve:
+                if a <= offset < b:
+                    frac = (offset - a) / (b - a) if b > a else 0.0
+                    return t0 + frac * (t1 - t0)
+            last = curve[-1]
+            if offset >= last[1]:
+                return last[3]          # 尾部（标点/静音）：停在最后一个词的结束
+            first = curve[0]
+            return first[2]             # 头部越界：钳到首个词的开始
+        return seg_start_ms + span * (offset / max(1, len(text)))
+
+    tokens: list[Token] = []
+    soft_before = False
+    strong_before = False
+    run_start: int | None = None
+    pos = 0
+    n = len(text)
+    while pos <= n:
+        ch = text[pos] if pos < n else ""
+        if pos < n and ch not in _PUNCT_CHARS:
+            if run_start is None:
+                run_start = pos
+            pos += 1
+            continue
+        if run_start is not None:
+            run = text[run_start:pos]
+            offset = run_start
+            for tok in _atomic_tokens(run):
+                tokens.append(Token(
+                    text=tok, kind="word",
+                    soft_before=soft_before, strong_before=strong_before,
+                    t_start=at(offset), t_end=at(offset + len(tok)),
+                ))
+                soft_before = False
+                strong_before = False
+                offset += len(tok)
+            run_start = None
+        if pos < n:
+            tokens.append(Token(
+                text=ch, kind="punct",
+                soft_before=soft_before, strong_before=strong_before,
+                t_start=at(pos), t_end=at(pos + 1),
+            ))
+            if ch in _STRONG_PUNCT:
+                strong_before = True
+            else:
+                soft_before = True
+        pos += 1
+    return tokens
+
+
+# ---------------------------------------------------------------------------
+# 分句 / 子句
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Clause:
+    tokens: list[Token] = field(default_factory=list)   # word + 尾部 punct token
+    hard_start: bool = True                             # 子句前是硬边界（句首/停顿）
+    tail_punct: str = ""                                # 子句尾标点（keep 风格用）
+
+    def words(self) -> list[Token]:
+        return [t for t in self.tokens if t.kind == "word"]
+
+    def plain(self) -> str:
+        return "".join(t.text for t in self.words())
+
+
+def build_clauses(segments: list[dict], start_ms: float, end_ms: float, cfg: CueConfig,
+                  warnings: list[str],
+                  words_ms: list[dict[str, float]] | None = None,
+                  ) -> tuple[list[Clause], list[str]]:
+    """窗口内分段 → 子句列表与使用的分段 id。
+
+    硬边界（新句）：强标点（。？！；）之后、分段间隔 ≥ sentence_pause_ms。
+    软边界（同句内子句）：，、：。
+    ``words_ms``：词级时间（绝对 ms，{text,start,end}）——提供时 token 时间
+    走词对齐（2026-11-12 字幕优化），未提供回退段内线性插值。
+    """
+    clauses: list[Clause] = []
+    current = Clause()
+    used_ids: list[str] = []
+    prev_seg_end: float | None = None
+    for seg in segments:
+        text = str(seg.get("text", "")).strip()
+        if not text:
+            continue
+        s0 = float(seg.get("start_ms", (seg.get("start") or 0.0) * 1000))
+        s1 = float(seg.get("end_ms", (seg.get("end") or 0.0) * 1000))
+        rel0, rel1 = s0 - start_ms, s1 - start_ms
+        if rel1 <= 0 or rel0 >= end_ms - start_ms:
+            continue
+        if rel1 - rel0 < 200:
+            warnings.append(f"字幕段 {seg.get('segment_id', '?')} 落在切片内不足 200ms，已跳过")
+            continue
+        if cfg.strip_fillers:
+            text = strip_filler_spans(text)
+        if not text.strip(_PUNCT_CHARS + " "):
+            continue
+        used_ids.append(str(seg.get("segment_id") or ""))
+
+        seg_start = max(0.0, rel0)
+        seg_end = min(end_ms - start_ms, rel1)
+        # 词级时间（2026-11-12）：中点落在本分段内的词 → 窗口相对时间
+        seg_words: list[dict[str, float]] | None = None
+        if words_ms:
+            seg_words = []
+            for w in words_ms:
+                mid = (float(w["start"]) + float(w["end"])) / 2.0
+                if s0 <= mid <= s1:
+                    seg_words.append({"text": str(w.get("text") or ""),
+                                      "start": max(0.0, float(w["start"]) - start_ms),
+                                      "end": max(0.0, float(w["end"]) - start_ms)})
+            if not seg_words:
+                seg_words = None
+        if prev_seg_end is not None and (seg_start - prev_seg_end) >= cfg.sentence_pause_ms:
+            if current.tokens:
+                clauses.append(current)
+            current = Clause()
+        prev_seg_end = seg_end
+
+        for tok in _tokenize_segment(text, seg_start, seg_end, seg_words):
+            current.tokens.append(tok)
+            if tok.kind == "punct":
+                current.tail_punct = tok.text
+                if tok.text in _STRONG_PUNCT:
+                    clauses.append(current)
+                    current = Clause()
+                elif current.words():
+                    # 软标点（，、：）→ 同句内子句边界（hard_start=False 可装箱合并）
+                    clauses.append(current)
+                    current = Clause(hard_start=False)
+    if current.tokens:
+        clauses.append(current)
+    return clauses, [u for u in used_ids if u]
+
+
+# ---------------------------------------------------------------------------
+# 子句 → cue（装箱）→ 折行 → 时间轴整平
+# ---------------------------------------------------------------------------
+
+
+def _plain_len(tokens: list[Token]) -> int:
+    return sum(len(t.text) for t in tokens if t.kind == "word")
+
+
+def _arrange_lines(group: list[Clause], cfg: CueConfig, warnings: list[str]) -> list[str] | None:
+    """把子句组排进 ≤max_lines 行、每行 ≤limit；不可行返回 None。
+
+    超行子句用剩余行预算做词级折行（预算不足则整组不可行，由装箱切断）。"""
+    limit, max_lines = cfg.max_line_chars, cfg.max_lines
+    lines: list[str] = []
+    cur = ""
+    for clause in group:
+        t = clause.plain()
+        if not t:
+            continue
+        if len(t) > limit:
+            if cur:
+                lines.append(cur)
+                cur = ""
+            remaining = max_lines - len(lines)
+            if remaining <= 0:
+                return None
+            wrapped = _wrap_tokens(clause.words(), limit, remaining, warnings)
+            # 折行结果必须每行 ≤limit（预算只剩 1 行时 _wrap_tokens 无法二分，
+            # 会产出超宽行——此时整组不可行，交回装箱切断；2026-11-12 行宽修复）
+            if len(wrapped) > remaining or any(len(ln) > limit for ln in wrapped):
+                return None
+            lines.extend(wrapped)
+            continue
+        if cur and len(cur) + len(t) <= limit:
+            cur += t
+        else:
+            if cur:
+                lines.append(cur.strip())
+            cur = t.strip()
+    if cur:
+        lines.append(cur.strip())
+    if len(lines) > max_lines:
+        return None
+    return [ln for ln in lines if ln]
+
+
+def _split_overlong_clause(clause: Clause, cfg: CueConfig,
+                           warnings: list[str]) -> list[Clause]:
+    """超容量/超时长单子句二次切分（规则 1 + 2026-11-12 停留优化）。
+
+    - 文字超容量：按词边界切成多个 cue 容量的子句；
+    - 显示时长超 max_cue_seconds：按词时间在时长上限处切开（词级对齐提供的
+      真实词时间让切点落在真实语流上）。"""
+    out: list[Clause] = []
+    for part in _split_clause_at_time_gaps(clause, cfg):
+        out.extend(_split_overlong_by_capacity(part, cfg, warnings))
+    return out
+
+
+def _split_clause_at_time_gaps(clause: Clause, cfg: CueConfig) -> list[Clause]:
+    """词间停顿切分：相邻 token 间隔 > cue_gap_split_s → 在此切开（真实沉默处
+    字幕消失，不挂满整个停顿）。无词时间的 token（插值回退）不产生大间隔。"""
+    toks = clause.tokens
+    if len(toks) < 2:
+        return [clause]
+    parts: list[list[Token]] = []
+    cur: list[Token] = [toks[0]]
+    # token 时间为毫秒，阈值 cue_gap_split_s 为秒 → 统一换算（2026-11-12 单位修复：
+    # 原先 ms 直接与秒阈值比较，>1.5ms 即切分，真实词时间下几乎每个词间都误切）
+    gap_split_ms = cfg.cue_gap_split_s * 1000.0
+    for prev, nxt in zip(toks, toks[1:]):
+        gap = nxt.t_start - prev.t_end
+        if gap > gap_split_ms:
+            parts.append(cur)
+            cur = []
+        cur.append(nxt)
+    if cur:
+        parts.append(cur)
+    if len(parts) <= 1:
+        return [clause]
+    return [Clause(tokens=part, hard_start=(clause.hard_start if i == 0 else False))
+            for i, part in enumerate(parts) if part]
+
+
+def _split_overlong_by_capacity(clause: Clause, cfg: CueConfig,
+                                warnings: list[str]) -> list[Clause]:
+    """文字超容量/显示超时长单子句按词边界二次切分（规则 1 + 停留优化）。
+
+    切分触发（任一）：子句文字超 cue 容量；显示时长（词级时间）超 max_cue_seconds。
+    连续语流没有停顿也会按时长上限切开（解决"一句话停留很长时间"）。"""
+    words = clause.words()
+    total = sum(len(t.text) for t in words)
+    # token 时间为毫秒，max_cue_seconds 为秒 → 统一换算（2026-11-12 单位修复：
+    # 原先 ms 跨度直接与秒阈值比较，任何 >12ms 的子句都被误判超长、逐词碎裂）
+    span_s = ((words[-1].t_end - words[0].t_start) / 1000.0) if words else 0.0
+    if total <= cfg.cue_capacity and span_s <= cfg.max_cue_seconds:
+        return [clause]
+    warnings.append("超长子句已按词时间/容量二次切分（停留优化 2026-11-12）")
+    parts: list[list[Token]] = []
+    cur: list[Token] = []
+    cur_len = 0
+    first_start = words[0].t_start if words else 0.0
+    for tok in words:
+        tl = len(tok.text)
+        dur_s = (tok.t_end - first_start) / 1000.0
+        if cur and (cur_len + tl > cfg.cue_capacity or dur_s >= cfg.max_cue_seconds):
+            parts.append(cur)
+            cur, cur_len = [], 0
+            first_start = tok.t_start
+        cur.append(tok)
+        cur_len += tl
+    if cur:
+        parts.append(cur)
+    out = [Clause(tokens=p, hard_start=(clause.hard_start if i == 0 else False))
+           for i, p in enumerate(parts)]
+    return out
+
+
+def _group_over_max_span(run: list[Clause], clause: Clause, cfg: CueConfig) -> bool:
+    """合并该子句后组跨度（token 时间，毫秒）是否超 max_cue_seconds。
+
+    装箱时长约束（2026-11-12 单位修复配套）：容量切分产出的子句是
+    hard_start=False，若装箱只看文字容量会把切开的超时长子句重新合并成
+    一条超长挂屏 cue——合并前必须同查显示时长。"""
+    toks = [t for c in run + [clause] for t in c.tokens]
+    span_s = (max(t.t_end for t in toks) - min(t.t_start for t in toks)) / 1000.0
+    return span_s > cfg.max_cue_seconds
+
+
+def _pack_clauses(clauses: list[Clause], cfg: CueConfig, warnings: list[str]) -> list[list[Clause]]:
+    """子句装箱成 cue：以「可排进 max_lines×limit」为可行性判据；跨硬边界
+    不合并；合并后显示时长超 max_cue_seconds 也不合并（防超长挂屏）。"""
+    expanded: list[Clause] = []
+    for clause in clauses:
+        for part in _split_clause_at_time_gaps(clause, cfg):
+            expanded.extend(_split_overlong_clause(part, cfg, warnings))
+    groups: list[list[Clause]] = []
+    run: list[Clause] = []
+    for clause in expanded:
+        if not clause.words():
+            continue
+        if run and (clause.hard_start
+                    or _group_over_max_span(run, clause, cfg)
+                    or _arrange_lines(run + [clause], cfg, warnings) is None):
+            groups.append(run)
+            run = [clause]
+        else:
+            run = run + [clause]
+    if run:
+        groups.append(run)
+    return groups
+
+
+def _wrap_tokens(tokens: list[Token], limit: int, max_lines: int,
+                 warnings: list[str]) -> list[str]:
+    """词 token 折行：每行 ≤ limit、行数 ≤ max_lines、不在词中间断、
+    语义边界偏好（保护词/数字起行加分；悬垂副词收尾、助词起行减分）。"""
+    total = _plain_len(tokens)
+    if total <= limit:
+        return ["".join(t.text for t in tokens).strip()]
+    best = None
+    for k in range(1, len(tokens)):
+        l1 = _plain_len(tokens[:k])
+        l2 = total - l1
+        if l1 > limit or l2 > limit:
+            continue
+        nxt = tokens[k].text
+        bonus = 2 if (nxt and (nxt[0].isdigit() or any(nxt.startswith(w) for w in PROTECTED_WORDS))) else 0
+        score = abs(l1 - l2) - bonus
+        # 悬垂副词收尾（他也 /…）与助词起行（…/的 X）观感差，惩罚
+        if tokens[k - 1].text in {"也", "就", "都", "还", "才", "又", "再"}:
+            score += 3
+        if nxt and nxt[0] in "的地得了呢吧吗啊":
+            score += 2
+        if best is None or score < best[0]:
+            best = (score, k)
+    if best is not None and max_lines >= 2:
+        k = best[1]
+        return ["".join(t.text for t in tokens[:k]).strip(),
+                "".join(t.text for t in tokens[k:]).strip()]
+    # 兜底：均分行（词边界），超长单 token 允许按字符断并记 warning
+    warnings.append(f"子句 {total} 字超出 {max_lines}x{limit} 行容量，已按词边界均分行")
+    chunks: list[list[Token]] = []
+    cur: list[Token] = []
+    cur_len = 0
+    for tok in tokens:
+        tl = len(tok.text)
+        if tl > limit:
+            if cur:
+                chunks.append(cur)
+                cur, cur_len = [], 0
+            for i in range(0, tl, limit):
+                chunks.append([_dc_replace(tok, text=tok.text[i:i + limit])])
+            continue
+        if cur_len + tl > limit and cur:
+            chunks.append(cur)
+            cur, cur_len = [], 0
+        cur.append(tok)
+        cur_len += tl
+    if cur:
+        chunks.append(cur)
+    per = max(1, (len(chunks) + max_lines - 1) // max_lines)
+    return ["".join(t.text for g in chunks[i:i + per] for t in g).strip()
+            for i in range(0, len(chunks), per)]
+
+
+def _clause_span(clauses: list[Clause]) -> tuple[float, float]:
+    ts = [t for c in clauses for t in c.tokens]
+    return min(t.t_start for t in ts), max(t.t_end for t in ts)
+
+
+def _cue_text(group: list[Clause], cfg: CueConfig, warnings: list[str]) -> str:
+    """cue 文本：子句贪心填行（子句边界=首选断点），单子句超行时词级折行。"""
+    lines = _arrange_lines(group, cfg, warnings)
+    if lines is None:
+        # 装箱已保证可行；这里兜底防回归
+        warnings.append("cue 行不可排布，回退词边界均分行")
+        all_words: list[Token] = [t for c in group for t in c.words()]
+        lines = _wrap_tokens(all_words, cfg.max_line_chars, cfg.max_lines, warnings)
+    text = "\n".join(lines)
+    if cfg.punct_style == "keep":
+        tail = group[-1].tail_punct
+        if tail and tail in _STRONG_PUNCT:
+            text += tail
+    return text
+
+
+def build_cues_from_segments(segments: list[dict], start_ms: float, end_ms: float,
+                             cfg: CueConfig | None = None,
+                             words_ms: list[dict[str, float]] | None = None,
+                             ) -> tuple[list[dict], list[str], list[str]]:
+    """窗口内转写分段 → (cues, used_segment_ids, warnings)。
+
+    cue: ``{"start": 秒, "end": 秒, "text": "行1\\n行2"}``；提供 ``words_ms``
+    （词级时间，绝对 ms）时 token 时间走词对齐——cue 尾部停在最后一个词、
+    停顿处字幕消失（2026-11-12 字幕优化）；未提供回退线性插值（旧行为）。
+    """
+    cfg = cfg or config_from_env()
+    warnings: list[str] = []
+    clauses, used_ids = build_clauses(segments, float(start_ms), float(end_ms), cfg, warnings,
+                                      words_ms=words_ms)
+
+    cues: list[dict] = []
+    for group in _pack_clauses(clauses, cfg, warnings):
+        text = _cue_text(group, cfg, warnings)
+        if not text:
+            continue
+        t0, t1 = _clause_span(group)
+        cues.append({"start": t0 / 1000.0, "end": t1 / 1000.0, "text": text})
+
+    cues.sort(key=lambda c: (c["start"], c["end"]))
+    # window 统一为秒（cue 时间单位）；原先传 ms 与秒 cue 混用，兜底钳制失效
+    window_s = max(1.0, (float(end_ms) - float(start_ms)) / 1000.0)
+    _tile_cues(cues, cfg, warnings, window_s)
+    return cues, used_ids, warnings
+
+
+def _tile_cues(cues: list[dict], cfg: CueConfig, warnings: list[str], window: float) -> None:
+    """时间轴整平（规则 5 + 2026-11-12 停留优化）：去重叠（钳制）、补缝隙、
+    短条并入相邻条。补缝隙受 ``gap_extend_ms`` 约束——空隙 ≤ 0.8s 的短停顿
+    仍闭合（防闪烁）；> 0.8s 的长停顿前条最多延伸 0.8s 后消失，剩余留白
+    （说完整句就撤，不再挂到下一句开始）。``window`` 单位秒。"""
+    if not cues:
+        return
+    min_s = cfg.min_cue_seconds
+    max_ext = cfg.gap_extend_ms / 1000.0
+    max_dur = cfg.max_cue_seconds
+    # 1) 去重叠：后条起点钳到前条终点
+    for i in range(1, len(cues)):
+        if cues[i]["start"] < cues[i - 1]["end"]:
+            cues[i]["start"] = cues[i - 1]["end"]
+            cues[i]["end"] = max(cues[i]["end"], cues[i]["start"])
+    # 2) 补缝隙：短停顿闭合到后条起点；长停顿最多延伸 gap_extend_ms（留白）；
+    #    延伸不得突破 max_cue_seconds 上限（阶段2 验收「>6s cue = 0」的整平侧护栏）
+    for i in range(1, len(cues)):
+        if cues[i]["start"] - cues[i - 1]["end"] > 0.001:
+            cues[i - 1]["end"] = min(cues[i]["start"],
+                                     cues[i - 1]["end"] + max_ext,
+                                     cues[i - 1]["start"] + max_dur)
+
+    # 3) 短条处理：并入相邻条（合并后可排出 ≤max_lines×limit 才并），否则原地延伸
+    def cap_ok(a: dict, b: dict) -> bool:
+        # 平铺后字数 ≤ 容量（容量 = max_lines×max_line_chars）→ 保证可重排出
+        # ≤max_lines 行、每行 ≤limit（2026-11-12 行宽修复：原 visible_len+1
+        # 判据配合 _join_texts 盲拼会产出 >16 字超宽行）
+        joined = (a["text"] + b["text"]).replace("\n", "")
+        if len(joined) > cfg.cue_capacity:
+            return False
+        # 合并后显示时长 ≤ max_cue_seconds（阶段2：防短条合并把 cue 顶破 6s 上限）
+        return (b["end"] - a["start"]) <= max_dur + 1e-6
+
+    i = 0
+    while i < len(cues):
+        dur = cues[i]["end"] - cues[i]["start"]
+        if dur >= min_s - 1e-6 or len(cues) == 1:
+            i += 1
+            continue
+        prev_ok = i > 0 and cap_ok(cues[i - 1], cues[i])
+        next_ok = i + 1 < len(cues) and cap_ok(cues[i], cues[i + 1])
+        if next_ok and (not prev_ok or
+                        (cues[i + 1]["end"] - cues[i + 1]["start"]) <=
+                        (cues[i - 1]["end"] - cues[i - 1]["start"])):
+            cues[i]["text"] = _join_texts(cues[i]["text"], cues[i + 1]["text"], cfg)
+            cues[i]["end"] = cues[i + 1]["end"]
+            del cues[i + 1]
+        elif prev_ok:
+            cues[i - 1]["text"] = _join_texts(cues[i - 1]["text"], cues[i]["text"], cfg)
+            cues[i - 1]["end"] = cues[i]["end"]
+            del cues[i]
+        else:
+            cues[i]["end"] = min(window, cues[i]["start"] + min_s)
+            warnings.append(f"字幕条 {i + 1} 短于 {min_s}s 且无法合并，已原地延伸")
+            i += 1
+    # 4) 延伸产生的重叠/缝隙再收一次
+    for i in range(1, len(cues)):
+        if cues[i]["start"] < cues[i - 1]["end"]:
+            cues[i - 1]["end"] = cues[i]["start"]
+
+
+def _join_texts(a: str, b: str, cfg: CueConfig) -> str:
+    """合并两条 cue 文本：优先行级拼接（a 末行 + b 首行，不新增行数），
+    其次行堆叠；兜底平铺重排（每行 ≤limit；cap_ok 已保证 ≤容量 → 行数
+    ≤max_lines）。原盲拼 ``a + b`` 会产出 >16 字超宽行（规则 2 违例，
+    2026-11-12 行宽修复）。"""
+    la, lb = a.split("\n"), b.split("\n")
+    merged = la[:-1] + [la[-1] + lb[0]] + lb[1:]
+    if (len(merged) <= cfg.max_lines
+            and all(len(x) <= cfg.max_line_chars for x in merged)):
+        return "\n".join(merged)
+    if len(la) + len(lb) <= cfg.max_lines:
+        return "\n".join(la + lb)
+    flat = (a + b).replace("\n", "")
+    if len(flat) <= cfg.cue_capacity:
+        return "\n".join(flat[i:i + cfg.max_line_chars]
+                         for i in range(0, len(flat), cfg.max_line_chars))
+    return a + b
+
+
+# ---------------------------------------------------------------------------
+# 烧录样式固化（用户规范 2026-10-29）：白字 + 纯黑 2px 描边，无阴影。
+# Style 行：BorderStyle=1（描边模式）/ Outline=2 / Shadow=0；
+# PlayRes 与视频像素 1:1（1080x1920），Outline=2 即字面 2px。
+# 此样式是硬字幕烧录的唯一规范样式；studio 金黄字幕模板（subtitle_compose）
+# 是独立可配置功能，不受本规范约束。
+# ---------------------------------------------------------------------------
+
+BURN_PLAYRES_W, BURN_PLAYRES_H = 1080, 1920
+BURN_FONT_NAME = "WenQuanYi Zen Hei"
+BURN_FONT_SIZE_PX = 63
+BURN_OUTLINE_PX = 2
+BURN_SHADOW = 0
+BURN_BORDER_STYLE = 1
+BURN_MARGIN_V_PX = 360   # 2026-11-09 用户选定 C 档：下三分之一黄金位（≈18.75%），
+                         # 避开平台底部交互 UI；原 160 过贴底会被点赞/评论栏遮挡
+BURN_PRIMARY_COLOR = "&H00FFFFFF"   # 白
+BURN_OUTLINE_COLOR = "&H00000000"   # 纯黑
+BURN_BACK_COLOR = "&H00000000"
+
+# 亮背景自适应底板样式（阶段2 P2 2026-11-18）：BorderStyle=3（底板模式），
+# Outline=4 即底板内边距，底板色 = 半透明黑（ASS &HAABBGGRR：alpha 0x60 ≈ 62%
+# 不透明）。白字压半透明黑底在任何背景上可读；仅用于被 readability 判定为
+# 「复杂背景」的 cue（逐 Dialogue 选 Style），默认不输出该样式行（字节兼容）。
+BURN_BOX_STYLE_NAME = "SubBox"
+BURN_BOX_OUTLINE_PX = 4
+BURN_BOX_COLOR = "&H60000000"
+
+def _burn_style_line(font_name: str = BURN_FONT_NAME) -> str:
+    return (
+        f"Style: Sub,{font_name},{BURN_FONT_SIZE_PX},"
+        f"{BURN_PRIMARY_COLOR},&H00000000,{BURN_OUTLINE_COLOR},{BURN_BACK_COLOR},"
+        f"0,0,0,0,100,100,0,0,{BURN_BORDER_STYLE},{BURN_OUTLINE_PX},{BURN_SHADOW},2,0,0,{BURN_MARGIN_V_PX},1"
+    )
+
+
+def _burn_box_style_line(font_name: str) -> str:
+    """SubBox 底板样式行：与主样式同字体/字号/位置，仅 BorderStyle=3 +
+    Outline=底板内边距 + 半透明黑底板色（OutlineColour 携带 alpha）。"""
+    return (
+        f"Style: {BURN_BOX_STYLE_NAME},{font_name},{BURN_FONT_SIZE_PX},"
+        f"{BURN_PRIMARY_COLOR},&H00000000,{BURN_BOX_COLOR},{BURN_BACK_COLOR},"
+        f"0,0,0,0,100,100,0,0,3,{BURN_BOX_OUTLINE_PX},{BURN_SHADOW},2,0,0,{BURN_MARGIN_V_PX},1"
+    )
+
+
+def burn_ass_header(font_name: str = BURN_FONT_NAME,
+                    with_box_style: bool = False) -> str:
+    """固化样式 ASS 头（阶段2 2026-11-18：字体可参数化；P2：可选 SubBox 底板样式）。
+
+    ``font_name`` 必须是 libass 可按族名解析的**真实字体族名**（经
+    :func:`resolve_burn_font` 从字体文件解码得到，不要手填显示名）。
+    ``with_box_style``：True 时追加 SubBox 半透明底板样式行（亮背景自适应
+    cue 用）；默认 False，产物与历史逐字节一致。
+    """
+    styles = _burn_style_line(font_name)
+    if with_box_style:
+        styles = f"{styles}\n{_burn_box_style_line(font_name)}"
+    return f"""[Script Info]
+; 字幕烧录规范（2026-10-29 固化；2026-11-18 阶段2 字体参数化；P2 亮背景自适应底板）：白字 + 纯黑 2px 描边（BorderStyle=1/Outline=2），无阴影（Shadow=0）
+ScriptType: v4.00+
+PlayResX: {BURN_PLAYRES_W}
+PlayResY: {BURN_PLAYRES_H}
+WrapStyle: 0
+ScaledBorderAndShadow: yes
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+{styles}
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+
+
+# 兼容旧引用（默认字体 = 文泉驿，与历史产物逐字节一致）
+_BURN_ASS_HEADER = burn_ass_header()
+
+
+# 品牌字体解析链（阶段2 2026-11-18「品牌字体」）：**未配置 SUBTITLE_BRAND_FONT
+# 时保持文泉驿历史默认（产物字节兼容，版权确认前不默认换字）**；配置后按
+# 品牌字体 → MicrosoftYaHeiBold → 文泉驿正黑 逐级回退。注意：现存
+# fonts/MicrosoftYaHeiBold.ttc 是 0 字节占位（历史遗留，studio 金黄字幕回退链
+# 同样跳过它）——上传真实雅黑文件替换后该链自然生效。env 值=字体文件名或
+# 文件 stem，经 font_registry 查找，只认 FONTS_DIR 子树与系统 CJK 白名单
+# （与 clip_render._subtitle_font 同款安全约束）。返回 (真实字体族名, fontsdir)
+# ——fontsdir 必须是字体文件所在目录，libass 靠它解析。任何失败逐级回退，绝不抛错。
+_BRAND_FALLBACK_CHAIN = ("MicrosoftYaHeiBold.ttc",)
+
+
+def resolve_burn_font(env: dict | None = None) -> tuple[str, str]:
+    e = os.environ if env is None else env
+    brand = str(e.get("SUBTITLE_BRAND_FONT") or "").strip()
+    if not brand:
+        return BURN_FONT_NAME, _burn_fontsdir(e)
+    from src import font_registry
+
+
+    allowed_dirs = {font_registry.FONTS_DIR.resolve()}
+    system_paths = {p.resolve() for p in font_registry.SYSTEM_CJK_FONT_PATHS}
+
+    def _try(name: str) -> tuple[str, str] | None:
+        try:
+            font = font_registry.find_font_path(name)
+        except Exception:
+            return None
+        if font is None:
+            return None
+        resolved = font.resolve()
+        # 实体校验：0 字节占位文件（如现存 fonts/MicrosoftYaHeiBold.ttc 占位）
+        # 直接跳过，防止 libass 解析失败静默退化。
+        try:
+            if not resolved.is_file() or resolved.stat().st_size == 0:
+                return None
+        except OSError:
+            return None
+        in_fonts_dir = any(resolved.is_relative_to(d) for d in allowed_dirs)
+        if not in_fonts_dir and resolved not in system_paths:
+            return None
+        family = font_registry.get_font_family_name(resolved)
+        if not family:
+            return None
+        return family, str(resolved.parent)
+
+    candidates = (brand,) + _BRAND_FALLBACK_CHAIN
+    for candidate in candidates:
+        resolved = _try(candidate)
+        if resolved is not None:
+            return resolved
+    return BURN_FONT_NAME, _burn_fontsdir(e)
+
+
+def _burn_fontsdir(e: dict) -> str:
+    return str(e.get("BURN_FONTSDIR") or "/usr/share/fonts/truetype/wqy")
+
+
+def hardburn_enabled(env: dict | None = None) -> bool:
+    """渲染时是否直接把固化样式字幕烧进成片（默认开）。
+
+    ``SUBTITLE_HARDBURN=false`` 仅作紧急停机开关：有 cue 的切片会因此硬失败
+    （ClipRenderError），不再静默降级 sidecar_only——2026-11-04 固化契约：
+    切片预览必须显示字幕。
+    """
+    e = os.environ if env is None else env
+    raw = e.get("SUBTITLE_HARDBURN")
+    if raw is None or raw == "":
+        return True
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+_SRT_TS_RE = re.compile(r"(\d+):(\d{1,2}):(\d{1,2})[,.](\d{1,3})")
+
+
+def _srt_ts_to_ass(ts: str) -> str:
+    m = _SRT_TS_RE.match(ts.strip())
+    if not m:
+        return "0:00:00.00"
+    h, mi, s, ms = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4).ljust(3, "0"))
+    return f"{h}:{mi:02d}:{s:02d}.{ms // 10:02d}"
+
+
+def srt_to_styled_ass(srt_text: str, font_name: str | None = None,
+                      style_names: list[str] | None = None,
+                      emphasis_lines: list[list[str]] | None = None) -> str:
+    """规范 SRT（cue 合成产物，含预折行）→ 固化样式 ASS 文本。
+
+    纯 Python 解析，不依赖 ffmpeg；样式全部来自 :func:`burn_ass_header`
+    （白字 / 纯黑 Outline=2 / Shadow=0 / BorderStyle=1，PlayRes 1080x1920）。
+    ``font_name``：烧录字体族名（阶段2 品牌字体管道）；None = 历史默认文泉驿。
+    ``style_names``：逐 cue 样式名列表（与 SRT 块顺序一一对应；P2 亮背景
+    自适应底板：被判复杂背景的 cue 用 SubBox）。None = 全部主样式 Sub
+    （历史行为）。列表提供时自动附带 SubBox 样式行。
+    ``emphasis_lines``：逐 cue **已套好 ASS 行内标签**的行列表（P2 关键词
+    克制强调，由 subtitle_emphasis 产出）；None = 用 SRT 原文（历史行为）。
+    SRT 副本本身永远保持纯净（审计口径）。
+    """
+    needs_box = bool(style_names) and any(
+        s and s != "Sub" for s in style_names)
+    if font_name or needs_box:
+        header = burn_ass_header(font_name, with_box_style=needs_box)
+    else:
+        header = _BURN_ASS_HEADER
+    dialogues: list[str] = []
+    block_idx = 0
+    for block in re.split(r"\n\s*\n", srt_text.strip()):
+        lines = [ln for ln in block.split("\n") if ln.strip()]
+        if len(lines) < 2 or "-->" not in lines[1]:
+            continue
+        t0, t1 = lines[1].split("-->")
+        if emphasis_lines is not None and block_idx < len(emphasis_lines) \
+                and emphasis_lines[block_idx]:
+            text = "\\N".join(ln.strip() for ln in emphasis_lines[block_idx])
+        else:
+            text = "\\N".join(ln.strip() for ln in lines[2:])
+        style = "Sub"
+        if style_names is not None:
+            style = style_names[block_idx] if block_idx < len(style_names) and style_names[block_idx] else "Sub"
+            block_idx += 1
+        dialogues.append(
+            f"Dialogue: 0,{_srt_ts_to_ass(t0)},{_srt_ts_to_ass(t1)},{style},,0,0,0,,{text}")
+    return header + "\n".join(dialogues) + "\n"
+
+
+def _visible_len(text: str) -> int:
+    """近似显示宽度：CJK/全角计 1，其余计 0.6。"""
+    return round(sum(1 if ord(ch) > 0x2E80 else 0.6 for ch in text))
