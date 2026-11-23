@@ -38,6 +38,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   createTopicsApi,
   groupTopicsByStatus,
+  REASON_CLASS_LABELS,
   SCRIPT_ORIGIN_LABELS,
   SCRIPT_STATUS_LABELS,
   TOPIC_STATUSES,
@@ -150,6 +151,8 @@ export default function TopicsPage() {
   const [lastDraft, setLastDraft] = useState<BriefDraftResult | null>(null);
   const [lastScript, setLastScript] = useState<GenerateScriptResult | null>(null);
   const [doctorNotes, setDoctorNotes] = useState("");
+  const [feedbackClass, setFeedbackClass] = useState("");
+  const [feedbackNote, setFeedbackNote] = useState("");
   const [scriptDetail, setScriptDetail] = useState<ScriptDetail | null>(null);
   const [viewScriptId, setViewScriptId] = useState<string>("");
   // 白名单管理（管理员）：探测 403 → 自动隐藏入口
@@ -262,8 +265,15 @@ export default function TopicsPage() {
   const runApproveTopic = () =>
     withBusy("approve", async () => {
       if (!selectedId) return;
-      const result = await api.approveTopic(selectedId);
-      setMessage(`审批通过（${result.approved_by}），选题卡进入「已批准」。`);
+      const extra = feedbackClass ? { reason_class: feedbackClass, feedback: feedbackNote } : undefined;
+      const result = await api.approveTopic(selectedId, extra);
+      if (result && "modification" in result && result.modification) {
+        const m = result.modification as { label: string; routing_detail: string };
+        setMessage(`审批通过；修改已沉淀：${m.label} → ${m.routing_detail}`);
+      } else {
+        setMessage(`审批通过（${result.approved_by}），选题卡进入「已批准」。`);
+      }
+      setFeedbackClass(""); setFeedbackNote("");
       await refreshSelected();
     });
 
@@ -280,9 +290,26 @@ export default function TopicsPage() {
 
   const runApproveScript = (scriptId: string) =>
     withBusy(`approve-script-${scriptId}`, async () => {
-      await api.approveScript(scriptId);
-      setMessage("文稿审批通过，可进入拍摄。");
+      const extra = feedbackClass ? { reason_class: feedbackClass, feedback: feedbackNote } : undefined;
+      const result = await api.approveScript(scriptId, extra);
+      if (result && "modification" in result && result.modification) {
+        const m = result.modification as { label: string; routing_detail: string };
+        setMessage(`文稿审批通过；修改已沉淀：${m.label} → ${m.routing_detail}`);
+      } else {
+        setMessage("文稿审批通过，可进入拍摄。");
+      }
+      setFeedbackClass(""); setFeedbackNote("");
       await refreshSelected();
+    });
+
+  const runRecordFeedback = () =>
+    withBusy("record-feedback", async () => {
+      if (!selectedId) return;
+      const r = await api.recordModification({
+        topic_id: selectedId, reason_class: feedbackClass, note: feedbackNote,
+      });
+      setMessage(`已沉淀：${r.label} → ${r.routing_detail}`);
+      setFeedbackClass(""); setFeedbackNote("");
     });
 
   const runViewScript = (scriptId: string) =>
@@ -509,6 +536,33 @@ export default function TopicsPage() {
               {message ? (
                 <p className={`text-xs ${/失败|不允许|缺失|重复/.test(message) ? "text-red-600" : "text-emerald-700"}`}>{message}</p>
               ) : null}
+              {/* 沉淀修改（可选）：选分类+写备注，随审批入库或单独记录 */}
+              <div className="rounded-md border border-dashed border-stone-300 p-2.5">
+                <Label className="text-xs">沉淀修改（可选）：指出这稿的问题，随审批一起归因入库</Label>
+                <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                  <select
+                    className="rounded border border-stone-300 bg-white px-1.5 py-1 text-xs"
+                    value={feedbackClass}
+                    onChange={(e) => setFeedbackClass(e.target.value)}
+                  >
+                    <option value="">不记录</option>
+                    {Object.entries(REASON_CLASS_LABELS).map(([k, v]) => (
+                      <option key={k} value={k}>{v}</option>
+                    ))}
+                  </select>
+                  <Input
+                    className="h-7 min-w-40 flex-1 text-xs"
+                    placeholder="反馈原文/备注（如：'完全阻断'超出指南口径，应写'降低风险'）"
+                    value={feedbackNote}
+                    onChange={(e) => setFeedbackNote(e.target.value)}
+                  />
+                  <Button variant="outline" size="sm" className="h-7 px-2 text-xs"
+                    onClick={() => void runRecordFeedback()}
+                    disabled={busy !== "" || !feedbackClass || !feedbackNote.trim()}>
+                    仅记录
+                  </Button>
+                </div>
+              </div>
               <div>
                 <Label className="text-xs">医生补充说明（生稿输入：口播习惯/称呼/强调点，可空）</Label>
                 <Input className="mt-1" value={doctorNotes} onChange={(e) => setDoctorNotes(e.target.value)} />

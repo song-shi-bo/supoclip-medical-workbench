@@ -22,8 +22,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ... import topic_pipeline as tp
 from ...database import get_db
+from ...medical_lexicon import lexicon_dir
 
 router = APIRouter(prefix="/api/v1/topics", tags=["topics"])
+
+# 修改沉淀 9 类归因（阶段3 第6条）：类名 → 中文标签 → 路由目标
+REASON_CLASSES: dict[str, tuple[str, str]] = {
+    "asr_error":         ("ASR错误",       "medical.tsv"),
+    "medical_term":      ("医学术语",       "medical.tsv"),
+    "premise_missing":   ("前提缺失",       "medical_guidelines"),
+    "conclusion_rigor":  ("医学结论不严谨",  "medical_guidelines"),
+    "privacy":           ("隐私",          "negative_patterns"),
+    "subtitle_style":    ("字幕表达",       "negative_patterns"),
+    "slice_boundary":    ("切片边界",       "none"),
+    "stitching":         ("拼接问题",       "none"),
+    "hook_issue":        ("钩子问题",       "negative_patterns"),
+}
 
 # 审批必填最小集（写入 hot_topics 独立列或 brief JSONB）
 _REQUIRED_COLUMN_FIELDS = ("core_conclusion", "risk_boundary")
@@ -50,6 +64,13 @@ class BriefIn(BaseModel):
 
 class ScriptApproveIn(BaseModel):
     note: str = ""
+    reason_class: str = ""   # 可选：审批时顺带沉淀修改分类（9类之一）
+    feedback: str = ""       # 可选：反馈原文
+
+
+class TopicApproveIn(BaseModel):
+    reason_class: str = ""
+    feedback: str = ""
 
 
 class GenerateScriptIn(BaseModel):
@@ -63,6 +84,18 @@ class JobLinkIn(BaseModel):
 
 class ReviewerIn(BaseModel):
     user_id: str
+
+
+class ModificationIn(BaseModel):
+    topic_id: str = ""
+    script_id: str = ""
+    reason_class: str = Field(description="9类归因之一")
+    note: str = Field(default="", max_length=2000, description="反馈原文/备注")
+    payload: dict[str, Any] = Field(default_factory=dict, description="分类专属：asr_error→{correct,wrong}；句式类→{pattern,severity}")
+
+
+class ModificationResolveIn(BaseModel):
+    note: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +225,112 @@ async def _reference_transcript(db: AsyncSession, topic_id: str) -> str:
         )
     ).first()
     return (row2[0] or "") if row2 else ""
+
+
+def _append_medical_tsv(correct: str, wrong: str, actor: str) -> str:
+    """向热词文件追加一行（标准词｜类型｜别名错写｜权重｜备注）；标准词已存在则跳过。"""
+    tsv = lexicon_dir() / "medical.tsv"
+    tsv.parent.mkdir(parents=True, exist_ok=True)
+    if tsv.exists():
+        for line in tsv.read_text(encoding="utf-8").splitlines():
+            if line.startswith(f"{correct}\t"):
+                return "标准词已存在于词典，未重复添加"
+    else:
+        tsv.write_text(
+            "# 医疗词典（修改沉淀自动追加）\n# 标准词｜类型｜别名/错写｜权重｜备注\n",
+            encoding="utf-8",
+        )
+    with tsv.open("a", encoding="utf-8") as f:
+        f.write(f"{correct}\tterm\t{wrong}\t7\t医生反馈沉淀（{actor}）\n")
+    return "已追加热词行（转写指纹将在下次加载时刷新）"
+
+
+async def _record_and_route(
+    db: AsyncSession, *,
+    actor: str,
+    reason_class: str,
+    note: str,
+    payload: dict[str, Any],
+    topic_id: str = "",
+    script_id: str = "",
+) -> dict[str, Any]:
+    """记录一条修改归因并按类路由；返回路由摘要。"""
+    if reason_class not in REASON_CLASSES:
+        raise HTTPException(422, f"reason_class 必须是 9 类之一：{'/'.join(REASON_CLASSES)}")
+    label, default_target = REASON_CLASSES[reason_class]
+    detail = ""
+    target = default_target
+    status = "routed"
+    try:
+        if reason_class in ("asr_error", "medical_term"):
+            correct = str(payload.get("correct", "")).strip()
+            wrong = str(payload.get("wrong", "")).strip()
+            if not correct:
+                target, status = "none", "recorded"
+                detail = "缺少 payload.correct（标准词），仅记录未路由"
+            else:
+                detail = _append_medical_tsv(correct, wrong, actor)
+        elif reason_class in ("premise_missing", "conclusion_rigor"):
+            statement = (note or str(payload.get("statement", "")) or "（无备注）").strip()
+            topic_title = ""
+            if topic_id:
+                trow = (await db.execute(text("SELECT title FROM hot_topics WHERE id = :id"),
+                                         {"id": topic_id})).first()
+                topic_title = (trow.title or "")[:40] if trow else ""
+            statement = f"【审稿反馈·{label}】{statement}" + (f"（选题：{topic_title}）" if topic_title else "")
+            hash_src = json.dumps(
+                {"statement": statement, "source_url": "", "entry_type": "doctor_feedback",
+                 "risk_boundary": "", "prerequisites": "", "applicability": ""},
+                ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            ghash = hashlib.sha256(hash_src.encode()).hexdigest()
+            await db.execute(text(
+                "INSERT INTO medical_guidelines (id, topic_path, entry_type, statement, prerequisites, "
+                "applicability, risk_boundary, audience_note, keywords, source_name, source_url, "
+                "evidence_level, lang, status, review_status, content_hash) "
+                "VALUES (gen_random_uuid()::text, CAST(:tp AS text[]), 'doctor_feedback', :st, '', '', '', '', "
+                "CAST(:kw AS text[]), '工作台审稿反馈', '', '医生审稿', 'zh', 'approved', 'pending_review', :ch) "
+                "ON CONFLICT (content_hash) DO NOTHING"
+            ), {"tp": ["工作台反馈"], "st": statement, "kw": [topic_title] if topic_title else [],
+                "ch": ghash})
+            detail = "已写入医学指南库（pending_review，待医生复核）"
+        elif reason_class in ("privacy", "subtitle_style", "hook_issue"):
+            pattern = str(payload.get("pattern", "")).strip()
+            if not pattern:
+                target, status = "none", "recorded"
+                detail = "未提供 payload.pattern 正则，仅记录未路由"
+            else:
+                severity = str(payload.get("severity", "soft"))
+                severity = severity if severity in ("hard", "soft") else "soft"
+                await db.execute(text(
+                    "INSERT INTO negative_patterns (id, pattern, label, severity, source, created_by) "
+                    "VALUES (gen_random_uuid()::text, :p, :l, :sev, 'doctor_feedback', :by)"
+                ), {"p": pattern, "l": f"{label}：{note[:80]}" if note else label,
+                    "sev": severity, "by": actor})
+                detail = f"已加入负例模式（{severity}），下次生稿即生效"
+        else:  # slice_boundary / stitching：记录暂不路由
+            target, status = "none", "recorded"
+            detail = "该分类暂只记录，不路由（剪辑侧治理已有规则快照）"
+    except HTTPException:
+        raise
+    except Exception as exc:  # 路由失败不能挡记录本身
+        target, status = target, "failed"
+        detail = f"路由失败：{exc}"
+    row = (
+        await db.execute(
+            text(
+                "INSERT INTO modifications (id, topic_id, script_id, reason_class, note, payload, "
+                "created_by, routing_target, routing_status, routing_detail) "
+                "VALUES (gen_random_uuid()::text, :tid, :sid, :rc, :note, CAST(:pl AS jsonb), "
+                ":by, :target, :status, :detail) RETURNING id, created_at"
+            ),
+            {"tid": topic_id or None, "sid": script_id or None, "rc": reason_class,
+             "note": note, "pl": json.dumps(payload, ensure_ascii=False), "by": actor,
+             "target": target, "status": status, "detail": detail},
+        )
+    ).first()
+    await db.commit()
+    return {"id": row.id, "reason_class": reason_class, "label": label,
+            "routing_target": target, "routing_status": status, "routing_detail": detail}
 
 
 # ---------------------------------------------------------------------------
@@ -344,6 +483,81 @@ async def get_script_detail(script_id: str, db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.post("/modifications")
+async def record_modification(payload: ModificationIn, request: Request,
+                              db: AsyncSession = Depends(get_db)):
+    """记录一条修改归因并按类路由（热词文件 / 指南库待复核 / 负例模式）。"""
+    subject = _subject(request)
+    result = await _record_and_route(
+        db, actor=subject, reason_class=payload.reason_class, note=payload.note,
+        payload=payload.payload, topic_id=payload.topic_id, script_id=payload.script_id,
+    )
+    return {"ok": True, **result}
+
+
+@router.get("/modifications")
+async def list_modifications(
+    reason_class: str = Query(default=""),
+    limit: int = Query(default=50, le=200),
+    db: AsyncSession = Depends(get_db),
+):
+    """修改沉淀列表（默认倒序）。静态路由，先于 /{topic_id} 注册。"""
+    params: dict[str, Any] = {"limit": limit}
+    where = ""
+    if reason_class.strip():
+        where = " WHERE reason_class = :rc"
+        params["rc"] = reason_class.strip()
+    rows = (
+        await db.execute(
+            text(
+                "SELECT id, topic_id, script_id, reason_class, note, payload, created_by, "
+                "routing_target, routing_status, routing_detail, resolved_by, resolved_at, created_at "
+                f"FROM modifications{where} ORDER BY created_at DESC LIMIT :limit"
+            ),
+            params,
+        )
+    ).fetchall()
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "topic_id": r.topic_id,
+                "script_id": r.script_id,
+                "reason_class": r.reason_class,
+                "label": REASON_CLASSES.get(r.reason_class, ("未知", ""))[0],
+                "note": r.note,
+                "payload": r.payload if isinstance(r.payload, dict) else {},
+                "created_by": r.created_by,
+                "routing_target": r.routing_target,
+                "routing_status": r.routing_status,
+                "routing_detail": r.routing_detail,
+                "resolved": r.resolved_at is not None,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+    }
+
+
+@router.post("/modifications/{mod_id}/resolve")
+async def resolve_modification(mod_id: str, payload: ModificationResolveIn,
+                               request: Request, db: AsyncSession = Depends(get_db)):
+    subject = _subject(request)
+    row = (
+        await db.execute(
+            text(
+                "UPDATE modifications SET resolved_by = :uid, resolved_at = now() "
+                "WHERE id = :id AND resolved_at IS NULL RETURNING id"
+            ),
+            {"uid": subject, "id": mod_id},
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(404, "modification not found or already resolved")
+    await db.commit()
+    return {"ok": True, "id": mod_id, "resolved_by": subject}
+
+
 @router.get("/{topic_id}")
 async def get_topic(topic_id: str, db: AsyncSession = Depends(get_db)):
     row = await _load_topic(db, topic_id)
@@ -445,7 +659,9 @@ async def draft_brief(topic_id: str, request: Request, db: AsyncSession = Depend
 
 
 @router.post("/{topic_id}/approve")
-async def approve_topic(topic_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+async def approve_topic(topic_id: str, request: Request,
+                        payload: Optional[TopicApproveIn] = None,
+                        db: AsyncSession = Depends(get_db)):
     """选题卡医学审批：briefed/new → doctor_approved。仅审批白名单用户。"""
     subject = await _require_reviewer(request, db)
     row = await _load_topic(db, topic_id)
@@ -462,8 +678,14 @@ async def approve_topic(topic_id: str, request: Request, db: AsyncSession = Depe
         {"st": tp.TOPIC_STATUS_DOCTOR_APPROVED, "uid": subject, "id": topic_id},
     )
     await db.commit()
+    routed = None
+    if payload and payload.reason_class:
+        routed = await _record_and_route(
+            db, actor=subject, reason_class=payload.reason_class, note=payload.feedback,
+            payload={}, topic_id=topic_id,
+        )
     return {"ok": True, "id": topic_id, "status": tp.TOPIC_STATUS_DOCTOR_APPROVED,
-            "approved_by": subject}
+            "approved_by": subject, "modification": routed}
 
 
 @router.post("/scripts/{script_id}/approve")
@@ -490,7 +712,14 @@ async def approve_script(script_id: str, request: Request, payload: ScriptApprov
         {"uid": subject, "id": script_id},
     )
     await db.commit()
-    return {"ok": True, "id": script_id, "status": "approved", "approved_by": subject}
+    routed = None
+    if payload.reason_class:
+        routed = await _record_and_route(
+            db, actor=subject, reason_class=payload.reason_class, note=payload.feedback,
+            payload={}, topic_id=row.topic_id or "", script_id=script_id,
+        )
+    return {"ok": True, "id": script_id, "status": "approved", "approved_by": subject,
+            "modification": routed}
 
 
 # ---------------------------------------------------------------------------
@@ -524,6 +753,13 @@ async def generate_script(topic_id: str, payload: GenerateScriptIn, request: Req
         ))
     ).fetchall()
     approved_refs = [r.source_name.strip() for r in registry_rows if r.source_name and r.source_name.strip()]
+    # 负例库（DB 化的医生反馈沉淀模式）：加载启用行，随硬校验一起执行
+    pattern_rows = (
+        await db.execute(text(
+            "SELECT pattern, label, severity FROM negative_patterns WHERE enabled = TRUE"
+        ))
+    ).fetchall()
+    negative_patterns = [(r.pattern, r.label, r.severity) for r in pattern_rows]
 
     try:
         draft = await tp.run_script_generation(
@@ -542,7 +778,8 @@ async def generate_script(topic_id: str, payload: GenerateScriptIn, request: Req
 
     # 硬校验：hard 不过可自动重试一次（把违规反馈回提示词），再不过则拒绝落库
     hard, soft = tp.validate_script_draft(
-        draft, forbidden_expr=forbidden, prerequisites=prerequisites, duration_seconds=duration
+        draft, forbidden_expr=forbidden, prerequisites=prerequisites, duration_seconds=duration,
+        extra_patterns=negative_patterns,
     )
     if hard:
         repair_note = "上一稿违反以下约束，必须全部修正后重新输出完整文稿：\n- " + "\n- ".join(hard)
@@ -561,7 +798,8 @@ async def generate_script(topic_id: str, payload: GenerateScriptIn, request: Req
         result = await script_agent.run(retry_prompt)
         draft = result.output
         hard, soft = tp.validate_script_draft(
-            draft, forbidden_expr=forbidden, prerequisites=prerequisites, duration_seconds=duration
+            draft, forbidden_expr=forbidden, prerequisites=prerequisites, duration_seconds=duration,
+            extra_patterns=negative_patterns,
         )
         if hard:
             raise HTTPException(422, {"message": "生稿未通过硬校验（已重试一次）",

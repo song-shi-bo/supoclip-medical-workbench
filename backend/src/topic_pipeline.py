@@ -96,25 +96,25 @@ class ShootingScriptDraft(BaseModel):
 # 硬校验器
 # ---------------------------------------------------------------------------
 
-# 粗筛红线（hard，命中即拒绝）：宁可漏报不可误报的保守模式（精准管控靠医生填写的 forbidden_expr）
+# 粗筛红线（hard，命中即拒绝）：宁可漏报不可误报的保守基线（精准管控靠医生填写的 forbidden_expr
+# 与 negative_patterns 负例库——医生反馈沉淀的模式已 DB 化，见 SEED_NEGATIVE_PATTERNS / 负例模式表）
 _RED_LINE_PATTERNS = (
     (re.compile(r"(每天|每日|一次)?(吃|服用|口服)\s*\d+\s*(mg|毫克|片|粒)", re.IGNORECASE), "出现具体服药剂量表述"),
     (re.compile(r"(直接|可以|可)(自行|自己)?(停药|停用|减量|减半)"), "出现自行停药/减量类表述"),
     (re.compile(r"(不用|不需要|没必要)(去|看)(医院|医生)"), "出现劝阻就医类表述"),
     (re.compile(r"(保证|肯定|百分之?百)(治好|治愈|根治)"), "出现绝对化疗效承诺"),
-    # —— 绝对化强度超纲（hard）：指南口径是"降低风险"，不是"完全阻断/稳住" ——
-    (re.compile(r"完全(阻断|稳住|避免|消除|治愈|防止|杜绝)"), "绝对化表述（完全…）：依据只能支撑'降低风险'类口径"),
-    (re.compile(r"(保证|肯定|一定)(能|可以)?(阻断|稳住|避免|治愈|不得)"), "绝对化承诺（保证/肯定/一定…）"),
-    (re.compile(r"彻底(治愈|根治|消除|解决)"), "绝对化表述（彻底…）"),
 )
 
-# 承诺化句式（soft，命中仅提示人工核对/软化，不拦截）
-# 2026-11-20 医生审稿反馈沉淀（负例回归）：'就能控制进展''也能阻断癌变进程'等搭配建议软化
-_SOFT_PATTERNS = (
-    (re.compile(r"就能(控制|阻断|稳住|解决|避免|预防)"), "承诺化句式（就能…）：建议改'有机会控制/大多能稳住'"),
-    (re.compile(r"也能(阻断|控制|稳住|避免)"), "承诺化句式（也能…）：建议改'也有机会/同样有助于'"),
-    (re.compile(r"阻断癌变(进程|风险|链)"), "'阻断癌变'需核对依据原文口径（指南多写'降低发生风险'）"),
-)
+# 负例库种子（2026-11-20 医生审稿反馈沉淀，已入库 negative_patterns 表；此处导出供测试/重放使用）
+# (pattern, label, severity)；severity=hard 拒绝重写 / soft 警告软化
+SEED_NEGATIVE_PATTERNS: list[tuple[str, str, str]] = [
+    ("完全(阻断|稳住|避免|消除|治愈|防止|杜绝)", "绝对化表述（完全…）：依据只能支撑'降低风险'类口径", "hard"),
+    ("(保证|肯定|一定)(能|可以)?(阻断|稳住|避免|治愈|不得)", "绝对化承诺（保证/肯定/一定…）", "hard"),
+    ("彻底(治愈|根治|消除|解决)", "绝对化表述（彻底…）", "hard"),
+    ("就能(控制|阻断|稳住|解决|避免|预防)", "承诺化句式（就能…）：建议改'有机会控制/大多能稳住'", "soft"),
+    ("也能(阻断|控制|稳住|避免)", "承诺化句式（也能…）：建议改'也有机会/同样有助于'", "soft"),
+    ("阻断癌变(进程|风险|链)", "'阻断癌变'需核对依据原文口径（指南多写'降低发生风险'）", "soft"),
+]
 
 _PUNCT_RE = re.compile(r"[\s，。、；：？！,.;:?!\"'“”‘’（）()\[\]【】·\-—_/\\]+")
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
@@ -141,12 +141,16 @@ def validate_script_draft(
     prerequisites: Optional[list[str]] = None,
     duration_seconds: int = DEFAULT_DURATION_SECONDS,
     chars_per_second: float = SPEECH_CHARS_PER_SECOND,
+    extra_patterns: Optional[list[tuple[str, str, str]]] = None,
 ) -> tuple[list[str], list[str]]:
     """对生稿草稿做硬校验。
 
+    extra_patterns：负例库（negative_patterns 表）加载的启用模式，元素为
+    (正则字符串, 提示文案, 'hard'|'soft')；hard 计入拒绝项，soft 计入警告。
+
     返回 (hard_violations, soft_warnings)：
     - hard：禁止表达命中 / 医学依据缺失 / 红线模式命中 → 拒绝落库
-    - soft：时长字数越界 / 前提覆盖启发式未命中 → 允许落库并随响应提示
+    - soft：时长字数越界 / 前提覆盖启发式未命中 / 负例 soft 命中 → 允许落库并随响应提示
     """
     hard: list[str] = []
     soft: list[str] = []
@@ -166,13 +170,20 @@ def validate_script_draft(
     if not [r for r in (draft.refs or []) if (r or "").strip()]:
         hard.append("缺少医学依据（refs 为空）：核心结论须可溯源")
 
-    # 3) 粗筛红线模式 + 承诺化句式（soft）
+    # 3) 粗筛红线模式（基线）+ 负例库模式（DB 加载，含医生反馈沉淀）
     for pattern, label in _RED_LINE_PATTERNS:
         if pattern.search(full_text):
             hard.append(f"红线表述（{label}）")
-    for pattern, label in _SOFT_PATTERNS:
-        if pattern.search(full_text):
-            soft.append(f"{label}（命中：{pattern.search(full_text).group(0)}）")
+    for pattern_str, label, severity in (extra_patterns or []):
+        try:
+            compiled = re.compile(pattern_str)
+        except re.error:
+            continue  # 负例库里录入的正则非法时跳过，不阻塞校验
+        m = compiled.search(full_text)
+        if not m:
+            continue
+        item = f"负例命中（{label}）：{m.group(0)}"
+        (hard if severity == "hard" else soft).append(item)
 
     # 4) 时长-字数约束（soft：剪辑可再取舍）
     total_chars = speakable_char_count(full_text)

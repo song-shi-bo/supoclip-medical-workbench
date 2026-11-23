@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from src.topic_pipeline import (
+    SEED_NEGATIVE_PATTERNS,
     ShootingScriptDraft,
     build_brief_draft_prompt,
     build_script_prompt,
@@ -114,9 +115,11 @@ class TestDoctorFeedbackRegression:
 
     def test_absolute_blocking_claims_are_hard(self):
         # 医生反馈①：'三次完全可以阻断癌变'/'规范干预就能完全稳住'超出指南口径
+        # （反馈模式已 DB 化，这里以种子模式作为 extra_patterns 传入）
         draft = _draft(body="胃炎到胃癌的过程中有三次完全可以阻断癌变的机会，"
                             "只要规范干预就能完全稳住病情，不必过度担心。")
-        hard, _ = validate_script_draft(draft, duration_seconds=60)
+        hard, _ = validate_script_draft(draft, duration_seconds=60,
+                                        extra_patterns=SEED_NEGATIVE_PATTERNS)
         assert any("完全" in v for v in hard)
 
     def test_promissory_patterns_are_soft_warnings(self):
@@ -126,7 +129,8 @@ class TestDoctorFeedbackRegression:
                             "这两类情况都需要在正规消化科医生指导下进行调整和治疗，"
                             "同时配合规律作息与均衡饮食，把胃部负担降到比较低的水平，"
                             "并且按医生建议的频率复查，随时掌握自己的恢复情况。")
-        hard, soft = validate_script_draft(draft, duration_seconds=60)
+        hard, soft = validate_script_draft(draft, duration_seconds=60,
+                                           extra_patterns=SEED_NEGATIVE_PATTERNS)
         assert hard == []
         assert any("就能" in v for v in soft)
         assert any("也能" in v for v in soft)
@@ -140,9 +144,26 @@ class TestDoctorFeedbackRegression:
                             "尽早到消化科做系统评估，按医生建议的频率做胃镜复查，"
                             "把小问题在早期就管理起来，避免拖到难以处理的地步。"
                             "把这些习惯坚持下来，就是给胃健康最实在的投入。")
-        hard, soft = validate_script_draft(draft, duration_seconds=60)
+        hard, soft = validate_script_draft(draft, duration_seconds=60,
+                                           extra_patterns=SEED_NEGATIVE_PATTERNS)
         assert hard == []
         assert soft == []
+
+    def test_extra_pattern_drives_hard_and_soft(self):
+        # 负例库模式随 extra_patterns 生效：hard 入拒绝、soft 入警告
+        hard_one = _draft(body="这个方法可以彻底解决你的胃病问题，"
+                               "其余内容和平时一样按时复诊即可，有任何疑问欢迎随时留言交流，"
+                               "也希望你能把这些习惯分享给身边有需要的人，让更多人受益。")
+        hard, soft = validate_script_draft(hard_one, duration_seconds=60,
+                                           extra_patterns=[("彻底(治愈|根治|消除|解决)", "绝对化（彻底…）", "hard")])
+        assert any("彻底" in v for v in hard)
+        soft_one = _draft(body="坚持规律复查，就能控制住大部分风险，"
+                               "配合低盐饮食和适度运动，规律作息不熬夜，"
+                               "保持心态平稳对胃部健康同样重要，"
+                               "有不舒服及时就诊才是最稳妥的做法。")
+        _, soft2 = validate_script_draft(soft_one, duration_seconds=60,
+                                         extra_patterns=[("就能(控制|阻断|稳住)", "承诺化句式（就能…）", "soft")])
+        assert any("就能" in v for v in soft2)
 
 
 class TestPrompts:

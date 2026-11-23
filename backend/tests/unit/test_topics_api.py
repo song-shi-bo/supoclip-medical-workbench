@@ -68,6 +68,13 @@ async def seeded(db_session):
     await db_session.execute(text("DELETE FROM hot_topics WHERE id = :t"), {"t": topic_id})
     await db_session.execute(text("DELETE FROM topic_reviewers WHERE user_id LIKE :p"), {"p": PREFIX + "%"})
     await db_session.execute(text("DELETE FROM users WHERE id LIKE :p"), {"p": PREFIX + "%"})
+    # 本文件测试的沉淀副产物（真实表，但只删测试自己产生的行）
+    await db_session.execute(text("DELETE FROM modifications WHERE created_by LIKE :p"), {"p": PREFIX + "%"})
+    await db_session.execute(text("DELETE FROM negative_patterns WHERE created_by LIKE :p"), {"p": PREFIX + "%"})
+    # 指南库反馈条目按测试备注文本精确清理（不碰生产上的真实反馈）
+    await db_session.execute(text(
+        "DELETE FROM medical_guidelines WHERE source_name = '工作台审稿反馈' "
+        "AND statement LIKE '%明显降低癌变风险%'"))
     await db_session.commit()
 
 
@@ -194,3 +201,70 @@ async def test_brief_edit_after_approval_requires_reapproval(db_session: AsyncSe
     assert saved2["status"] == "briefed"
     assert saved2["reapproval_required"] is True
     assert saved2["approved_by"] is None
+
+
+async def test_modification_routing(db_session: AsyncSession, seeded, monkeypatch, tmp_path):
+    """三类路由：ASR错误→热词文件追加；结论不严谨→指南库待复核；钩子句式→负例模式生效。"""
+    doctor_req, plain_req = _req(seeded["doctor"]), _req(seeded["plain"])
+    tid = seeded["topic"]
+
+    # 热词文件路由：MEDICAL_LEXICON_DIR 指向 tmp，验证追加而不碰真实词典
+    monkeypatch.setenv("MEDICAL_LEXICON_DIR", str(tmp_path))
+    r1 = await T.record_modification(T.ModificationIn(
+        topic_id=tid, reason_class="asr_error", note="转写把前表性胃炎写成浅表型胃炎",
+        payload={"correct": "浅表性胃炎", "wrong": "前表型胃炎"},
+    ), request=plain_req, db=db_session)
+    assert r1["routing_target"] == "medical.tsv" and r1["routing_status"] == "routed"
+    tsv = (tmp_path / "medical.tsv").read_text(encoding="utf-8")
+    assert "浅表性胃炎\tterm\t前表型胃炎" in tsv
+
+    # 指南库路由：结论不严谨 → 待复核条目
+    r2 = await T.record_modification(T.ModificationIn(
+        topic_id=tid, reason_class="conclusion_rigor",
+        note="原文'三次完全可以阻断癌变'超出指南口径，应改为'明显降低癌变风险'",
+    ), request=doctor_req, db=db_session)
+    assert r2["routing_target"] == "medical_guidelines" and r2["routing_status"] == "routed"
+    from sqlalchemy import text
+    g = await db_session.execute(text(
+        "SELECT statement, review_status FROM medical_guidelines "
+        "WHERE source_name='工作台审稿反馈' AND statement LIKE '%明显降低癌变风险%' ORDER BY created_at DESC LIMIT 1"
+    ))
+    grow = g.first()
+    assert grow is not None and grow.review_status == "pending_review"
+
+    # 负例模式路由：钩子句式带 pattern → 负例表新增且校验器可用
+    r3 = await T.record_modification(T.ModificationIn(
+        topic_id=tid, reason_class="hook_issue", note="连续反问结尾需人工复核",
+        payload={"pattern": r"(了解|考虑|重视)过吗？", "severity": "soft"},
+    ), request=plain_req, db=db_session)
+    assert r3["routing_target"] == "negative_patterns"
+    from src.database import get_engine
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+    maker = async_sessionmaker(get_engine(), class_=AsyncSession, expire_on_commit=False)
+    async with maker() as db:
+        np_row = (await db.execute(text(
+            "SELECT pattern, label, severity FROM negative_patterns WHERE label LIKE '%连续反问结尾%'"
+            "ORDER BY created_at DESC LIMIT 1"
+        ))).first()
+    assert np_row is not None and np_row.severity == "soft"
+    hard, soft = tp.validate_script_draft(
+        tp.ShootingScriptDraft(title="t", hook="h", body="你真的了解吗？你考虑过吗？你重视过吗？", cta="c", refs=["依据"]),
+        duration_seconds=60, extra_patterns=[(np_row.pattern, np_row.label, np_row.severity)])
+    assert any("连续反问结尾" in v for v in soft)
+
+    # 无 pattern 的句式类只记录不路由
+    r4 = await T.record_modification(T.ModificationIn(
+        topic_id=tid, reason_class="privacy", note="画面里出现了他人病历"),
+        request=plain_req, db=db_session)
+    assert r4["routing_status"] == "recorded"
+
+    # resolve：标记已处理
+    resolved = await T.resolve_modification(r1["id"], T.ModificationResolveIn(note="ok"),
+                                            request=doctor_req, db=db_session)
+    assert resolved["resolved_by"] == seeded["doctor"]
+
+    # 非法分类 422
+    with pytest.raises(HTTPException) as exc:
+        await T.record_modification(T.ModificationIn(reason_class="not_a_class"),
+                                    request=plain_req, db=db_session)
+    assert exc.value.status_code == 422

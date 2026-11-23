@@ -151,6 +151,42 @@ export interface ScriptDetail extends ScriptItem {
   refs: string[];
 }
 
+/** 修改沉淀 9 类归因（与后端 REASON_CLASSES 一致）。 */
+export const REASON_CLASS_LABELS: Record<string, string> = {
+  asr_error: "ASR错误",
+  medical_term: "医学术语",
+  premise_missing: "前提缺失",
+  conclusion_rigor: "医学结论不严谨",
+  privacy: "隐私",
+  subtitle_style: "字幕表达",
+  slice_boundary: "切片边界",
+  stitching: "拼接问题",
+  hook_issue: "钩子问题",
+};
+
+export interface ModificationInput {
+  topic_id?: string;
+  script_id?: string;
+  reason_class: string;
+  note?: string;
+  payload?: Record<string, unknown>;
+}
+
+export interface ModificationItem {
+  id: string;
+  topic_id: string | null;
+  script_id: string | null;
+  reason_class: string;
+  label: string;
+  note: string;
+  created_by: string;
+  routing_target: string;
+  routing_status: string;
+  routing_detail: string;
+  resolved: boolean;
+  created_at: string | null;
+}
+
 /** 后端 detail 为可读中文（FastAPI HTTPException），原样透出给 UI。 */
 export class TopicsApiError extends Error {
   status: number;
@@ -254,8 +290,9 @@ export function createTopicsApi(baseUrl: string) {
     draftBrief(topicId: string): Promise<BriefDraftResult> {
       return requestJson(`${base}/${encodeURIComponent(topicId)}/brief/draft`, { method: "POST", body: "{}" });
     },
-    approveTopic(topicId: string): Promise<{ ok: true; status: string; approved_by: string }> {
-      return requestJson(`${base}/${encodeURIComponent(topicId)}/approve`, { method: "POST", body: "{}" });
+    approveTopic(topicId: string, extra?: { reason_class?: string; feedback?: string }): Promise<{ ok: true; status: string; approved_by: string }> {
+      const body = JSON.stringify({ reason_class: extra?.reason_class ?? "", feedback: extra?.feedback ?? "" });
+      return requestJson(`${base}/${encodeURIComponent(topicId)}/approve`, { method: "POST", body });
     },
     generateScript(topicId: string, doctorNotes = ""): Promise<GenerateScriptResult> {
       return requestJson(`${base}/${encodeURIComponent(topicId)}/generate-script`, {
@@ -263,11 +300,20 @@ export function createTopicsApi(baseUrl: string) {
         body: JSON.stringify({ doctor_notes: doctorNotes }),
       });
     },
-    approveScript(scriptId: string): Promise<{ ok: true; status: string }> {
+    approveScript(scriptId: string, extra?: { reason_class?: string; feedback?: string }): Promise<{ ok: true; status: string }> {
+      const body = JSON.stringify({ note: "", reason_class: extra?.reason_class ?? "", feedback: extra?.feedback ?? "" });
       return requestJson(`${base}/scripts/${encodeURIComponent(scriptId)}/approve`, {
         method: "POST",
-        body: "{}",
+        body,
       });
+    },
+    recordModification(input: ModificationInput): Promise<{ ok: true; label: string; routing_target: string; routing_status: string; routing_detail: string }> {
+      return requestJson(`${base}/modifications`, { method: "POST", body: JSON.stringify(input) });
+    },
+    listModifications(reasonClass = "", limit = 50): Promise<{ items: ModificationItem[] }> {
+      const params = new URLSearchParams({ limit: String(limit) });
+      if (reasonClass) params.set("reason_class", reasonClass);
+      return requestJson(`${base}/modifications?${params.toString()}`);
     },
     linkJob(scriptId: string, jobId: string): Promise<{ ok: true; script_status: string }> {
       return requestJson(`${base}/scripts/${encodeURIComponent(scriptId)}/link-job`, {
