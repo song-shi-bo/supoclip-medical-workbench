@@ -164,6 +164,18 @@ async def test_topic_card_flow(db_session: AsyncSession, seeded, monkeypatch):
     assert cfg["script_id"] == seeded["script"] and cfg["topic_id"] == tid
     assert topic_status == "used"
 
+    # 7) M5 追溯查询（与工作台文档中的验收 SQL 逐字一致）：挂链后必须能查到完整链
+    async with maker() as db:
+        traced = (await db.execute(text(
+            "SELECT t.title AS topic_title, s.version, s.status, s.task_id, j.id AS job_id "
+            "FROM hot_topics t JOIN scripts s ON s.topic_id = t.id "
+            "LEFT JOIN studio_jobs j ON j.config->>'script_id' = s.id "
+            "WHERE s.origin = 'shooting_script' AND t.id = :tid"
+        ), {"tid": tid})).first()
+    assert traced is not None
+    assert traced.task_id == seeded["job"] and traced.job_id == seeded["job"]
+    assert traced.status == "uploaded"
+
 
 async def test_brief_edit_after_approval_requires_reapproval(db_session: AsyncSession, seeded):
     """审批后改动选题卡 → 状态回 briefed、清空审批人（医学门必须重新过）。"""
