@@ -18,7 +18,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = Path(__file__).resolve().parents[2]  # src/studio_job_worker/config.py → backend（拆包后多一层）
 sys.path.insert(0, str(BASE_DIR))
 
 from dotenv import load_dotenv  # noqa: E402
