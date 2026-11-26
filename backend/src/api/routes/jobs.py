@@ -47,6 +47,8 @@ ALLOWED_JOB_STATUSES: frozenset[str] = frozenset({
     "retrieving_rules", "extracting_highlights", "planning", "analysis_ready", "plan_ready",
     # 两步制切片精修（2026-11-05）：规划（提示词A）后的第二步（提示词B）阶段状态
     "refining",
+    # 对稿成片（2026-11-25）：匹配+EDL 完成后的人工确认停点（CONFORM_AUTO_CONFIRM=false 时）
+    "conform_ready",
     "analyzing", "editing", "rendering", "uploading",
     "completed", "completed_with_warnings", "partial_succeeded", "technical_failed",
     "reedit_requested", "staging_run", "verifying_outputs", "activating_run",

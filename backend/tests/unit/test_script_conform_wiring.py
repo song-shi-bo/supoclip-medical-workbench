@@ -97,17 +97,74 @@ def _patch_chain(monkeypatch, calls: dict):
     monkeypatch.setattr(runner, "_log", lambda *a, **k: None)
 
 
+MATCHED_RECORD = {"script_linked": True, "is_script_shot": True,
+                  "conform_edl_path": "/tmp/conform_edl.json", "warnings": []}
+
+
+def _patch_conform_render(monkeypatch, calls: dict):
+    def _render(job, job_id, transcript, match_record):
+        calls["conform_render"] = calls.get("conform_render", 0) + 1
+        return {"video_path": "/tmp/clip_final.mp4", "output_duration_ms": 5000,
+                "cut_ratio": 0.2}
+    monkeypatch.setattr("src.conform_render.render_conform_final", _render)
+
+
 @pytest.mark.asyncio
 async def test_auto_edit_chain_fires_match_when_script_mode(monkeypatch):
+    """对稿模式：匹配达标 → 走单成片渲染（新工作流），不再进门诊切片链。"""
     calls: dict = {}
     _patch_chain(monkeypatch, calls)
+    _patch_conform_render(monkeypatch, calls)
+    def _matched(job, job_id, transcript):
+        calls["match"] = calls.get("match", 0) + 1
+        return dict(MATCHED_RECORD)
+    monkeypatch.setattr(runner, "run_script_match_stage", _matched)
     job = {"job_id": "job-chain-1", "project_id": "p1", "object_key": "local:/tmp/z.mp4",
            "config": {"script_mode": True}}
     runner.run_auto_edit_only(job)
     assert calls.get("match") == 1
-    assert job["_script_match"] == {"script_linked": True}
-    # 链路继续走完：规划与渲染阶段都被调用（匹配只前置，不中断）
-    assert calls.get("plan") == 1 and calls.get("render") == 1  # 匹配只前置，链路走到渲染
+    assert calls.get("conform_render") == 1
+    # 新工作流：不进门诊切片的规划/精修/渲染
+    assert "plan" not in calls and "render" not in calls
+    states = calls.get("states", [])
+    assert "completed" in states or "completed_with_warnings" in states
+
+
+@pytest.mark.asyncio
+async def test_auto_edit_chain_unmatched_falls_back_to_old_workflow(monkeypatch):
+    """对稿模式但覆盖率不达标 → 回退门诊切片老链（规划/渲染照跑）。"""
+    calls: dict = {}
+    _patch_chain(monkeypatch, calls)
+    _patch_conform_render(monkeypatch, calls)
+    def _unmatched(job, job_id, transcript):
+        calls["match"] = calls.get("match", 0) + 1
+        return {"script_linked": False, "is_script_shot": False,
+                "conform_edl_path": None, "warnings": ["未达阈值"]}
+    monkeypatch.setattr(runner, "run_script_match_stage", _unmatched)
+    job = {"job_id": "job-chain-3", "project_id": "p1", "object_key": "local:/tmp/w2.mp4",
+           "config": {"script_mode": True}}
+    runner.run_auto_edit_only(job)
+    assert calls.get("match") == 1
+    assert "conform_render" not in calls      # 不走单成片渲染
+    assert calls.get("plan") == 1 and calls.get("render") == 1  # 老链照常
+
+
+@pytest.mark.asyncio
+async def test_auto_edit_chain_conform_ready_when_confirm_required(monkeypatch):
+    """CONFORM_AUTO_CONFIRM=false → 停在 conform_ready 等人工确认，不渲染。"""
+    calls: dict = {}
+    _patch_chain(monkeypatch, calls)
+    _patch_conform_render(monkeypatch, calls)
+    def _matched2(job, job_id, transcript):
+        calls["match"] = calls.get("match", 0) + 1
+        return dict(MATCHED_RECORD)
+    monkeypatch.setattr(runner, "run_script_match_stage", _matched2)
+    monkeypatch.setenv("CONFORM_AUTO_CONFIRM", "false")
+    job = {"job_id": "job-chain-4", "project_id": "p1", "object_key": "local:/tmp/w3.mp4",
+           "config": {"script_mode": True}}
+    runner.run_auto_edit_only(job)
+    assert "conform_ready" in calls.get("states", [])
+    assert "conform_render" not in calls and "plan" not in calls  # 匹配只前置，链路走到渲染
 
 
 @pytest.mark.asyncio
