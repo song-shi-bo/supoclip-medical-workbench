@@ -54,6 +54,46 @@ def alignment_root() -> Path:
     return analysis_root().parent / "alignment"
 
 
+def conform_root() -> Path:
+    """精剪 EDL 目录：``<tasks 根>/conform``（与 alignment/analysis 同根约定）。"""
+    return alignment_root().parent / "conform"
+
+
+def _save_conform_edl(job_id: str, edl: dict[str, Any]) -> str:
+    directory = conform_root()
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"{job_id}.json"
+    temporary = target.with_name(f"{target.name}.{uuid.uuid4().hex}.part")
+    try:
+        temporary.write_text(json.dumps(edl, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return str(target)
+
+
+_BUILTIN_DRUG_NAMES: tuple[str, ...] = (
+    "紫杉醇", "顺铂", "卡铂", "多西他赛", "环磷酰胺", "伊马替尼",
+    "曲美替尼", "达拉非尼", "维莫非尼", "帕博利珠单抗", "纳武利尤单抗",
+)
+
+
+def _drug_terms() -> tuple[str, ...]:
+    """红线药名词表：内置 starter + medical_lexicon type=drug 标准词（缺失仅内置生效）。"""
+    names = set(_BUILTIN_DRUG_NAMES)
+    try:
+        from src.domains.medical_review import medical_lexicon
+
+        for entry in medical_lexicon.load_lexicon().get("entries") or []:
+            if isinstance(entry, dict) and str(entry.get("type") or "") == "drug":
+                word = str(entry.get("standard") or entry.get("word") or "").strip()
+                if len(word) >= 2:
+                    names.add(word)
+    except Exception:
+        pass  # 词典缺失/损坏：仅内置表生效（红线判定绝不因词典阻断）
+    return tuple(sorted((w for w in names if len(w) >= 2), key=len, reverse=True))
+
+
 def _save_alignment_record(job_id: str, record: dict[str, Any]) -> str:
     """对齐报告原子落盘，落盘前把 artifact 路径写进记录本体（同 analysis 约定）。"""
     directory = alignment_root()
@@ -185,6 +225,26 @@ def run_script_match_stage(job: dict, job_id: str, transcript: dict) -> dict[str
             "script_linked": linked,
             "candidate_summaries": result["candidates"],
         })
+        # P1a：匹配达标 → 构建精剪 EDL（独立 artifact；失败只警告不影响匹配报告）
+        if chosen is not None:
+            try:
+                from .conform_edl import build_conform_edl
+
+                edl = build_conform_edl(
+                    transcript,
+                    {"sentences": best["sentences"], "extra_segments": best["extra_segments"]},
+                    script=chosen, drug_terms=_drug_terms(), job_id=job_id)
+                edl_path = _save_conform_edl(job_id, edl)
+                edl["conform_edl_path"] = edl_path
+                _save_conform_edl(job_id, edl)
+                record["conform_edl_path"] = edl_path
+                record["edl_summary"] = {
+                    "output_duration_ms": edl["output_duration_ms"],
+                    "cut_ratio": edl["cut_ratio"],
+                    "stats": edl["stats"],
+                }
+            except Exception as exc:  # noqa: BLE001 —— EDL 失败不影响匹配报告
+                record["warnings"].append(f"EDL 构建失败：{exc}")
         _save_alignment_record(job_id, record)
         return record
     except Exception as exc:  # noqa: BLE001 —— 匹配失败绝不阻断主链

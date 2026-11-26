@@ -43,8 +43,15 @@ def test_match_success_links_script(monkeypatch, tmp_path):
     monkeypatch.setattr(sc, "_load_candidates", lambda: [SCRIPT])
     monkeypatch.setattr(sc, "_auto_link",
                         lambda sid, tid, jid: links.append((sid, tid, jid)) or True)
+    monkeypatch.setattr(sc, "_drug_terms", lambda: ())
     record = sc.run_script_match_stage({"config": {"script_mode": True}}, "job-align-1",
-                                       {"asr_segments": TRANSCRIPT})
+                                       {"asr_segments": TRANSCRIPT, "words": [
+        {"text": "免疫治疗出现副作用，先别急着停药。", "start": 0.0, "end": 4.0},
+        {"text": "很多患者一看不良反应就自己把药停了。", "start": 4.0, "end": 9.0},
+        {"text": "其实大多数副作用是可控的。", "start": 11.0, "end": 14.0},
+        {"text": "关键是第一时间告诉你的主治医生。", "start": 14.0, "end": 20.0},
+        {"text": "具体问题，评论区留言。", "start": 20.0, "end": 24.0},
+    ]})
     assert record is not None
     assert record["is_script_shot"] is True
     assert record["script_linked"] is True
@@ -54,6 +61,12 @@ def test_match_success_links_script(monkeypatch, tmp_path):
     assert artifact.is_file()
     assert record["alignment_artifact_path"] == str(artifact)
     assert len(record["extra_segments"]) == 0
+    # P1a：匹配达标 → conform EDL 同步落盘 + 摘要回填
+    edl_artifact = tmp_path / "conform" / "job-align-1.json"
+    assert edl_artifact.is_file()
+    assert record["conform_edl_path"] == str(edl_artifact)
+    assert record["edl_summary"]["output_duration_ms"] > 0
+    assert record["edl_summary"]["stats"]["extra_cuts"] == 0
 
 
 def test_low_coverage_degrades_without_link(monkeypatch, tmp_path):

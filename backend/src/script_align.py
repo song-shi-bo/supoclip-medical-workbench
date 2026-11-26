@@ -50,6 +50,16 @@ def normalize_text(value: str) -> str:
     return _FILLER_RE.sub("", text)
 
 
+def normalize_keep_filler(value: str) -> str:
+    """语气词表匹配用：NFKC→小写→去标点/空白，但**保留 嗯/呃 本体**。
+
+    与 normalize_text 的差异：normalize_text 服务"句级语义对齐"（语气词抹掉），
+    本函数服务"语气词 token 匹配"（本体必须保留，否则词表永远落空）。
+    """
+    text = unicodedata.normalize("NFKC", str(value or "")).lower()
+    return _PUNCT_RE.sub("", text)
+
+
 def split_script_sentences(script: dict[str, Any]) -> list[dict[str, Any]]:
     """文稿 → 有序句列表（hook → body → cta），body/cta 按句切分。"""
     sentences: list[dict[str, Any]] = []
