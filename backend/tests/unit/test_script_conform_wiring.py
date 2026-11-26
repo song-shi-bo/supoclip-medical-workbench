@@ -110,11 +110,12 @@ def _patch_conform_render(monkeypatch, calls: dict):
 
 
 @pytest.mark.asyncio
-async def test_auto_edit_chain_fires_match_when_script_mode(monkeypatch):
-    """对稿模式：匹配达标 → 走单成片渲染（新工作流），不再进门诊切片链。"""
+async def test_auto_edit_chain_stops_at_conform_ready_by_default(monkeypatch):
+    """对稿模式默认：匹配达标 → 停 conform_ready 等人工确认（P2b 确认卡）。"""
     calls: dict = {}
     _patch_chain(monkeypatch, calls)
     _patch_conform_render(monkeypatch, calls)
+    monkeypatch.delenv("CONFORM_AUTO_CONFIRM", raising=False)
     def _matched(job, job_id, transcript):
         calls["match"] = calls.get("match", 0) + 1
         return dict(MATCHED_RECORD)
@@ -123,11 +124,33 @@ async def test_auto_edit_chain_fires_match_when_script_mode(monkeypatch):
            "config": {"script_mode": True}}
     runner.run_auto_edit_only(job)
     assert calls.get("match") == 1
-    assert calls.get("conform_render") == 1
-    # 新工作流：不进门诊切片的规划/精修/渲染
-    assert "plan" not in calls and "render" not in calls
-    states = calls.get("states", [])
-    assert "completed" in states or "completed_with_warnings" in states
+    assert "conform_ready" in calls.get("states", [])
+    # 停点模式：不渲染、不进门诊切片链
+    assert "conform_render" not in calls and "plan" not in calls and "render" not in calls
+
+
+@pytest.mark.asyncio
+async def test_auto_edit_chain_renders_when_auto_confirm_or_approved(monkeypatch):
+    """CONFORM_AUTO_CONFIRM=true（应急直通）或 config.conform_approved=true（已确认）→ 渲染。"""
+    for config_extra in ({"CONFORM_AUTO_CONFIRM": "true"}, {}):
+        calls: dict = {}
+        _patch_chain(monkeypatch, calls)
+        _patch_conform_render(monkeypatch, calls)
+        if config_extra:
+            monkeypatch.setenv("CONFORM_AUTO_CONFIRM", config_extra["CONFORM_AUTO_CONFIRM"])
+        else:
+            monkeypatch.delenv("CONFORM_AUTO_CONFIRM", raising=False)
+        def _matched(job, job_id, transcript):
+            calls["match"] = calls.get("match", 0) + 1
+            return dict(MATCHED_RECORD)
+        monkeypatch.setattr(runner, "run_script_match_stage", _matched)
+        job = {"job_id": "job-chain-1b", "project_id": "p1", "object_key": "local:/tmp/z1.mp4",
+               "config": {"script_mode": True, "conform_approved": True}}
+        runner.run_auto_edit_only(job)
+        assert calls.get("conform_render") == 1
+        states = calls.get("states", [])
+        assert "completed" in states or "completed_with_warnings" in states
+        assert "plan" not in calls and "render" not in calls
 
 
 @pytest.mark.asyncio

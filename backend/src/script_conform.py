@@ -184,6 +184,18 @@ def run_script_match_stage(job: dict, job_id: str, transcript: dict) -> dict[str
     config = job.get("config") or {}
     if not config.get("script_mode"):
         return None
+    # 恢复语义（2026-11-25 P2b）：确认后任务重新排队重跑时，对齐/EDL/分级工件
+    # 已存在 → 直接复用（不重新匹配、不重复调 LLM），与 analysis/plan 恢复同约定。
+    existing = alignment_root() / f"{job_id}.json"
+    if existing.is_file():
+        try:
+            record = json.loads(existing.read_text(encoding="utf-8"))
+            record["_resumed"] = True
+            if record.get("conform_edl_path") and Path(record["conform_edl_path"]).is_file():
+                return record
+            record["warnings"].append("对齐工件存在但 EDL 缺失，重算 EDL")
+        except Exception:  # noqa: BLE001 —— 工件损坏按无工件处理
+            pass
     segments = list(transcript.get("asr_segments") or [])
     record: dict[str, Any] = {
         "version": SCRIPT_CONFORM_VERSION,

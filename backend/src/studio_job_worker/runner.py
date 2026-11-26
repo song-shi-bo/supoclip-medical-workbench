@@ -262,15 +262,16 @@ def run_auto_edit_only(job: dict) -> None:
     # 对稿成片（P0 匹配 + P1b 单成片渲染）：config.script_mode 时先跑文稿库匹配/
     # 自动挂链（失败不阻断主链）；匹配达标 → 渲染 1 条按稿精剪成片并结束
     # （不走门诊切片链）；不达标 → warnings 回退老链。
-    # CONFORM_AUTO_CONFIRM：P2b 确认页上线前默认 true（渲染直通），
-    # 确认页就绪后翻默认为 false（停在 conform_ready 等人工确认）。
+    # CONFORM_AUTO_CONFIRM（默认 false）：false=停在 conform_ready 等人工确认
+    # （前端对稿确认卡「确认渲染」→ approve → 重新排队续跑）；
+    # true=渲染直通（确认页不可用时的应急开关）。
     if (job.get("config") or {}).get("script_mode"):
         job["_script_match"] = run_script_match_stage(job, job_id, transcript)
         match_record = job.get("_script_match") or {}
-        auto_confirm = os.getenv("CONFORM_AUTO_CONFIRM", "true").strip().lower() \
+        auto_confirm = os.getenv("CONFORM_AUTO_CONFIRM", "false").strip().lower() \
             not in ("0", "false", "off")
         if match_record.get("is_script_shot") and match_record.get("conform_edl_path") \
-                and not auto_confirm:
+                and not auto_confirm and not config.get("conform_approved"):
             _state(job_id, "conform_ready",
                    "对稿匹配完成，等待人工确认后渲染（对稿成片工作流）", 0.6)
             return

@@ -274,6 +274,23 @@ async def renew_lease(job_id, worker_id, lease_token=""):
 
 
 
+async def approve_conform_job(job_id: str) -> bool:
+    """对稿成片人工确认（2026-11-25 P2b）：config 补 conform_approved=true，
+    任务从 conform_ready 重新排队（worker 认领后凭 conform_approved 续跑渲染）。
+    幂等：仅 conform_ready 且未确认过的任务可确认；重复调用返回 False。"""
+    maker = get_session_maker()
+    async with maker() as session:
+        result = await session.execute(text(
+            "UPDATE studio_jobs SET "
+            "config = COALESCE(config,'{}'::jsonb) || CAST('{\"conform_approved\":true}' AS jsonb), "
+            "status='queued', stage='已确认：续跑对稿成片渲染', error=NULL, updated_at=NOW() "
+            "WHERE id=:id AND status='conform_ready' "
+            "AND COALESCE(config#>>'{conform_approved}','false') = 'false'"),
+            {"id": job_id})
+        await session.commit()
+        return result.rowcount == 1
+
+
 async def mark_reedit_requested(job_id: str) -> bool:
     """「重新剪辑并替换旧切片」任务创建后立即置初始状态（替代 queued 展示）。"""
     maker = get_session_maker()

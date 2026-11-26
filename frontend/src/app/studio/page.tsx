@@ -55,6 +55,7 @@ import { AudioLines, Check, ClipboardList, Download, Film, FolderOpen, House, Li
 import "./studio.css";
 import { ProjectManager } from "@/components/studio/project-manager";
 import RefinedTranscriptPanel from "@/components/studio/refined-transcript-panel";
+import ConformConfirmCard from "@/components/studio/conform-confirm-card";
 import { StudioCopilot, type CopilotAction, type CopilotMessage } from "./studio-copilot";
 import { TimelineToolbar, type TimelineAddKind } from "@/components/studio/timeline-toolbar";
 import { TimelineTracks, TIMELINE_COVER_DRAG_TYPE, findActiveTimelineImage, type TimelineSubtitleCue } from "@/components/studio/timeline-tracks";
@@ -3972,6 +3973,7 @@ export default function StudioPage() {
   <p>{workflowJob.stage || "等待服务端状态"}</p>
   <div className="auto-edit-progress"><i style={{ width: `${Math.max(0, Math.min(100, workflowJob.progress * 100))}%` }} /></div>
   {workflowJob.error && <p role="alert">{workflowJob.error}</p>}
+  {workflowJob.status === "conform_ready" && <ConformConfirmCard jobId={workflowJob.job_id} />}
   {([ ["correction", "纠错"], ["analysis", "分析"], ["planning", "规划"] ] as const).map(([key, label]) => {
     const source = workflowSources[key];
     const reported = workflowJob.stage_sources[key];

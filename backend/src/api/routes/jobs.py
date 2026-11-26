@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import uuid
@@ -258,6 +259,64 @@ async def submit_transcribe_job(request: Request):
     config = {**(body.config or {}), "job_kind": "transcribe_only"}
     job_id = await _create_public_job(body.project_id, body.object_key, None, config, job_id=_submission_id(body, "transcribe"))
     return {"job_id": job_id, "status": "queued", "job_kind": "transcribe_only"}
+
+
+@router.get("/jobs/conform/{job_id}/report")
+async def conform_report(job_id: str):
+    """对稿成片报告（P2b）：对齐逐句 + 精剪 EDL 决策账，供前端确认页渲染。
+
+    仅 script_mode 任务可读；对齐报告未生成时 404（剪辑还没跑到匹配阶段）。
+    """
+    from ...conform_render import CONFORM_RENDER_VERSION
+    from ...script_conform import alignment_root, conform_root
+    from src import script_align as _sa
+    from src import script_conform as _sc
+    from src import conform_edl as _ce
+    from src import conform_review as _cr
+    from src import conform_render as _crn
+
+    job = await get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    config = job.get("config") or {}
+    if not config.get("script_mode"):
+        raise HTTPException(status_code=409, detail="非对稿模式任务")
+    alignment_path = _sc.alignment_root() / f"{job_id}.json"
+    if not alignment_path.is_file():
+        raise HTTPException(status_code=404, detail="对齐报告尚未生成")
+    alignment = json.loads(alignment_path.read_text(encoding="utf-8"))
+    edl_path = _sc.conform_root() / f"{job_id}.json"
+    edl = json.loads(edl_path.read_text(encoding="utf-8")) if edl_path.is_file() else None
+    return {
+        "job_id": job_id,
+        "job_status": job.get("status"),
+        "conform_approved": bool(config.get("conform_approved")),
+        "alignment": alignment,
+        "edl": edl,
+        "versions": {"align": _sa.SCRIPT_ALIGN_VERSION, "conform": _sc.SCRIPT_CONFORM_VERSION,
+                     "edl": _ce.CONFORM_EDL_VERSION, "review": _cr.CONFORM_REVIEW_PROMPT_VERSION,
+                     "render": _crn.CONFORM_RENDER_VERSION},
+    }
+
+
+@router.post("/jobs/conform/{job_id}/approve")
+async def approve_conform_job_route(job_id: str):
+    """对稿成片人工确认（P2b）：conform_ready → 重新排队续跑渲染。"""
+    from ...studio_job_store import approve_conform_job, get_job
+
+    job = await get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    config = job.get("config") or {}
+    if not config.get("script_mode"):
+        raise HTTPException(status_code=409, detail="非对稿模式任务，无需确认")
+    if str(job.get("status") or "") != "conform_ready":
+        raise HTTPException(status_code=409,
+                            detail=f"任务状态 {job.get('status')} 不在待确认状态")
+    approved = await approve_conform_job(job_id)
+    if not approved:
+        raise HTTPException(status_code=409, detail="确认失败（状态已变化，请刷新后重试）")
+    return {"ok": True, "job_id": job_id, "status": "queued"}
 
 
 @router.post("/jobs/auto-edit")

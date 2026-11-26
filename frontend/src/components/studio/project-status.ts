@@ -38,6 +38,9 @@ export function projectStatusChip(status: string | null | undefined):
       return { label: "分析完成", tone: "done" };
     case "plan_ready":
       return { label: "规划完成", tone: "done" };
+    case "conform_ready":
+      // 对稿成片（2026-11-25 P2b）：匹配+EDL 完成，等待人工确认后渲染
+      return { label: "对稿成片待确认", tone: "warn" };
     case "completed":
       return { label: "已完成", tone: "done" };
     case "completed_with_warnings":
