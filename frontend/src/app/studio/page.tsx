@@ -599,14 +599,31 @@ export default function StudioPage() {
   // （scripts.task_id 回填 + studio_jobs.config 挂 script_id/topic_id，选题→used）。
   const [linkedScriptId, setLinkedScriptId] = useState<string>("");
   const [approvedScripts, setApprovedScripts] = useState<Array<{ id: string; title: string; topic_title: string | null; version: number }>>([]);
+  // 文稿列表加载态：loading=请求中 / ok=有已批准原创稿 / empty=后端确认无 / error=请求失败（带 HTTP 状态码）。
+  // 2026-11-25：此前非 200 与网络异常都被静默折叠成空列表，选择器「消失」时无法自诊断。
+  const [scriptsLoad, setScriptsLoad] = useState<{ state: "loading" | "ok" | "empty" | "error"; status?: number }>({ state: "loading" });
   useEffect(() => {
     let cancelled = false;
     fetch("/video-api/api/v1/topics/scripts?status=approved", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : { items: [] }))
-      .then((data: { items?: Array<{ id: string; title: string; topic_title: string | null; version: number }> }) => {
-        if (!cancelled) setApprovedScripts(data.items ?? []);
+      .then((r) => {
+        if (!r.ok) {
+          const err = new Error(`scripts list HTTP ${r.status}`) as Error & { status?: number };
+          err.status = r.status;
+          throw err;
+        }
+        return r.json() as Promise<{ items?: Array<{ id: string; title: string; topic_title: string | null; version: number }> }>;
       })
-      .catch(() => { /* 静默：无已批准文稿或未登录时隐藏选择器 */ });
+      .then((data) => {
+        if (cancelled) return;
+        const items = data.items ?? [];
+        setApprovedScripts(items);
+        setScriptsLoad({ state: items.length > 0 ? "ok" : "empty" });
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setApprovedScripts([]);
+        setScriptsLoad({ state: "error", status: (err as { status?: number }).status });
+      });
     return () => { cancelled = true; };
   }, []);
   const startTranscription = async () => {
@@ -3625,6 +3642,26 @@ export default function StudioPage() {
       <aside className="media-browser">
         <div className="pane-title"><strong>项目素材</strong><button aria-label="切换视图"><ListVideo size={17} /></button></div>
         <button className="import-button" onClick={() => inputRef.current?.click()}><Plus size={19} />上传新视频</button>
+        {/* 关联文稿（阶段3 M5；2026-11-25 自播放器区迁入素材面板）：选择器与四态加载提示
+            常驻素材面板、仅上传前可见；选好文稿后提交任务即随 config 携带 script_id 走 link-job。 */}
+        {!previewUrl && approvedScripts.length > 0 ? (
+          <label className="mb-2 flex items-center gap-2 text-xs text-stone-400" title="仅列出医生已批准的原创拍摄稿；豆包参考稿不可关联">
+            <span className="shrink-0">关联文稿：</span>
+            <select className="min-w-0 flex-1 rounded border border-stone-600 bg-stone-900 px-1.5 py-1 text-xs" value={linkedScriptId}
+              onChange={(e) => setLinkedScriptId(e.target.value)}>
+              <option value="">不关联</option>
+              {approvedScripts.map((s) => (
+                <option key={s.id} value={s.id}>{`${s.topic_title || s.title}（v${s.version}）`}</option>
+              ))}
+            </select>
+          </label>
+        ) : !previewUrl && scriptsLoad.state === "loading" ? (
+          <p className="mb-2 text-xs text-stone-500">正在加载文稿列表…</p>
+        ) : !previewUrl && scriptsLoad.state === "empty" ? (
+          <p className="mb-2 text-xs text-stone-500" title="需先在选题板生成原创稿并完成医生审批（「医生已批」后这里自动出现）">没有可关联的文稿——先去选题板审批文稿</p>
+        ) : !previewUrl && scriptsLoad.state === "error" ? (
+          <p className="mb-2 text-xs text-amber-400" title="请刷新重试；仍失败请把此提示截图反馈">文稿列表加载失败{typeof scriptsLoad.status === "number" ? `（HTTP ${scriptsLoad.status}）` : "（网络异常）"}</p>
+        ) : null}
         <input ref={inputRef} type="file" accept="video/*" hidden onChange={(event: ChangeEvent<HTMLInputElement>) => chooseFile(event.target.files?.[0])} />
         <label className="asset-search"><Search size={16} /><input placeholder="搜索素材…" /></label>
         <div className="asset-body"><div className="asset-list">{/* 分区标题取代了原来的竖向分类导航（全部/视频/音频/图片/字幕）；空分类不再渲染。 */}
@@ -3779,18 +3816,6 @@ export default function StudioPage() {
                   enabled={subtitleOverlayEnabled}
                 />
               )}
-              {!previewUrl && approvedScripts.length > 0 ? (
-                <label className="mb-2 flex items-center gap-2 text-xs text-stone-500">
-                  关联文稿（可选，医生已批准的原创稿）：
-                  <select className="rounded border border-stone-300 bg-white px-1.5 py-0.5 text-xs" value={linkedScriptId}
-                    onChange={(e) => setLinkedScriptId(e.target.value)}>
-                    <option value="">不关联</option>
-                    {approvedScripts.map((s) => (
-                      <option key={s.id} value={s.id}>{`${s.topic_title || s.title}（v${s.version}）`}</option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
               {!previewUrl && <button className="drop-placeholder" onClick={() => inputRef.current?.click()}><Upload size={26} /><strong>导入原始视频</strong><span>拖入视频或点击选择文件</span></button>}
               {/* video 加载失败占位（error 事件降级）：源 404/JSON/被清理时 <video> 只会黑屏，
                   这里盖一层可读提示；不清空选中态、不改 src（防错误循环），成功加载后由

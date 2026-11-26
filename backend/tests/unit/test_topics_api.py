@@ -268,3 +268,29 @@ async def test_modification_routing(db_session: AsyncSession, seeded, monkeypatc
         await T.record_modification(T.ModificationIn(reason_class="not_a_class"),
                                     request=plain_req, db=db_session)
     assert exc.value.status_code == 422
+
+
+async def test_list_scripts_returns_approved_shooting_only(db_session: AsyncSession, seeded):
+    """回归（2026-11-25）：GET /scripts 的 WHERE 必须带表前缀——JOIN hot_topics 后两表都有
+    status 列，不带前缀 = AmbiguousColumnError 500；该错误曾被前端静默吞成空列表，
+    上传「关联文稿」选择器看起来像"无稿可挂"。本测试用真实 DB 执行该 SQL。"""
+    # 落一条已批准原创稿（挂 seeded 选题，随现有 teardown 清理）
+    await db_session.execute(text(
+        "INSERT INTO scripts (id, topic_id, title, body, origin, generated_by, content_hash, status) "
+        "VALUES (:id, :tid, '已批准原创稿', '正文', 'shooting_script', 'workbench', :hash, 'approved') "
+        "ON CONFLICT (id) DO NOTHING"
+    ), {"id": f"{PREFIX}shot", "tid": seeded["topic"], "hash": uuid.uuid4().hex})
+    await db_session.commit()
+
+    resp = await T.list_scripts(status="approved", origin="shooting_script",
+                                topic_id="", limit=100, db=db_session)
+    await db_session.commit()  # 纯读事务显式关闭，否则 asyncpg+NullPool 下 teardown 卡死
+    ids = {item["id"] for item in resp["items"]}
+    assert f"{PREFIX}shot" in ids          # 已批准原创稿出现
+    assert f"{PREFIX}ref" not in ids       # 参考稿永不出现（origin=shooting_script 过滤）
+
+    # 多状态过滤走同一条 SQL（ANY 列表参数）
+    resp2 = await T.list_scripts(status="approved,shooting", origin="shooting_script",
+                                 topic_id="", limit=100, db=db_session)
+    await db_session.commit()
+    assert any(item["id"] == f"{PREFIX}shot" for item in resp2["items"])

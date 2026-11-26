@@ -16,7 +16,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -410,13 +410,17 @@ async def list_scripts(
 ):
     """文稿列表（供上传「关联文稿」选择器与一般检索）。静态路由，先于 /{topic_id} 注册。"""
     statuses = [s.strip() for s in status.split(",") if s.strip()]
-    where = ["origin = :origin"]
+    # 2026-11-25 修复：JOIN hot_topics 后两表都有 status 列，WHERE 不带前缀会
+    # AmbiguousColumnError（500）。此前被前端静默吞成空列表，选择器看似"无稿可挂"。
+    # 状态过滤用 expanding IN（SQLAlchemy 标准展开），不用 ANY(:list) 数组绑定——
+    # 后者在 asyncpg + NullPool 组合下会把连接留在未完成状态。
+    where = ["s.origin = :origin"]
     params: dict[str, Any] = {"origin": origin, "limit": limit}
     if statuses:
-        where.append("status = ANY(:statuses)")
+        where.append("s.status IN :statuses")
         params["statuses"] = statuses
     if topic_id.strip():
-        where.append("topic_id = :tid")
+        where.append("s.topic_id = :tid")
         params["tid"] = topic_id.strip()
     rows = (
         await db.execute(
@@ -426,7 +430,7 @@ async def list_scripts(
                 "FROM scripts s LEFT JOIN hot_topics t ON t.id = s.topic_id "
                 f"WHERE {' AND '.join(where)} "
                 "ORDER BY s.created_at DESC LIMIT :limit"
-            ),
+            ).bindparams(bindparam("statuses", expanding=True)),
             params,
         )
     ).fetchall()
