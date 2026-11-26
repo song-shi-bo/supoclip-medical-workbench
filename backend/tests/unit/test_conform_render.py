@@ -144,3 +144,57 @@ def test_render_conform_final_end_to_end(monkeypatch, tmp_path):
     assert abs(duration - 5.0) <= 0.4, f"成片时长应≈5s，实测 {duration}"
     warnings_doc = json.loads((final.parent / "warnings.json").read_text(encoding="utf-8"))
     assert warnings_doc["subtitle_provenance"]["subtitle_source"] == "script_align"
+
+
+# ---------------------------------------------------------------------------
+# P1c punch-in
+# ---------------------------------------------------------------------------
+
+def test_punchin_env_defaults(monkeypatch):
+    monkeypatch.delenv("CONFORM_PUNCHIN", raising=False)
+    assert cr.punchin_enabled() is True          # 默认 on
+    assert cr.punchin_zoom() == 1.3
+    monkeypatch.setenv("CONFORM_PUNCHIN", "off")
+    assert cr.punchin_enabled() is False
+
+
+@pytest.mark.skipif(not HAS_FFMPEG, reason="ffmpeg 不可用")
+def test_apply_punchin_source_alternates_and_probes(tmp_path):
+    source = tmp_path / "source.mp4"
+    _make_source(source, seconds=6)
+    w, h, dur = cr._probe_dims_and_duration(source, None)
+    assert abs(dur - 6.0) <= 0.4
+
+    punchin, actual, info = cr.apply_punchin_source(
+        source, [[0, 2000], [3000, 6000]], zoom=1.3,
+        work_dir=tmp_path / "work", run_ffmpeg=clip_render._run_ffmpeg)
+    assert punchin.is_file()
+    assert len(actual) == 2
+    total = sum(e - s for s, e in actual)
+    pw, ph, pdur = cr._probe_dims_and_duration(punchin, None)
+    assert (pw, ph) == (w, h)                    # 变焦后放大回源分辨率
+    assert abs(pdur * 1000 - total) <= 200       # concat 时长 = 各段实测和
+    assert abs(total - 5000) <= 400              # 请求 keep 和 ≈ 5000ms
+
+
+def test_punchin_skipped_for_single_range(monkeypatch, tmp_path):
+    edl_path = tmp_path / "conform_edl.json"
+    edl_path.write_text(json.dumps({
+        "source_span_ms": {"start": 0, "end": 5000},
+        "keep_ranges_ms": [[0, 5000]], "output_duration_ms": 5000, "cut_ratio": 0.0,
+    }), encoding="utf-8")
+    source = tmp_path / "source.mp4"
+    _make_source(source, seconds=5)
+
+    from src.studio_job_worker import pipeline as worker_pipeline
+    monkeypatch.setattr(worker_pipeline, "_materialise_source_for_job",
+                        lambda object_key, job_id: str(source))
+    monkeypatch.delenv("CONFORM_PUNCHIN", raising=False)
+    match_record = {"conform_edl_path": str(edl_path), "is_script_shot": True,
+                    "sentences": [], "warnings": []}
+    job = {"job_id": "job-single", "project_id": "p1", "object_key": "local:/s.mp4",
+           "config": {}}
+    transcript = {"asr_segments": [], "words": []}
+    info = cr.render_conform_final(job, "job-single", transcript, match_record)
+    assert info["punchin"] is None               # 单区间不启用 punch-in
+    assert abs(_ffprobe_duration(Path(info["video_path"])) - 5.0) <= 0.4

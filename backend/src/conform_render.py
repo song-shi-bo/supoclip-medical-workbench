@@ -25,6 +25,41 @@ from .script_align import SCRIPT_ALIGN_VERSION
 
 CONFORM_RENDER_VERSION = "conform-render/v1"
 
+# punch-in（P1c）：剪切点两侧交替全画面/特写，让跳切读作"换机位"。
+# 只变焦画面、不动音频；发生在字幕烧录之前（字幕在最终像素上成型，不受裁切影响）。
+# 实现：逐 keep 段预变换（奇数段中心裁切 zoom 后放大回源分辨率）→ 无损 concat
+# → ffprobe 实测各段时长 → 精确 sub_ranges（零漂移，不裁到词）。
+
+def _env_flag(name: str, default: str) -> bool:
+    return os.getenv(name, default).strip().lower() not in ("0", "false", "off")
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def punchin_enabled() -> bool:
+    return _env_flag("CONFORM_PUNCHIN", "on")
+
+
+def punchin_zoom() -> float:
+    return _env_float("CONFORM_PUNCHIN_ZOOM", 1.3)
+
+
+def _probe_dims_and_duration(path: Path, run_ffmpeg_probe) -> tuple[int, int, float]:
+    import json as _json
+    import subprocess as _sp
+    out = _sp.run(["ffprobe", "-v", "quiet", "-print_format", "json",
+                   "-show_streams", "-show_format", str(path)],
+                  capture_output=True, text=True, check=True).stdout
+    doc = _json.loads(out)
+    stream = next(s for s in doc.get("streams") or [] if s.get("codec_type") == "video")
+    return int(stream.get("width") or 0), int(stream.get("height") or 0), \
+        float((doc.get("format") or {}).get("duration") or 0.0)
+
 
 def load_edl(match_record: dict[str, Any]) -> dict[str, Any]:
     path = match_record.get("conform_edl_path")
@@ -127,6 +162,55 @@ def fix_subtitle_provenance(warnings_path: Path) -> None:
         pass  # 审计元信息修正失败不影响成片
 
 
+def apply_punchin_source(source: Path, keep: list[list[int]], zoom: float,
+                         work_dir: Path, run_ffmpeg) -> tuple[Path, list[list[int]], dict[str, Any]]:
+    """punch-in 预变换：奇数序号 keep 段中心裁切 zoom 后放大回源分辨率，偶数段原样。
+
+    逐段重编码（crf18）→ concat -c copy 无损拼接 → ffprobe 实测各段时长
+    → 返回（变换后源片, 精确 sub_ranges）。段边界零漂移，不裁到词。
+    """
+    work_dir.mkdir(parents=True, exist_ok=True)
+    width, height, _ = _probe_dims_and_duration(source, run_ffmpeg)
+    seg_files: list[Path] = []
+    actual: list[list[int]] = []
+    cursor = 0.0
+    for i, (s, e) in enumerate(keep):
+        seg = work_dir / f"punchin-seg-{i:02d}.mp4"
+        duration_s = (e - s) / 1000.0
+        if i % 2 == 1 and zoom and zoom > 1.0:
+            crop_w = max(int(width / zoom), 2)
+            crop_h = max(int(height / zoom), 2)
+            x = max((width - crop_w) // 2, 0)
+            y = max((height - crop_h) // 2, 0)
+            vf = (f"crop=w={crop_w}:h={crop_h}:x={x}:y={y},"
+                  f"scale={width}:{height}")
+        else:
+            vf = "null"
+        run_ffmpeg(["-y", "-ss", f"{s / 1000.0:.3f}", "-t", f"{duration_s:.3f}",
+                    "-i", str(source), "-vf", vf,
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k",
+                    str(seg)])
+        _, _, actual_duration = _probe_dims_and_duration(seg, run_ffmpeg)
+        seg_files.append(seg)
+        actual.append([int(cursor), int(cursor + actual_duration * 1000)])
+        cursor += actual_duration * 1000.0
+
+    list_file = work_dir / "punchin-concat.txt"
+    list_file.write_text(
+        "".join(f"file '{f.as_uri()}'\n" for f in seg_files), encoding="utf-8")
+    punchin_path = work_dir / "punchin-source.mp4"
+    run_ffmpeg(["-y", "-f", "concat", "-safe", "0", "-i", str(list_file),
+                "-c", "copy", "-movflags", "+faststart", str(punchin_path)])
+    info = {"zoom": zoom, "segments": len(keep),
+            "actual_ranges_ms": actual,
+            "actual_total_ms": int(cursor)}
+    for f in seg_files:
+        f.unlink(missing_ok=True)
+    list_file.unlink(missing_ok=True)
+    return punchin_path, actual, info
+
+
 def render_conform_final(job: dict, job_id: str, transcript: dict,
                          match_record: dict[str, Any]) -> dict[str, Any]:
     """对稿模式单成片渲染。返回 {video_path, output_duration_ms, cut_ratio, ...}。
@@ -145,7 +229,18 @@ def render_conform_final(job: dict, job_id: str, transcript: dict,
     out_dir = Path(base) / "output" / _run_id_of(job, job_id) / "conform"
     source = _materialise_source_for_job(job["object_key"], job_id)
 
+    punchin_info: dict[str, Any] | None = None
+    if punchin_enabled() and len(keep) >= 2:
+        work_dir = out_dir / "punchin-work"
+        source, keep, punchin_info = apply_punchin_source(
+            Path(source), keep, punchin_zoom(), work_dir, clip_render._run_ffmpeg)
+
     clip = build_pseudo_clip(edl)
+    if punchin_info is not None:
+        # punch-in 身份进指纹（zoom/段数变化 → 自动重渲）
+        clip["conform_punchin"] = {"zoom": punchin_info["zoom"],
+                                   "segments": punchin_info["segments"]}
+        clip["sub_ranges"] = [{"start_ms": s, "end_ms": e} for s, e in keep]
     config = job.get("config") or {}
     entry = clip_render._render_one_reserved(
         clip, source=Path(source), out_dir=out_dir,
@@ -171,6 +266,7 @@ def render_conform_final(job: dict, job_id: str, transcript: dict,
         "cut_ratio": edl.get("cut_ratio"),
         "audio_post_applied": faded,
         "keep_ranges_count": len(keep),
+        "punchin": punchin_info,
     }
 
 
