@@ -225,6 +225,18 @@ def run_script_match_stage(job: dict, job_id: str, transcript: dict) -> dict[str
             "script_linked": linked,
             "candidate_summaries": result["candidates"],
         })
+        # P2a：LLM 分级 extra 段（一次调用；失败回退 local-rule，不影响匹配报告）
+        try:
+            from .conform_review import review_extra_segments
+
+            review = review_extra_segments(
+                {"extra_segments": best["extra_segments"],
+                 "sentences": best["sentences"]}, job_id=job_id)
+            record["review"] = {"engine": review.get("engine"),
+                                "verdicts": review.get("verdicts", []),
+                                "warnings": list(review.get("warnings") or [])}
+        except Exception as exc:  # noqa: BLE001 —— 分级阶段异常不影响匹配报告
+            record["warnings"].append(f"分级阶段异常：{exc}")
         # P1a：匹配达标 → 构建精剪 EDL（独立 artifact；失败只警告不影响匹配报告）
         if chosen is not None:
             try:
@@ -233,7 +245,8 @@ def run_script_match_stage(job: dict, job_id: str, transcript: dict) -> dict[str
                 edl = build_conform_edl(
                     transcript,
                     {"sentences": best["sentences"], "extra_segments": best["extra_segments"]},
-                    script=chosen, drug_terms=_drug_terms(), job_id=job_id)
+                    script=chosen, drug_terms=_drug_terms(), job_id=job_id,
+                    review=record.get("review"))
                 edl_path = _save_conform_edl(job_id, edl)
                 edl["conform_edl_path"] = edl_path
                 _save_conform_edl(job_id, edl)

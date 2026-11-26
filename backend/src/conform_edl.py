@@ -247,10 +247,39 @@ def _repeat_cuts(segs: list[dict[str, Any]], params: dict[str, Any],
 
 def _extra_cuts(extra_segments: list[dict[str, Any]],
                 protected: list[tuple[int, int]],
-                decisions: list[dict[str, Any]]) -> None:
+                decisions: list[dict[str, Any]],
+                warnings: list[str] | None = None,
+                review: dict[str, Any] | None = None) -> None:
+    """extra 段处置：LLM 分级（P2a）裁决优先——golden 保留 / risk 合规剪 /
+    断裂保留；无裁决 → 默认整段删除。红线保护仍优先于 golden（药名剂量段不保留）。"""
+    verdicts = {str(v.get("segment_id")): v
+                for v in (review or {}).get("verdicts") or []}
     for extra in extra_segments or []:
         span = (int(extra.get("start_ms") or 0), int(extra.get("end_ms") or 0))
         if span[1] <= span[0]:
+            continue
+        sid = str(extra.get("segment_id"))
+        verdict = verdicts.get(sid)
+        if verdict:
+            classification = str(verdict.get("classification") or "offtopic")
+            coherent = verdict.get("coherent_removal", True)
+            reason = str(verdict.get("reason") or "")[:120]
+            if classification == "golden":
+                decisions.append({"type": "extra", "start_ms": span[0], "end_ms": span[1],
+                                  "action": "kept", "reason": f"金句保留（LLM）：{reason}",
+                                  "text": extra.get("text")})
+                continue
+            if not coherent:
+                decisions.append({"type": "extra", "start_ms": span[0], "end_ms": span[1],
+                                  "action": "kept", "reason": f"删后可能断裂，保留（LLM）：{reason}",
+                                  "text": extra.get("text")})
+                if warnings is not None:
+                    warnings.append(f"extra 段 {sid} 剪除可能造成上下文断裂，已保留（LLM 判定）")
+                continue
+            decisions.append({"type": "extra", "start_ms": span[0], "end_ms": span[1],
+                              "action": "cut",
+                              "reason": f"LLM 分级 {classification}：{reason}",
+                              "text": extra.get("text")})
             continue
         if any(not (span[1] <= p_start or span[0] >= p_end) for p_start, p_end in protected):
             decisions.append({"type": "extra", "start_ms": span[0], "end_ms": span[1],
@@ -295,6 +324,7 @@ def build_conform_edl(
     params: dict[str, Any] | None = None,
     drug_terms: tuple[str, ...] | list[str] = (),
     job_id: str | None = None,
+    review: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """构建对稿精剪 EDL。返回 JSON 可序列化决策账（见模块 docstring）。"""
     cfg = load_params(params)
@@ -315,10 +345,11 @@ def build_conform_edl(
                   if s.get("status") == "matched" and s.get("end_ms") is not None]
 
     decisions: list[dict[str, Any]] = []
+    warnings: list[str] = []
     _filler_cuts(words, cfg["filler_lexicon"], protected, decisions)
     _gap_cuts(words, segs, boundaries, cfg, protected, decisions)
     _repeat_cuts(segs, cfg, protected, decisions)
-    _extra_cuts(extra_segments, protected, decisions)
+    _extra_cuts(extra_segments, protected, decisions, warnings, review)
 
     cut_spans = [(d["start_ms"], d["end_ms"]) for d in decisions if d["action"] == "cut"]
     total_start = min([s["start_ms"] for s in segs] + [w["start_ms"] for w in words] or [0])
@@ -334,7 +365,6 @@ def build_conform_edl(
     total_span = max(total_end - total_start, 1)
     cut_ratio = round(1.0 - output_duration / total_span, 4)
 
-    warnings: list[str] = []
     if not words:
         warnings.append("词级时间缺失：语气词跳过，仅做分段级停顿/重复/extra 处置")
     if cut_ratio >= float(cfg["cut_ratio_warn"]):
@@ -346,6 +376,7 @@ def build_conform_edl(
     return {
         "version": CONFORM_EDL_VERSION,
         "job_id": job_id,
+        "review_engine": (review or {}).get("engine"),
         "params": {k: (list(v) if isinstance(v, tuple) else v) for k, v in cfg.items()
                    if not k.startswith("_")},
         "keep_ranges_ms": keep_ranges,

@@ -174,3 +174,70 @@ def test_cut_ratio_warning():
     edl = build_conform_edl(transcript, None)
     assert edl["cut_ratio"] > 0.30
     assert any("建议重拍而非硬剪" in w for w in edl["warnings"])
+
+
+# ---------------------------------------------------------------------------
+# P2a：LLM 分级裁决集成
+# ---------------------------------------------------------------------------
+
+def test_review_golden_keeps_extra():
+    transcript = {"asr_segments": [
+        SEG(0, 0, 3000, "免疫治疗出现副作用。"),
+        SEG(99, 3200, 6000, "顺便提醒一句，复查前不要停药。"),
+        SEG(1, 6200, 8000, "定期复查很重要。"),
+    ], "words": [W("免疫治疗出现副作用", 0, 3000), W("复查前不要停药提醒", 3200, 6000),
+                 W("定期复查很重要", 6200, 8000)]}
+    review = {"engine": "llm:test", "verdicts": [
+        {"segment_id": "99", "classification": "golden",
+         "coherent_removal": True, "reason": "患者提醒，医学有价值"}]}
+    edl = build_conform_edl(transcript, SCRIPT_ALIGN_REPORT, review=review)
+    extras = _cuts(edl, "extra")
+    assert extras == []                              # golden → 不剪
+    assert _overlaps(edl, 3200, 6000)                # 完整保留
+    kept = _kept(edl, "extra")
+    assert kept and "金句保留" in kept[0]["reason"]
+    assert edl["review_engine"] == "llm:test"
+
+
+def test_review_risk_cuts_extra():
+    transcript = {"asr_segments": [
+        SEG(0, 0, 3000, "免疫治疗出现副作用。"),
+        SEG(99, 3200, 6000, "在我们医院治疗保证有效率百分之九十。"),
+        SEG(1, 6200, 8000, "定期复查很重要。"),
+    ], "words": [W("免疫治疗出现副作用", 0, 3000), W("有效率承诺", 3200, 6000),
+                 W("定期复查很重要", 6200, 8000)]}
+    review = {"engine": "llm:test", "verdicts": [
+        {"segment_id": "99", "classification": "risk",
+         "coherent_removal": True, "reason": "疗效承诺，合规风险"}]}
+    edl = build_conform_edl(transcript, SCRIPT_ALIGN_REPORT, review=review)
+    extras = _cuts(edl, "extra")
+    assert len(extras) == 1 and "合规风险" in extras[0]["reason"]
+    assert not _overlaps(edl, 3200, 6000)
+
+
+def test_review_incoherent_removal_keeps_with_warning():
+    transcript = {"asr_segments": [
+        SEG(0, 0, 3000, "免疫治疗出现副作用。"),
+        SEG(99, 3200, 6000, "顺便说一句下周有义诊。"),
+        SEG(1, 6200, 8000, "定期复查很重要。"),
+    ], "words": [W("免疫治疗出现副作用", 0, 3000), W("义诊预告", 3200, 6000),
+                 W("定期复查很重要", 6200, 8000)]}
+    review = {"engine": "llm:test", "verdicts": [
+        {"segment_id": "99", "classification": "offtopic",
+         "coherent_removal": False, "reason": "剪掉后话锋转换突兀"}]}
+    edl = build_conform_edl(transcript, SCRIPT_ALIGN_REPORT, review=review)
+    assert _cuts(edl, "extra") == []
+    assert _overlaps(edl, 3200, 6000)
+    assert any("剪除可能造成上下文断裂" in w for w in edl["warnings"])
+
+
+def test_no_review_default_cuts_extra():
+    transcript = {"asr_segments": [
+        SEG(0, 0, 3000, "免疫治疗出现副作用。"),
+        SEG(99, 3200, 6000, "顺便说一句下周有义诊。"),
+        SEG(1, 6200, 8000, "定期复查很重要。"),
+    ], "words": [W("免疫治疗出现副作用", 0, 3000), W("义诊预告", 3200, 6000),
+                 W("定期复查很重要", 6200, 8000)]}
+    edl = build_conform_edl(transcript, SCRIPT_ALIGN_REPORT)  # 无 LLM 分级（P1 默认）
+    assert len(_cuts(edl, "extra")) == 1
+    assert edl["review_engine"] is None
