@@ -595,37 +595,11 @@ export default function StudioPage() {
   };
 
 
-  // 选题卡（阶段3 M5）：上传时可关联一张医生已批准的原创稿；job 提交后自动 link-job
-  // （scripts.task_id 回填 + studio_jobs.config 挂 script_id/topic_id，选题→used）。
-  const [linkedScriptId, setLinkedScriptId] = useState<string>("");
-  const [approvedScripts, setApprovedScripts] = useState<Array<{ id: string; title: string; topic_title: string | null; version: number }>>([]);
-  // 文稿列表加载态：loading=请求中 / ok=有已批准原创稿 / empty=后端确认无 / error=请求失败（带 HTTP 状态码）。
-  // 2026-11-25：此前非 200 与网络异常都被静默折叠成空列表，选择器「消失」时无法自诊断。
-  const [scriptsLoad, setScriptsLoad] = useState<{ state: "loading" | "ok" | "empty" | "error"; status?: number }>({ state: "loading" });
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/video-api/api/v1/topics/scripts?status=approved", { cache: "no-store" })
-      .then((r) => {
-        if (!r.ok) {
-          const err = new Error(`scripts list HTTP ${r.status}`) as Error & { status?: number };
-          err.status = r.status;
-          throw err;
-        }
-        return r.json() as Promise<{ items?: Array<{ id: string; title: string; topic_title: string | null; version: number }> }>;
-      })
-      .then((data) => {
-        if (cancelled) return;
-        const items = data.items ?? [];
-        setApprovedScripts(items);
-        setScriptsLoad({ state: items.length > 0 ? "ok" : "empty" });
-      })
-      .catch((err: unknown) => {
-        if (cancelled) return;
-        setApprovedScripts([]);
-        setScriptsLoad({ state: "error", status: (err as { status?: number }).status });
-      });
-    return () => { cancelled = true; };
-  }, []);
+  // 对稿成片（2026-11-25 改版）：上传时只选「关联/不关联文稿」两种模式，不列文稿名称——
+  // 关联文稿 → 转写任务 config 带 script_mode=true，自动剪辑开始时由后端
+  // script_conform.match_script_library 用转写对文稿库做句级对齐自动锁定具体稿件
+  // （覆盖率达标自动挂链 + 选题→used，报告落 tasks/alignment/）；不关联 → 门诊切片老链。
+  const [linkedScript, setLinkedScript] = useState<boolean>(false);
   const startTranscription = async () => {
     if (!file || transcriptionState === "processing") return;
     const generation = workflowGenerationRef.current;
@@ -720,22 +694,8 @@ export default function StudioPage() {
       // ② 轮询统一任务状态（queued → 提取音轨/转写/纠错 → transcript_ready）；
       // 自动剪辑不再是这个 job 的一部分，完成处理只载入分段与凭据。
       if (generation !== workflowGenerationRef.current) return;
-      // 选题卡挂链（阶段3 M5）：best-effort，失败不阻断转写，可稍后在选题板补挂。
-      if (linkedScriptId) {
-        try {
-          const linkResponse = await fetch(`${transcribeBase}/api/v1/topics/scripts/${encodeURIComponent(linkedScriptId)}/link-job`, {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ job_id: jobId }),
-          });
-          if (linkResponse.ok) {
-            setMessage("已提交转写任务，并已关联所选文稿。等待本机执行器处理…");
-          } else {
-            const linkText = await linkResponse.text();
-            setMessage(`已提交转写任务；关联文稿失败（${linkResponse.status}）${linkText ? `：${linkText.slice(0, 160)}` : ""}。可稍后在选题板补挂。`);
-          }
-        } catch {
-          setMessage("已提交转写任务；关联文稿时网络异常，可稍后在选题板补挂。");
-        }
+      if (linkedScript) {
+        setMessage("已提交转写任务（对稿模式：开始剪辑时将自动匹配文稿库并按稿精剪）。等待本机执行器处理…");
       }
       setWorkflowJob(normalizeWorkflowJob({ status: "queued" }, jobId, "transcribe"));
       setMessage((prev) => prev || "已提交转写任务，等待本机执行器处理…");
@@ -1325,6 +1285,9 @@ export default function StudioPage() {
           project_id: transcriptRef.project_id,
           transcript_id: transcriptRef.transcript_id,
           transcript_version: transcriptRef.transcript_version,
+          // 对稿成片：上传时选「关联文稿」→ config.script_mode=true，剪辑链先跑
+          // 文稿库匹配（script_conform）再决定后续流程；不关联走门诊切片老链。
+          config: { script_mode: linkedScript },
         }),
       });
       const jobText = await jobResponse.text();
@@ -3644,23 +3607,16 @@ export default function StudioPage() {
         <button className="import-button" onClick={() => inputRef.current?.click()}><Plus size={19} />上传新视频</button>
         {/* 关联文稿（阶段3 M5；2026-11-25 自播放器区迁入素材面板）：选择器与四态加载提示
             常驻素材面板、仅上传前可见；选好文稿后提交任务即随 config 携带 script_id 走 link-job。 */}
-        {!previewUrl && approvedScripts.length > 0 ? (
-          <label className="mb-2 flex items-center gap-2 text-xs text-stone-400" title="仅列出医生已批准的原创拍摄稿；豆包参考稿不可关联">
+        {!previewUrl ? (
+          <label className="mb-2 flex items-center gap-2 text-xs text-stone-400" title="关联文稿：按已批准的原创稿拍摄时选择，剪辑时自动匹配文稿库并按稿精剪（对稿成片）；不关联：门诊素材走切片工作流">
             <span className="shrink-0">关联文稿：</span>
-            <select className="min-w-0 flex-1 rounded border border-stone-600 bg-stone-900 px-1.5 py-1 text-xs" value={linkedScriptId}
-              onChange={(e) => setLinkedScriptId(e.target.value)}>
-              <option value="">不关联</option>
-              {approvedScripts.map((s) => (
-                <option key={s.id} value={s.id}>{`${s.topic_title || s.title}（v${s.version}）`}</option>
-              ))}
+            <select className="min-w-0 flex-1 rounded border border-stone-600 bg-stone-900 px-1.5 py-1 text-xs"
+              value={linkedScript ? "linked" : "unlinked"}
+              onChange={(e) => setLinkedScript(e.target.value === "linked")}>
+              <option value="unlinked">不关联文稿</option>
+              <option value="linked">关联文稿</option>
             </select>
           </label>
-        ) : !previewUrl && scriptsLoad.state === "loading" ? (
-          <p className="mb-2 text-xs text-stone-500">正在加载文稿列表…</p>
-        ) : !previewUrl && scriptsLoad.state === "empty" ? (
-          <p className="mb-2 text-xs text-stone-500" title="需先在选题板生成原创稿并完成医生审批（「医生已批」后这里自动出现）">没有可关联的文稿——先去选题板审批文稿</p>
-        ) : !previewUrl && scriptsLoad.state === "error" ? (
-          <p className="mb-2 text-xs text-amber-400" title="请刷新重试；仍失败请把此提示截图反馈">文稿列表加载失败{typeof scriptsLoad.status === "number" ? `（HTTP ${scriptsLoad.status}）` : "（网络异常）"}</p>
         ) : null}
         <input ref={inputRef} type="file" accept="video/*" hidden onChange={(event: ChangeEvent<HTMLInputElement>) => chooseFile(event.target.files?.[0])} />
         <label className="asset-search"><Search size={16} /><input placeholder="搜索素材…" /></label>

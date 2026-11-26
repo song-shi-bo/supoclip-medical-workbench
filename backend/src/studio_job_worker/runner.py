@@ -18,6 +18,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv  # noqa: E402
 from src.source_store import materialise_source as _source_materialise  # noqa: E402
+from src.script_conform import run_script_match_stage  # noqa: E402
 from src.studio_runtime import process_lock, terminate_with_parent  # noqa: E402
 
 
@@ -222,6 +223,10 @@ def run_auto_edit_only(job: dict) -> None:
         # 只有分析工件确实缺失或损坏（load 返回 None）才重新分析。
         from src import content_analysis
 
+        # 对稿成片（P0）：config.script_mode 时先跑文稿库匹配/自动挂链（失败不阻断主链）。
+        if (job.get("config") or {}).get("script_mode"):
+            job["_script_match"] = run_script_match_stage(job, job_id, transcript)
+
         knowledge_context = _knowledge_context_for(job, job_id, transcript)
         job["_knowledge_context"] = knowledge_context
         analysis_record = _analysis_cache(job,job_id,transcript,knowledge_context)
@@ -253,6 +258,10 @@ def run_auto_edit_only(job: dict) -> None:
     # 恢复语义：分析/计划工件已存在则直接复用（不重复调用模型、不重新规划）。
     from src import clip_planning
     from src import content_analysis
+
+    # 对稿成片（P0）：config.script_mode 时先跑文稿库匹配/自动挂链（失败不阻断主链）。
+    if (job.get("config") or {}).get("script_mode"):
+        job["_script_match"] = run_script_match_stage(job, job_id, transcript)
 
     knowledge_context = _knowledge_context_for(job, job_id, transcript)
     job["_knowledge_context"] = knowledge_context

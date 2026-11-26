@@ -18,6 +18,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv  # noqa: E402
 from src.source_store import materialise_source as _source_materialise  # noqa: E402
+from src.script_conform import run_script_match_stage  # noqa: E402
 from src.studio_runtime import process_lock, terminate_with_parent  # noqa: E402
 
 
@@ -1073,6 +1074,10 @@ def _run_reedit_replace(job: dict, job_id: str, transcript: dict) -> None:
     manifest = reedit_replace.load_old_manifest(run_id)
     if manifest is None:
         manifest = reedit_replace.build_old_manifest(project_id, run_id)
+
+    # 对稿成片（P0）：config.script_mode 时先跑文稿库匹配/自动挂链（失败不阻断主链）。
+    if (job.get("config") or {}).get("script_mode"):
+        job["_script_match"] = run_script_match_stage(job, job_id, transcript)
 
     knowledge_context = _knowledge_context_for(job, job_id, transcript)
     job["_knowledge_context"] = knowledge_context
