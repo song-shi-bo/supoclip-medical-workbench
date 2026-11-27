@@ -112,3 +112,57 @@ def test_candidate_load_failure_degrades(monkeypatch, tmp_path):
     assert record is not None
     assert any("匹配阶段异常" in w for w in record["warnings"])
     assert (tmp_path / "alignment" / "job-err.json").is_file()
+
+
+# ---------------------------------------------------------------------------
+# 上传文稿模式（2026-11-25 改版）：config.script_text 直接对齐，不走文稿库
+# ---------------------------------------------------------------------------
+
+UPLOADED_TEXT = (
+    "免疫治疗出现副作用，先别急着停药。"
+    "很多患者一看不良反应就自己把药停了。其实大多数副作用是可控的。"
+    "关键是第一时间告诉你的主治医生。具体问题，评论区留言。"
+)
+
+
+def test_uploaded_script_aligns_directly(monkeypatch, tmp_path):
+    monkeypatch.setenv("STUDIO_TASKS_ROOT", str(tmp_path))
+    monkeypatch.setattr(sc, "_drug_terms", lambda: ())
+    monkeypatch.setattr(sc, "_auto_link",
+                        lambda sid, tid, jid: (_ for _ in ()).throw(AssertionError("上传文稿不挂链")))
+    monkeypatch.setattr(sc, "_load_candidates",
+                        lambda: (_ for _ in ()).throw(AssertionError("上传文稿不应查文稿库")))
+    job = {"config": {"script_mode": True, "script_text": UPLOADED_TEXT,
+                      "script_source_name": "我的拍摄稿.txt"}}
+    record = sc.run_script_match_stage(job, "job-upload-1", {"asr_segments": TRANSCRIPT})
+    assert record["is_script_shot"] is True
+    assert record["matched_script"]["id"] == "uploaded:我的拍摄稿.txt"
+    assert record["coverage_ratio"] == 1.0
+    assert record["script_linked"] is False
+    assert record["uploaded_script"] == "我的拍摄稿.txt"
+    assert record["conform_edl_path"]
+    assert (tmp_path / "conform" / "job-upload-1.json").is_file()
+
+
+def test_uploaded_script_low_coverage_degrades(monkeypatch, tmp_path):
+    monkeypatch.setenv("STUDIO_TASKS_ROOT", str(tmp_path))
+    monkeypatch.setattr(sc, "_drug_terms", lambda: ())
+    unrelated = [{"segment_id": 0, "start_ms": 0, "end_ms": 8000,
+                  "corrected_text": "今天聊聊肺癌筛查的低剂量螺旋CT。"}]
+    job = {"config": {"script_mode": True, "script_text": UPLOADED_TEXT,
+                      "script_source_name": "可能传错的稿.txt"}}
+    record = sc.run_script_match_stage(job, "job-upload-2", {"asr_segments": unrelated})
+    assert record["is_script_shot"] is False
+    assert record["script_linked"] is False
+    assert record.get("conform_edl_path") is None  # 不达标不出 EDL
+    assert any("未达阈值" in w for w in record["warnings"])
+
+
+def test_uploaded_script_missing_degrades_to_library(monkeypatch, tmp_path):
+    """script_mode=true 但没传 script_text → 保持原文稿库匹配路径（兼容选题板链路）。"""
+    monkeypatch.setenv("STUDIO_TASKS_ROOT", str(tmp_path))
+    monkeypatch.setattr(sc, "_load_candidates", lambda: [dict(SCRIPT, status="approved")])
+    monkeypatch.setattr(sc, "_auto_link", lambda sid, tid, jid: True)
+    record = sc.run_script_match_stage({"config": {"script_mode": True}}, "job-upload-3",
+                                       {"asr_segments": TRANSCRIPT})
+    assert record["is_script_shot"] is True and record["script_linked"] is True

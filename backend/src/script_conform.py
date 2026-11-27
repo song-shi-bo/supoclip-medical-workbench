@@ -184,6 +184,13 @@ def run_script_match_stage(job: dict, job_id: str, transcript: dict) -> dict[str
     config = job.get("config") or {}
     if not config.get("script_mode"):
         return None
+    # 上传文稿模式（2026-11-25 改版）：config.script_text 非空 → 直接以该文稿为
+    # 对齐基准（不从文稿库猜是哪篇，零歧义）；不上传 → 文稿库匹配/老工作流。
+    script_text = str(config.get("script_text") or "").strip()
+    script_name = str(config.get("script_source_name") or "上传文稿")[:200]
+    if len(script_text) > 20000:
+        script_text = script_text[:20000]
+
     # 恢复语义（2026-11-25 P2b）：确认后任务重新排队重跑时，对齐/EDL/分级工件
     # 已存在 → 直接复用（不重新匹配、不重复调 LLM），与 analysis/plan 恢复同约定。
     existing = alignment_root() / f"{job_id}.json"
@@ -209,23 +216,37 @@ def run_script_match_stage(job: dict, job_id: str, transcript: dict) -> dict[str
             record["warnings"].append("转写无分段，无法匹配；按门诊切片流程继续")
             _save_alignment_record(job_id, record)
             return record
-        candidates = _load_candidates()
-        if not candidates:
-            record["warnings"].append("文稿库无已批准原创稿；按门诊切片流程继续")
-            _save_alignment_record(job_id, record)
-            return record
+        if script_text:
+            # 上传文稿路径：绕过文稿库，直接对齐用户上传的这份稿
+            uploaded_script = {
+                "id": f"uploaded:{script_name}", "title": script_name,
+                "version": None, "hook": "", "body": script_text, "cta": "",
+            }
+            best = script_align.align_transcript_to_script(segments, uploaded_script)
+            chosen = uploaded_script
+            linked = False  # 上传文稿不属于选题库，无挂链动作
+            if not best.get("is_script_shot"):
+                record["warnings"].append(
+                    f"转写与上传文稿覆盖率 {best['coverage_ratio']:.0%} 未达阈值："
+                    "疑似传错文件或完全脱稿，按门诊切片流程继续")
+        else:
+            candidates = _load_candidates()
+            if not candidates:
+                record["warnings"].append("文稿库无已批准原创稿；按门诊切片流程继续")
+                _save_alignment_record(job_id, record)
+                return record
 
-        result = script_align.match_script_library(segments, candidates)
-        best = result["best"]
-        chosen = next((c for c in candidates if c.get("id") == best["script"].get("id")), None)
-        linked = False
-        if best.get("is_script_shot") and chosen is not None:
-            linked = _auto_link(str(chosen["id"]), chosen.get("topic_id"), job_id)
-            if not linked:
-                record["warnings"].append("匹配文稿不在可挂链状态（已批准/拍摄中才可挂）")
-        elif not best.get("is_script_shot"):
-            record["warnings"].append(
-                f"最高覆盖率 {best['coverage_ratio']:.0%} 未达阈值，按门诊切片流程继续")
+            result = script_align.match_script_library(segments, candidates)
+            best = result["best"]
+            chosen = next((c for c in candidates if c.get("id") == best["script"].get("id")), None)
+            linked = False
+            if best.get("is_script_shot") and chosen is not None:
+                linked = _auto_link(str(chosen["id"]), chosen.get("topic_id"), job_id)
+                if not linked:
+                    record["warnings"].append("匹配文稿不在可挂链状态（已批准/拍摄中才可挂）")
+            elif not best.get("is_script_shot"):
+                record["warnings"].append(
+                    f"最高覆盖率 {best['coverage_ratio']:.0%} 未达阈值，按门诊切片流程继续")
 
         record.update({
             "matched_script": best["script"],
@@ -235,7 +256,7 @@ def run_script_match_stage(job: dict, job_id: str, transcript: dict) -> dict[str
             "sentences": best["sentences"],
             "extra_segments": best["extra_segments"],
             "script_linked": linked,
-            "candidate_summaries": result["candidates"],
+            "uploaded_script": script_name if script_text else None,
         })
         # P2a：LLM 分级 extra 段（一次调用；失败回退 local-rule，不影响匹配报告）
         try:
@@ -249,8 +270,8 @@ def run_script_match_stage(job: dict, job_id: str, transcript: dict) -> dict[str
                                 "warnings": list(review.get("warnings") or [])}
         except Exception as exc:  # noqa: BLE001 —— 分级阶段异常不影响匹配报告
             record["warnings"].append(f"分级阶段异常：{exc}")
-        # P1a：匹配达标 → 构建精剪 EDL（独立 artifact；失败只警告不影响匹配报告）
-        if chosen is not None:
+        # P1a：匹配达标（覆盖率过阈值）才构建精剪 EDL；不达标回退老链不出 EDL
+        if chosen is not None and best.get("is_script_shot"):
             try:
                 from .conform_edl import build_conform_edl
 

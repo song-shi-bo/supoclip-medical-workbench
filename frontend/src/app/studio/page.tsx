@@ -596,11 +596,11 @@ export default function StudioPage() {
   };
 
 
-  // 对稿成片（2026-11-25 改版）：上传时只选「关联/不关联文稿」两种模式，不列文稿名称——
-  // 关联文稿 → 转写任务 config 带 script_mode=true，自动剪辑开始时由后端
-  // script_conform.match_script_library 用转写对文稿库做句级对齐自动锁定具体稿件
-  // （覆盖率达标自动挂链 + 选题→used，报告落 tasks/alignment/）；不关联 → 门诊切片老链。
-  const [linkedScript, setLinkedScript] = useState<boolean>(false);
+  // 对稿成片（2026-11-25 二次改版）：按文稿拍摄时「同步上传文稿文件」（txt/md）——
+  // script_mode=true + script_text 随开始自动剪辑提交，剪辑链直接按这份稿对齐精剪
+  // （不再从文稿库匹配）；未上传文稿 → 门诊切片老链。Word 稿请先另存为 txt。
+  const [scriptFile, setScriptFile] = useState<File | null>(null);
+  const scriptInputRef = useRef<HTMLInputElement | null>(null);
   const startTranscription = async () => {
     if (!file || transcriptionState === "processing") return;
     const generation = workflowGenerationRef.current;
@@ -695,9 +695,6 @@ export default function StudioPage() {
       // ② 轮询统一任务状态（queued → 提取音轨/转写/纠错 → transcript_ready）；
       // 自动剪辑不再是这个 job 的一部分，完成处理只载入分段与凭据。
       if (generation !== workflowGenerationRef.current) return;
-      if (linkedScript) {
-        setMessage("已提交转写任务（对稿模式：开始剪辑时将自动匹配文稿库并按稿精剪）。等待本机执行器处理…");
-      }
       setWorkflowJob(normalizeWorkflowJob({ status: "queued" }, jobId, "transcribe"));
       setMessage((prev) => prev || "已提交转写任务，等待本机执行器处理…");
       const startedAt = Date.now();
@@ -1275,6 +1272,19 @@ export default function StudioPage() {
       return false;
     }
     const generation = workflowGenerationRef.current;
+    // 对稿模式：先校验/读取文稿文本（同步上传的拍摄稿）
+    let scriptText = "";
+    if (scriptFile) {
+      if (scriptFile.size > 200 * 1024) {
+        setMessage("文稿文件超过 200KB，请精简后再试。");
+        return false;
+      }
+      scriptText = (await scriptFile.text()).trim();
+      if (!scriptText) {
+        setMessage("文稿文件内容为空，请检查后再试。");
+        return false;
+      }
+    }
     setAutoEditing(true);
     setMessage("正在提交自动剪辑任务（选段、时间线、成片渲染在本机流水线执行）…");
     try {
@@ -1286,9 +1296,13 @@ export default function StudioPage() {
           project_id: transcriptRef.project_id,
           transcript_id: transcriptRef.transcript_id,
           transcript_version: transcriptRef.transcript_version,
-          // 对稿成片：上传时选「关联文稿」→ config.script_mode=true，剪辑链先跑
-          // 文稿库匹配（script_conform）再决定后续流程；不关联走门诊切片老链。
-          config: { script_mode: linkedScript },
+          // 对稿成片：同步上传了拍摄文稿（txt/md）→ script_mode=true 且
+          // script_text 随任务提交，剪辑链直接按这份稿对齐精剪；未上传 → 老链。
+          config: {
+            script_mode: Boolean(scriptFile),
+            script_text: scriptText || undefined,
+            script_source_name: scriptFile?.name || undefined,
+          },
         }),
       });
       const jobText = await jobResponse.text();
@@ -3610,15 +3624,19 @@ export default function StudioPage() {
             常驻素材面板；空项目（上传前）与已有转写（旧项目/转写完成后）均可选；
             script_mode 随「开始自动剪辑」提交，具体稿件由剪辑链对文稿库自动匹配。 */}
         {(!previewUrl || transcriptRef) ? (
-          <label className="mb-2 flex items-center gap-2 text-xs text-stone-400" title="关联文稿：按已批准的原创稿拍摄时选择，点「开始自动剪辑」时自动匹配文稿库并按稿精剪（对稿成片）；不关联：门诊素材走切片工作流。转写完成后也可改选">
-            <span className="shrink-0">关联文稿：</span>
-            <select className="min-w-0 flex-1 rounded border border-stone-600 bg-stone-900 px-1.5 py-1 text-xs"
-              value={linkedScript ? "linked" : "unlinked"}
-              onChange={(e) => setLinkedScript(e.target.value === "linked")}>
-              <option value="unlinked">不关联文稿</option>
-              <option value="linked">关联文稿</option>
-            </select>
-          </label>
+          <div className="mb-2 flex items-center gap-2 text-xs text-stone-400" title="按文稿拍摄时同步上传文稿（txt/md）：点「开始自动剪辑」将按这份稿对齐精剪（对稿成片工作流）；不上传文稿则走门诊切片工作流。Word 稿请先另存为 txt">
+            <span className="shrink-0">拍摄文稿：</span>
+            {scriptFile ? (
+              <span className="flex min-w-0 flex-1 items-center gap-1">
+                <span className="truncate">{scriptFile.name}（{Math.max(1, Math.round(scriptFile.size / 1024))}KB）</span>
+                <button className="insights-action shrink-0" onClick={() => setScriptFile(null)}>移除</button>
+              </span>
+            ) : (
+              <button className="insights-action shrink-0" onClick={() => scriptInputRef.current?.click()}>+ 上传文稿（可选，txt/md）</button>
+            )}
+            <input ref={scriptInputRef} type="file" accept=".txt,.md,.markdown,text/plain" hidden
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) setScriptFile(f); e.target.value = ""; }} />
+          </div>
         ) : null}
         <input ref={inputRef} type="file" accept="video/*" hidden onChange={(event: ChangeEvent<HTMLInputElement>) => chooseFile(event.target.files?.[0])} />
         <label className="asset-search"><Search size={16} /><input placeholder="搜索素材…" /></label>
