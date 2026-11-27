@@ -294,3 +294,47 @@ async def test_list_scripts_returns_approved_shooting_only(db_session: AsyncSess
                                  topic_id="", limit=100, db=db_session)
     await db_session.commit()
     assert any(item["id"] == f"{PREFIX}shot" for item in resp2["items"])
+
+
+async def test_script_export_txt_md_and_reference_409(db_session: AsyncSession, seeded):
+    """P2b 附加（2026-11-25）：文稿导出到本地——txt=纯口播稿（提词器友好），
+    md=结构化全稿；参考稿 409；Content-Disposition 带附件头。"""
+    await db_session.execute(text(
+        "INSERT INTO scripts (id, topic_id, title, hook, body, cta, shooting_notes, refs, "
+        "origin, generated_by, content_hash, status) VALUES ("
+        ":id, :tid, '免疫治疗副作用别急着停药', '免疫治疗出现副作用，先别急着停药。', "
+        "'很多患者一看不良反应就自己把药停了。', '具体问题，评论区留言。', "
+        "'单人口播，目标 60 秒', :refs, 'shooting_script', 'workbench', :hash, 'approved') "
+        "ON CONFLICT (id) DO NOTHING"
+    ), {"id": f"{PREFIX}shot", "tid": seeded["topic"], "hash": uuid.uuid4().hex,
+        "refs": ["CSCO免疫治疗指南2025"]})
+    await db_session.commit()
+
+    resp = await T.export_script(f"{PREFIX}shot", request=_req(seeded["doctor"]),
+                                 format="txt", db=db_session)
+    text_content = resp.body.decode("utf-8")
+    assert "免疫治疗出现副作用，先别急着停药。" in text_content
+    assert "具体问题，评论区留言。" in text_content
+    assert "## " not in text_content            # txt 无 markdown 结构
+    assert resp.media_type == "text/plain; charset=utf-8"
+    assert "attachment" in resp.headers["content-disposition"]
+    await db_session.commit()  # 纯读事务显式关闭（asyncpg+NullPool teardown 契约）
+
+    resp_md = await T.export_script(f"{PREFIX}shot", request=_req(seeded["doctor"]),
+                                    format="md", db=db_session)
+    md_content = resp_md.body.decode("utf-8")
+    assert md_content.startswith("# 免疫治疗副作用别急着停药")
+    assert "## 开场钩子" in md_content and "## 依据（医学指南/文献）" in md_content
+    assert "CSCO免疫治疗指南2025" in md_content
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await T.export_script(f"{PREFIX}ref", request=_req(seeded["doctor"]),
+                              format="txt", db=db_session)
+    assert exc.value.status_code == 409         # 参考稿不可导出
+    await db_session.commit()
+
+    with pytest.raises(HTTPException) as exc:
+        await T.export_script(f"{PREFIX}shot", request=_req(seeded["doctor"]),
+                              format="docx", db=db_session)
+    assert exc.value.status_code == 422         # 非法格式

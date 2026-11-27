@@ -611,6 +611,12 @@ export default function TopicsPage() {
                           disabled={busy.startsWith("view-")}>
                           {busy === `view-${script.id}` ? <LoaderCircle size={12} className="animate-spin" /> : viewScriptId === script.id ? "收起" : "看全文"}
                         </Button>
+                        {script.origin === "shooting_script" ? (
+                          <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" asChild>
+                            <a href={`/video-api/api/v1/topics/scripts/${script.id}/export?format=txt`} download
+                               title="下载纯口播稿 txt（可直接导入提词器拍摄）">导出</a>
+                          </Button>
+                        ) : null}
                         {script.status === "draft" && script.origin === "shooting_script" ? (
                           <Button variant="outline" size="sm" className="h-6 px-2 text-xs"
                             onClick={() => void runApproveScript(script.id)}

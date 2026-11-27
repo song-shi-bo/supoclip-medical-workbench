@@ -12,10 +12,12 @@
 
 import hashlib
 import json
+import re
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
+from urllib.parse import quote as _url_quote
 from sqlalchemy import bindparam, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -690,6 +692,56 @@ async def approve_topic(topic_id: str, request: Request,
         )
     return {"ok": True, "id": topic_id, "status": tp.TOPIC_STATUS_DOCTOR_APPROVED,
             "approved_by": subject, "modification": routed}
+
+
+@router.get("/scripts/{script_id}/export")
+async def export_script(script_id: str, request: Request,
+                        format: str = Query(default="txt"),
+                        db: AsyncSession = Depends(get_db)):
+    """文稿导出到本地（2026-11-25）：txt=提词器友好纯口播稿（hook+body+cta 纯文本）；
+    md=结构化全稿（含标题/拍摄提示/依据）。仅原创拍摄稿可导出（参考稿 409）；
+    草稿也可导出（供医生通读）。下载即用：手机提词器直接打开 txt 拍摄。"""
+    _subject(request)
+    fmt = (format or "txt").strip().lower()
+    if fmt not in ("txt", "md"):
+        raise HTTPException(status_code=422, detail="format 仅支持 txt / md")
+    row = (await db.execute(text(
+        "SELECT origin, version, title, hook, body, cta, shooting_notes, refs "
+        "FROM scripts WHERE id = :id"), {"id": script_id})).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="文稿不存在")
+    if row.origin != tp.SCRIPT_ORIGIN_SHOOTING:
+        raise HTTPException(status_code=409, detail="参考稿不支持导出（仅原创拍摄稿可导出）")
+    title = (row.title or f"文稿-{script_id[:8]}").strip()
+    safe_title = re.sub(r'[\\/:*?"<>|\s]+', "_", title)[:40] or "script"
+    paragraphs = [str(part or "").strip()
+                  for part in (row.hook, row.body, row.cta)]
+    paragraphs = [p for p in paragraphs if p]
+    if not paragraphs:
+        raise HTTPException(status_code=409, detail="文稿口播内容为空（hook/body/cta 均空），无可导出内容")
+    if fmt == "txt":
+        content = "\n\n".join(paragraphs) + "\n"
+        filename = f"{safe_title}-口播稿.txt"
+        media_type = "text/plain; charset=utf-8"
+    else:
+        refs_list = [str(r) for r in (row.refs or [])] if isinstance(row.refs, list) else []
+        parts = [f"# {title}", ""]
+        for heading, body_text in (("开场钩子", row.hook), ("正文", row.body), ("结尾引导", row.cta)):
+            body_text = str(body_text or "").strip()
+            if body_text:
+                parts += [f"## {heading}", body_text, ""]
+        notes = str(row.shooting_notes or "").strip()
+        if notes:
+            parts += ["## 拍摄提示", notes, ""]
+        if refs_list:
+            parts += ["## 依据（医学指南/文献）"] + [f"- {r}" for r in refs_list] + [""]
+        content = "\n".join(parts)
+        filename = f"{safe_title}-文稿.md"
+        media_type = "text/markdown; charset=utf-8"
+    headers = {"Content-Disposition":
+               f"attachment; filename=\"export_{script_id[:8]}.{fmt}\"; "
+               f"filename*=UTF-8''{_url_quote(filename)}"}
+    return Response(content=content, media_type=media_type, headers=headers)
 
 
 @router.post("/scripts/{script_id}/approve")
