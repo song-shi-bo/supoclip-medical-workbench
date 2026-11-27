@@ -3607,9 +3607,10 @@ export default function StudioPage() {
         <div className="pane-title"><strong>项目素材</strong><button aria-label="切换视图"><ListVideo size={17} /></button></div>
         <button className="import-button" onClick={() => inputRef.current?.click()}><Plus size={19} />上传新视频</button>
         {/* 关联文稿（阶段3 M5；2026-11-25 自播放器区迁入素材面板）：选择器与四态加载提示
-            常驻素材面板、仅上传前可见；选好文稿后提交任务即随 config 携带 script_id 走 link-job。 */}
-        {!previewUrl ? (
-          <label className="mb-2 flex items-center gap-2 text-xs text-stone-400" title="关联文稿：按已批准的原创稿拍摄时选择，剪辑时自动匹配文稿库并按稿精剪（对稿成片）；不关联：门诊素材走切片工作流">
+            常驻素材面板；空项目（上传前）与已有转写（旧项目/转写完成后）均可选；
+            script_mode 随「开始自动剪辑」提交，具体稿件由剪辑链对文稿库自动匹配。 */}
+        {(!previewUrl || transcriptRef) ? (
+          <label className="mb-2 flex items-center gap-2 text-xs text-stone-400" title="关联文稿：按已批准的原创稿拍摄时选择，点「开始自动剪辑」时自动匹配文稿库并按稿精剪（对稿成片）；不关联：门诊素材走切片工作流。转写完成后也可改选">
             <span className="shrink-0">关联文稿：</span>
             <select className="min-w-0 flex-1 rounded border border-stone-600 bg-stone-900 px-1.5 py-1 text-xs"
               value={linkedScript ? "linked" : "unlinked"}
